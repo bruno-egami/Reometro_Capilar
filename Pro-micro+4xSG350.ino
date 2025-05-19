@@ -1,87 +1,88 @@
+// Código para teste reológico com várias pressões e entrada manual da massa extrudada
+
 #include <HX711.h>
 
-//Conexão com Arduino
 #define DOUT1 A0
 #define CLK1 A1
 
 HX711 scale1;
 
-// Parâmetros de calibração
-const float coeficiente = -0.3251;  // multiplicador para ajuste após regressão
-const float offset = -0.50;      // Offset de zero
+const float alpha = 0.2;         // Filtro EMA
+const float coeficiente = -0.44; // Ajuste de calibração
+const float offset = 0.0;        // Offset de tara
+const float L = 0.01;            // Comprimento do bico em metros (10 mm)
+const float R = 0.0015;          // Raio do bico em metros (3 mm / 2)
 
-// Filtro exponencial (EMA)
-float alpha = 1.0;              // Fator de suavização (menor atenua, maior mais sensível)
-float mvRead1 = 0;
+// Configurações do teste
+const int temposExtrusao = 30; // Tempo de extrusão em segundos (ajustável)
+const int tempoPreparacao = 3; // Tempo para o usuário se preparar antes de iniciar cada extrusão
+const float pressao_testes_bar[] = {1, 2, 3, 4, 5};
+const int num_testes = sizeof(pressao_testes_bar) / sizeof(pressao_testes_bar[0]);
+
+float densidade = 0.0;
 float ema_mvRead1 = 0;
-float pressure_bar = 0;
-
-// Tempo de aquecimento (em minutos) 
-const unsigned int warmup_minutes = 1;
 
 void setup() {
   Serial.begin(115200);
   scale1.begin(DOUT1, CLK1);
   scale1.set_gain(128);
+  delay(2000);
+  scale1.tare();
 
-  unsigned long warmup_seconds = warmup_minutes * 60;
+  Serial.println("Insira a densidade da pasta (g/cm3):");
+  while (Serial.available() == 0) {}
+  densidade = Serial.parseFloat();
+  Serial.print("Densidade registrada: ");
+  Serial.print(densidade, 3);
+  Serial.println(" g/cm3\n");
 
-  Serial.print("Aquecimento... Esperando ");
-  Serial.print(warmup_minutes);
-  Serial.println(" minuto(s) para tara automática.");
-  Serial.println("Pressione qualquer tecla para pular.");
+  for (int i = 0; i < num_testes; i++) {
+    float pressao_bar = pressao_testes_bar[i];
+    Serial.print("\nConfigure o sistema para ");
+    Serial.print(pressao_bar);
+    Serial.println(" bar e pressione qualquer tecla para iniciar...");
+    while (Serial.available() == 0) {}
+    while (Serial.available()) Serial.read();
 
-  for (unsigned long i = 0; i < warmup_seconds; i++) {
-    if (Serial.available()) {
-      Serial.read();  // Lê e descarta o caractere pressionado
-      Serial.println("Aquecimento interrompido pelo usuário.");
-      break;
+    // Tempo para preparação
+    Serial.print("Iniciando em: ");
+    for (int t = tempoPreparacao; t > 0; t--) {
+      Serial.print(t); Serial.print("...");
+      delay(1000);
+    }
+    Serial.println("Iniciando extrusão!");
+
+    // Inicia contagem
+    unsigned long inicio = millis();
+    while (millis() - inicio < temposExtrusao * 1000UL) {
+      long data_in1 = scale1.get_value();
+      float mvRead1 = (((data_in1 * 5.0) / 16777215.0) / 128.0) * 1000.0;
+      ema_mvRead1 = alpha * mvRead1 + (1 - alpha) * ema_mvRead1;
+      delay(1000);
     }
 
-    Serial.print("Aquecimento dos resistores, pressione enviar para pular: ");
-    Serial.print((warmup_seconds - i) / 60);
-    Serial.print(" min ");
-    Serial.print((warmup_seconds - i) % 60);
-    Serial.println(" s");
+    Serial.print("Tempo finalizado. Insira a massa extrudada (g) para ");
+    Serial.print(pressao_bar);
+    Serial.println(" bar (pressione Enter se nada foi extrudado):");
 
-    delay(1000);  // Espera 1 segundo
+    while (Serial.available() == 0) {}
+    float massa = Serial.parseFloat();
+
+    if (massa > 0) {
+      float volume = massa / densidade / 1000.0; // cm3 -> m3
+      float Q = volume / temposExtrusao;         // Vazão m3/s
+      float deltaP = pressao_bar * 100000;       // bar -> Pa
+      float viscosidade = (deltaP * pow(R, 4)) / (8 * Q * L); // Poiseuille
+      Serial.print("Viscosidade: ");
+      Serial.print(viscosidade, 2);
+      Serial.println(" Pa.s\n");
+    } else {
+      Serial.println("Sem extrusão registrada para esta pressão.\n");
+    }
   }
-
-  scale1.tare();  // Tara após aquecimento ou interrupção
-  Serial.println("Tara concluída.");
+  Serial.println("\nTestes finalizados.");
 }
 
 void loop() {
-  // Leitura bruta do HX711
-  long data_in1 = scale1.get_value();
-
-  // Conversão para milivolts
-  mvRead1 = (((data_in1 * 5.0) / 16777215.0) / 128.0) * 1000.0;
-
-  // Filtro EMA
-  ema_mvRead1 = alpha * mvRead1 + (1 - alpha) * ema_mvRead1;
-
-  // Conversão para pressão (com offset)
-  pressure_bar = coeficiente * ema_mvRead1 - offset;
-
-  // Exibição no monitor serial
-  //Serial.print(mvRead1, 10);// dados brutos do HX711
-  //Serial.print(" mV (EMA): ");
-  //Serial.print(ema_mvRead1, 10); //dados filtrados (EMA)
-  Serial.print(" | Pressão: ");
-  Serial.print(pressure_bar * 14.5, 4);
-  Serial.print(" PSI / ");
-  Serial.print(pressure_bar, 4);
-  Serial.println(" bar");
-
-  // Verifica comando de tara
-  if (Serial.available()) {
-    char comando = Serial.read();
-    if (comando == 't' || comando == 'T') {
-      Serial.println("Tara ativada!");
-      scale1.tare();
-    }
-  }
-
-  delay(1000);  // 1 leitura por segundo
+  // Não faz mais nada após a série de testes
 }
