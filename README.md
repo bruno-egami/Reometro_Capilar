@@ -4,6 +4,7 @@ Sistema para análise de reologia de pastas utilizando uma lata de alumínio, um
 Exemplo de interação:
 
 ------ Sistema de Reômetro Capilar ------
+
 Insira a densidade da barbotina (g/cm³): 1.75
 
 Preparando teste com 5 pressões: 1, 2, 3, 4, 5 bar
