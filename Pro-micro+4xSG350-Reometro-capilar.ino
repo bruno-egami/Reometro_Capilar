@@ -7,9 +7,9 @@
 
 HX711 scale1;
 
-const float alpha = 0.2;         // Filtro EMA
-const float coeficiente = -0.44; // Ajuste de calibração
-const float offset = 0.0;        // Offset de tara
+const float alpha = 1.0;         // Filtro EMA
+const float coeficiente = -0.3251; // Ajuste de calibração
+const float offset = -0.50;        // Offset de tara
 const float L = 0.01;            // Comprimento do bico em metros (10 mm)
 const float R = 0.0015;          // Raio do bico em metros (3 mm / 2)
 
