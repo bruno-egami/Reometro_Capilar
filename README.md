@@ -30,12 +30,21 @@ Insira a massa extrudada (em gramas): 8.1
 
 (... repete até 5 bar ...)
 
->>> Resultados calculados:
-Pressão (bar) | Massa (g) | Volume (cm³) | Vazão (cm³/s) | Taxa de Cisalhamento (1/s) | Viscosidade (Pa.s)
+>Resultados calculados: Pressão (bar) | Massa (g) | Volume (cm³) | Vazão (cm³/s) | Taxa de Cisalhamento (1/s) | Viscosidade (Pa.s)
 -------------------------------------------------------------------------------------------------------------
-1             | 2.7       | 1.54         | 0.15          | 424.4                       | 68.1
+>1             | 2.7       | 1.54         | 0.15          | 424.4                       | 68.1
 2             | 8.1       | 4.63         | 0.46          | 424.4                       | 43.5
 (...)
 
-Fim dos testes.
+>>Fim dos testes.
+
+## Autor
+
+- [@bruno-egami](https://github.com/bruno-egami)
+
+
+## Licença
+
+
+<p xmlns:cc="http://creativecommons.org/ns#" >This work is licensed under <a href="http://creativecommons.org/licenses/by-sa/4.0/?ref=chooser-v1" target="_blank" rel="license noopener noreferrer" style="display:inline-block;">CC BY-SA 4.0<img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1"></a></p>
 
