@@ -8,13 +8,13 @@
 
 HX711 scale1;
 
-// Medidas do bico (em milímetros) 
+// Constantes do sistema (em milímetros) - APENAS EDITÁVEIS NO CÓDIGO
 const float L_mm = 10.0;            // Comprimento do bico (mm)
 const float R_mm = 1.5;             // Raio do bico (mm)
 
 // Constantes de calibração dos extensômetros
-const float coeficiente = -0.3251;  // Ajuste de calibração
-const float offset = -0.50;         // Offset de tara
+const float coeficiente = -0.00000082077;  // Ajuste de calibração -0.3251 -0,0000008247765619
+const float offset = 0.35;         // Offset de tara
 
 const int temposExtrusao = 3;       // Tempo de extrusão (s)
 const int tempoPreparacao = 3;      // Tempo de preparação (s)
@@ -77,7 +77,7 @@ void loop() {
       mostrarResultados();
       break;
     case '5':
-      Serial.println(F("Programa encerrado!"));
+      Serial.println(F("Programa encerrado. Obrigado por usar o sistema!"));
       Serial.println(F("Para reiniciar, pressione o botão RESET do Arduino."));
       while(true) { 
         delay(10000); // Para o programa definitivamente
