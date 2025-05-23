@@ -48,36 +48,7 @@ O sistema é composto por:
 5.  O usuário informa a massa extrudada.
     
 6.  A viscosidade é calculada automaticamente.
-    
 
-## Equações Utilizadas
-
-A viscosidade é determinada pela equação de Hagen-Poiseuille:
-
-```
-η = (π * R^4 * ΔP) / (8 * Q * L)
-
-```
-
-Onde:
-
--   η = viscosidade (Pa.s)
-    
--   R = raio do capilar (m)
-    
--   ΔP = pressão aferida pelos extensômetros (Pa)
-    
--   Q = vazão volumétrica (m³/s)
-    
--   L = comprimento do capilar (m)
-    
-
-A vazão é obtida por:
-
-```
-Q = massa / (densidade * tempo)
-
-```
 
 ## Variáveis do Código
 
@@ -99,55 +70,6 @@ Q = massa / (densidade * tempo)
     
 -   `eta`: viscosidade calculada (Pa.s)
     
-
-## Exemplo de Saída
------- Sistema de Reômetro Capilar ------
-
-Insira a densidade da barbotina (g/cm³): 1.75
-
-Preparando teste com 5 pressões: 1, 2, 3, 4, 5 bar
-
-Tempo de extrusão configurado: 10 segundos
-
->>> Pressurize o sistema para 1 bar.
-
-Remova o excesso de barbotina do bico.
-
-Teste iniciará em 3 segundos...
-
-Iniciando extrusão...
-
-Aguardando 10 segundos...
-
-Teste finalizado para 1 bar.
-
-Insira a massa extrudada (em gramas): 2.7
-
->>> Pressurize o sistema para 2 bar.
-
-Remova o excesso de barbotina do bico.
-
-Teste iniciará em 3 segundos...
-
-Iniciando extrusão...
-
-Aguardando 10 segundos...
-
-Teste finalizado para 2 bar.
-
-Insira a massa extrudada (em gramas): 8.1
-
-(... repete até 5 bar ...)
-
->Resultados calculados: Pressão (bar) | Massa (g) | Volume (cm³) | Vazão (cm³/s) | Taxa de Cisalhamento (1/s) | Viscosidade (Pa.s)
-
-1             | 2.7       | 1.54         | 0.15          | 424.4                       | 68.1
-
-2             | 8.1       | 4.63         | 0.46          | 424.4                       | 43.5
-
-(...)
-
->>Fim dos testes.
 
 ## Autor
 
