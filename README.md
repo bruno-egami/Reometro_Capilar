@@ -18,6 +18,8 @@ O sistema é composto por:
 -   Um módulo HX711 para leitura de variações de tensão
     
 -   Um Arduino que processa os dados e calcula a viscosidade
+
+-   Um script em pyton para análise da reologia
     
 
 ## Componentes Utilizados
@@ -34,42 +36,7 @@ O sistema é composto por:
     
 -   **Balança de precisão:** para aferir a massa extrudada
     
-
-## Funcionamento Geral
-
-1.  O sistema é inicializado e passa por um tempo de "aquecimento" (estabilização).
-    
-2.  O usuário aplica uma pressão conhecida com base no manômetro (1 a 5 bar).
-    
-3.  A barbotina é extrudada por um bico capilar.
-    
-4.  Após um tempo definido (ex: 30 s), o sistema é pausado.
-    
-5.  O usuário informa a massa extrudada.
-    
-6.  A viscosidade é calculada automaticamente.
-
-
-## Variáveis do Código
-
--   `alpha`: fator de suavização do filtro EMA
-    
--   `coeficiente`: fator de conversão mV/bar (calibrado experimentalmente)
-    
--   `offset`: correção de leitura sem carga
-    
--   `mvRead1`: leitura bruta do HX711 (em mV)
-    
--   `ema_mvRead1`: leitura filtrada
-    
--   `pressure_bar`: pressão convertida (em bar)
-    
--   `density`: densidade fornecida pelo usuário (g/cm³)
-    
--   `mass`: massa extrudada (g)
-    
--   `eta`: viscosidade calculada (Pa.s)
-    
+  
 
 ## Autor
 
