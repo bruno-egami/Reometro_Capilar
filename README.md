@@ -36,6 +36,12 @@ O sistema é composto por:
     
 -   **Balança de precisão:** para aferir a massa extrudada
     
+## Bibliotecas necessárias: 
+
+pip install numpy
+pip install scipy
+pip install matplotlib
+pip install pandas
   
 
 ## Autor
