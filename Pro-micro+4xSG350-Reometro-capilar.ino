@@ -90,8 +90,8 @@ void loop() {
   Serial.println(F("2 - Realizar Calibração Multiponto (1-5 bar)"));
   Serial.println(F("3 - Zerar Sensor (Tara Rápida)"));
   Serial.println(F("4 - Visualizar Coeficientes Atuais"));
-  Serial.println(F("5 - Mostrar Leitura de Pressão Imediata")); // Novo item
-  Serial.println(F("6 - Sair"));                               // Sair agora é opção 6
+  Serial.println(F("5 - Mostrar Leitura de Pressão Imediata")); 
+  Serial.println(F("6 - Sair"));                               
   Serial.println(F("Digite sua opção (1-6):"));
 
   char opcao = aguardarEntradaChar();
@@ -231,10 +231,8 @@ void calibracaoMultipontoAvancada() {
 }
 
 
-// --- Demais funções (configurarEExecutarColeta, lerPressaoComEMA, mostrarResultadosColeta, etc.) ---
-// --- permanecem como na versão anterior, apenas lembrando que g_coeficiente e g_offset ---
-// --- são agora carregados/salvos da EEPROM e não hardcoded com valores iniciais fixos ---
-// --- exceto na primeira execução.                                                       ---
+
+// --- g_coeficiente e g_offset são agora carregados/salvos da EEPROM e não hardcoded com valores iniciais fixos exceto na primeira execução.                                                       ---
 
 // Função para coletar dados (praticamente inalterada, apenas para referência de contexto)
 void configurarEExecutarColeta() {
@@ -352,9 +350,7 @@ void liberarMemoriaDadosPressao() {
     delete[] g_media_pressao_testes;
     g_media_pressao_testes = nullptr;
   }
-  // Resetar g_num_testes também é uma boa prática aqui,
-  // mas já é feito em configurarEExecutarColeta ou se a alocação falhar.
-  // g_num_testes = 0; 
+  
 }
 
 void taraRapidaSensor() {
