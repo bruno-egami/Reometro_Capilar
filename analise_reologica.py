@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 # SCRIPT PARA ANÁLISE REOLÓGICA DE PASTAS EM REÔMETRO CAPILAR
-# (Versão SUPER AVANÇADA com CSV, Bagley & Plots, Mooney & Plots, Relatório TXT)
+# (Versão com CSV, Bagley & Plots, Mooney & Plots, Relatório TXT)
 # -----------------------------------------------------------------------------
 
 # 1. Importação de Bibliotecas
