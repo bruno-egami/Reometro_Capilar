@@ -1,6 +1,39 @@
 # Relatório de Equacionamento Utilizado na Análise Reológica
 
-Este relatório descreve as equações implementadas no script Python para a análise reológica de pastas utilizando dados de um reômetro capilar, incluindo a correção de Bagley opcional.
+Este relatório descreve as equações fundamentais implementadas no script Python para a análise reológica de pastas utilizando dados de um reômetro capilar, incluindo a correção de Bagley opcional.
+
+---
+
+## 1. Dados de Entrada e Conversões de Unidades
+
+**Propósito/Utilização:**
+Garantir que todas as medições experimentais e parâmetros geométricos estejam em um sistema de unidades consistente (SI: metros, quilogramas, segundos, Pascals) para a correta aplicação das equações reológicas fundamentais.
+
+* **Diâmetro do Capilar ($D_{cap}$):**
+    * Entrada: $D_{cap,mm}$ \[mm]
+    * Cálculo SI: $$D_{cap} = \frac{D_{cap,mm}}{1000} \quad [\text{m}]$$
+
+* **Raio do Capilar ($R_{cap}$):**
+    * Cálculo SI: $$R_{cap} = \frac{D_{cap}}{2} \quad [\text{m}]$$
+
+* **Comprimento do Capilar ($L_{cap}$):**
+    * Entrada: $L_{cap,mm}$ \[mm]
+    * Cálculo SI: $$L_{cap} = \frac{L_{cap,mm}}{1000} \quad [\text{m}]$$
+
+* **Densidade da Pasta ($\rho_{pasta}$):**
+    * Entrada: $\rho_{pasta,g/cm³}$ \[g/cm³]
+    * Cálculo SI: $$\rho_{pasta} = \rho_{pasta,g/cm³} \times 1000 \quad [\text{kg/m³}]$$
+
+* **Tempo de Extrusão ($t_{extrusao}$):**
+    * Entrada: $t_{extrusao,s}$ \[s] (valor fixo para todos os testes)
+
+* **Pressão Medida ($P_{medida}$):**
+    * Entrada: $P_{medida,bar}$ \[bar]
+    * Cálculo SI (Queda de Pressão Total, $\Delta P$): $$\Delta P = P_{medida,bar} \times 10^5 \quad [\text{Pa}]$$
+
+* **Massa Extrudada ($m_{extrudada}$):**
+    * Entrada: $m_{extrudada,g}$ \[g]
+    * Cálculo SI: $$m_{extrudada,kg} = \frac{m_{extrudada,g}}{1000} \quad [\text{kg}]$$
 
 ---
 
@@ -32,12 +65,12 @@ Estes cálculos são realizados para cada ponto experimental. Se a Correção de
     * $L_{cap}$: Comprimento do capilar \[m]
     * **Propósito/Utilização:** Calcular a força por unidade de área que o fluido exerce na parede interna do capilar. É uma das duas variáveis primárias da curva de fluxo. O valor "raw" não considera efeitos de entrada/saída.
 
-4.  **Taxa de Cisalhamento Aparente na Parede ($\dot{\gamma}_{aw,raw}$):**
+4.  **Taxa de Cisalhamento Aparente na Parede ($\dot{\gamma}_{aw,raw}$):** [cite: 1]
     $$\dot{\gamma}_{aw,raw} = \frac{4 \cdot Q}{\pi \cdot R_{cap}^3}$$
-    * $\dot{\gamma}_{aw,raw}$: Taxa de cisalhamento aparente na parede \[s⁻¹]
-    * **Propósito/Utilização:** Calcular a taxa de deformação do fluido na parede do capilar, assumindo um comportamento Newtoniano. É usada como base para correções posteriores (Weissenberg-Rabinowitsch) para fluidos não-Newtonianos.
+    * $\dot{\gamma}_{aw,raw}$: Taxa de cisalhamento aparente na parede \[s⁻¹] [cite: 1]
+    * **Propósito/Utilização:** Calcular a taxa de deformação do fluido na parede do capilar, assumindo um comportamento Newtoniano. É usada como base para correções posteriores (Weissenberg-Rabinowitsch) para fluidos não-Newtonianos. [cite: 1]
 
-5.  **Viscosidade Aparente (Bruta/Não Corrigida, $\eta_{a,raw}$):**
+5.  **Viscosidade Aparente (Bruta/Não Corrigida, $\eta_{a,raw}$):** [cite: 2]
     $$\eta_{a,raw} = \frac{\tau_{w,raw}}{\dot{\gamma}_{aw,raw}} \quad (\text{se } \dot{\gamma}_{aw,raw} \neq 0)$$
     * $\eta_{a,raw}$: Viscosidade aparente \[Pa·s]
     * **Propósito/Utilização:** Fornecer uma primeira estimativa da resistência ao fluxo, como a razão entre a tensão de cisalhamento na parede e a taxa de cisalhamento aparente. Varia com a taxa de cisalhamento para fluidos não-Newtonianos.
@@ -49,13 +82,13 @@ Estes cálculos são realizados para cada ponto experimental. Se a Correção de
 Utiliza múltiplos capilares com mesmo raio $R_{Bagley}$ e diferentes comprimentos $L_i$.
 
 1.  **Interpolação de Dados:**
-    * **Propósito/Utilização:** Obter valores de pressão ($\Delta P_{total,ik}^*$) para cada capilar ($L_i$) em um conjunto comum de taxas de cisalhamento aparente alvo ($\dot{\gamma}_{aw,k}^*$). Necessário pois os pontos experimentais raramente coincidem nas mesmas taxas alvo.
+    * **Propósito/Utilização:** Obter valores de pressão ($\Delta P_{total,ik}^*$) para cada capilar ($L_i$) em um conjunto comum de taxas de cisalhamento aparente alvo ($\dot{\gamma}_{aw,k}^*$). Necessário pois os pontos experimentais raramente coincidem nas mesmas taxas alvo. [cite: 3]
 
-2.  **Ajuste Linear (Plot de Bagley):** Para cada $\dot{\gamma}_{aw,k}^*$, ajusta-se:
-    $$\Delta P_{total,k}^* = \text{Slope}_k \cdot \left(\frac{L_i}{R_{Bagley}}\right) + \text{Intercept}_k$$
-    * $\text{Slope}_k$: Inclinação da reta de Bagley \[Pa]
-    * $\text{Intercept}_k$: Perda de pressão nas extremidades ($\Delta P_{e,k}$) \[Pa]
-    * **Propósito/Utilização:** Separar a queda de pressão devida ao escoamento viscoso no comprimento do capilar das perdas de pressão nas extremidades. O script também gera um gráfico deste ajuste.
+2.  **Ajuste Linear (Plot de Bagley):** Para cada $\dot{\gamma}_{aw,k}^*$, ajusta-se: [cite: 4]
+    $$\Delta P_{total,k}^* = (\text{Slope}_k) \cdot \left(\frac{L_i}{R_{Bagley}}\right) + \text{Intercept}_k$$
+    * $\text{Slope}_k$: Inclinação da reta de Bagley para $\dot{\gamma}_{aw,k}^*$ \[Pa] [cite: 4]
+    * $\text{Intercept}_k$: Perda de pressão nas extremidades ($\Delta P_{e,k}$) para $\dot{\gamma}_{aw,k}^*$ \[Pa] [cite: 4]
+    * **Propósito/Utilização:** Separar a queda de pressão devida ao escoamento viscoso no comprimento do capilar das perdas de pressão nas extremidades. O script também gera um gráfico deste ajuste. [cite: 4]
 
 3.  **Tensão de Cisalhamento na Parede Corrigida por Bagley ($\tau_{w,corr,k}$):**
     $$\tau_{w,corr,k} = \frac{\text{Slope}_k}{2}$$
@@ -69,43 +102,65 @@ Utiliza múltiplos capilares com mesmo raio $R_{Bagley}$ e diferentes compriment
 
 Aplica-se aos dados da curva de fluxo (`tau_w_an`, `gamma_dot_aw_an`).
 
-1.  **Índice de Comportamento de Fluxo Local (n' ou `n_prime_global`):**
-    Determinado como a inclinação da reta no gráfico de <span class="math-inline">\\ln\(\\tau\_\{w,an\}\)</span> versus <span class="math-inline">\\ln\(\\dot\{\\gamma\}\_\{aw,an\}\)</span> (para <span class="math-inline">\\tau\_\{w,an\}\>0, \\dot\{\\gamma\}\_\{aw,an\}\>0</span>).
-    <span class="math-block">n' \= \\frac\{d\(\\ln \\tau\_\{w,an\}\)\}\{d\(\\ln \\dot\{\\gamma\}\_\{aw,an\}\)\}</span>
-    * <span class="math-inline">n'</span>: Adimensional
+1.  **Índice de Comportamento de Fluxo Local ($n'$ ou `n_prime_global`):**
+    Determinado como a inclinação da reta no gráfico de $\ln(\tau_{w,an})$ versus $\ln(\dot{\gamma}_{aw,an})$ (para $\tau_{w,an}>0, \dot{\gamma}_{aw,an}>0$).
+    $$n' = \frac{d(\ln \tau_{w,an})}{d(\ln \dot{\gamma}_{aw,an})}$$
+    * $n'$: Adimensional
     * **Propósito/Utilização:** Caracterizar a pseudoplasticidade ou dilatância local do fluido. Indica o quanto a viscosidade aparente muda com a taxa de cisalhamento.
 
-2.  **Taxa de Cisalhamento Real na Parede (<span class="math-inline">\\dot\{\\gamma\}\_\{w,an\}</span>):**
-    <span class="math-block">\\dot\{\\gamma\}\_\{w,an\} \= \\left\( \\frac\{3n' \+ 1\}\{4n'\} \\right\) \\cdot \\dot\{\\gamma\}\_\{aw,an\}</span>
-    * <span class="math-inline">\\dot\{\\gamma\}\_\{w,an\}</span>: Taxa de cisalhamento real na parede \[s⁻¹]
+2.  **Taxa de Cisalhamento Real na Parede ($\dot{\gamma}_{w,an}$):**
+    $$\dot{\gamma}_{w,an} = \left( \frac{3n' + 1}{4n'} \right) \cdot \dot{\gamma}_{aw,an}$$
+    * $\dot{\gamma}_{w,an}$: Taxa de cisalhamento real na parede \[s⁻¹]
     * **Propósito/Utilização:** Corrigir a taxa de cisalhamento aparente para levar em conta o perfil de velocidade não parabólico de fluidos não-Newtonianos. É a taxa de cisalhamento efetiva na parede do capilar.
 
 ---
 
-## 5. Viscosidade Real (<span class="math-inline">\\eta\_\{true,an\}</span>)
+## 5. Viscosidade Real ($\eta_{true,an}$)
 
-<span class="math-block">\\eta\_\{true,an\} \= \\frac\{\\tau\_\{w,an\}\}\{\\dot\{\\gamma\}\_\{w,an\}\} \\quad \(\\text\{se \} \\dot\{\\gamma\}\_\{w,an\} \\neq 0\)</span>
-* <span class="math-inline">\\eta\_\{true,an\}</span>: Viscosidade real \[Pa·s]
-* <span class="math-inline">\\tau\_\{w,an\}</span>: Tensão de cisalhamento na parede (bruta ou corrigida por Bagley) \[Pa]
-* **Propósito/Utilização:** Calcular a viscosidade verdadeira do material na parede do capilar. Para fluidos não-Newtonianos, <span class="math-inline">\\eta\_\{true,an\}</span> varia com <span class="math-inline">\\dot\{\\gamma\}\_\{w,an\}</span>.
+$$\eta_{true,an} = \frac{\tau_{w,an}}{\dot{\gamma}_{w,an}} \quad (\text{se } \dot{\gamma}_{w,an} \neq 0)$$
+* $\eta_{true,an}$: Viscosidade real \[Pa·s]
+* $\tau_{w,an}$: Tensão de cisalhamento na parede (bruta ou corrigida por Bagley) \[Pa]
+* **Propósito/Utilização:** Calcular a viscosidade verdadeira do material na parede do capilar. Para fluidos não-Newtonianos, $\eta_{true,an}$ tipicamente varia com $\dot{\gamma}_{w,an}$.
 
 ---
 
 ## 6. Modelos Reológicos Constitutivos
 
-Ajustados aos dados <span class="math-inline">\(\\tau\_\{w,an\}, \\dot\{\\gamma\}\_\{w,an\}\)</span>. <span class="math-inline">\\tau</span> representa <span class="math-inline">\\tau\_\{w,an\}</span> e <span class="math-inline">\\dot\{\\gamma\}</span> representa <span class="math-inline">\\dot\{\\gamma\}\_\{w,an\}</span>.
+Ajustados aos dados $(\tau_{w,an}, \dot{\gamma}_{w,an})$. $\tau$ representa $\tau_{w,an}$ e $\dot{\gamma}$ representa $\dot{\gamma}_{w,an}$.
 
 1.  **Modelo Newtoniano:**
-    <span class="math-block">\\tau \= \\eta \\cdot \\dot\{\\gamma\}</span>
-    * <span class="math-inline">\\eta</span>: Viscosidade Newtoniana \[Pa·s]
+    $$\tau = \eta \cdot \dot{\gamma}$$
+    * $\eta$: Viscosidade Newtoniana \[Pa·s]
     * **Utilização:** Descreve fluidos ideais com viscosidade constante.
 
 2.  **Modelo Lei da Potência (Ostwald-de Waele):**
-    <span class="math-block">\\tau \= K \\cdot \\dot\{\\gamma\}^n</span>
-    * <span class="math-inline">K</span>: Índice de Consistência \[Pa·sⁿ]
-    * <span class="math-inline">n</span>: Índice de Comportamento de Fluxo \[adimensional]
+    $$\tau = K \cdot \dot{\gamma}^n$$
+    * $K$: Índice de Consistência \[Pa·sⁿ]
+    * $n$: Índice de Comportamento de Fluxo \[adimensional]
     * **Utilização:** Modelo simples para fluidos não-Newtonianos sem tensão de escoamento.
 
 3.  **Modelo de Bingham Plastic:**
-    <span class="math-block">\\tau \= \\tau\_0 \+ \\eta\_p \\cdot \\dot\{\\gamma\} \\quad \(\\text\{para \} \\tau \> \\tau\_0\)</span>
-    * <span class="math-inline">\\tau\_0</span>: Tensão de Escoamento \[Pa]
+    $$\tau = \tau_0 + \eta_p \cdot \dot{\gamma} \quad (\text{para } \tau > \tau_0)$$
+    * $\tau_0$: Tensão de Escoamento \[Pa]
+    * $\eta_p$: Viscosidade Plástica \[Pa·s]
+    * **Utilização:** Descreve materiais que necessitam de uma tensão mínima ($\tau_0$) para fluir.
+
+4.  **Modelo de Herschel-Bulkley:**
+    $$\tau = \tau_0 + K \cdot \dot{\gamma}^n \quad (\text{para } \tau > \tau_0)$$
+    * $\tau_0$: Tensão de Escoamento \[Pa]
+    * $K$: Índice de Consistência \[Pa·sⁿ]
+    * $n$: Índice de Comportamento de Fluxo \[adimensional]
+    * **Utilização:** Modelo versátil para fluidos viscoplásticos, combinando tensão de escoamento com comportamento de Lei da Potência.
+
+* **Propósito/Utilização Geral dos Modelos:** Quantificar o comportamento reológico através de parâmetros, entender a natureza do fluido e prever seu comportamento.
+
+---
+
+## 7. Cálculo da Viscosidade a Partir dos Modelos Ajustados
+
+Para plotar as curvas de viscosidade teóricas.
+
+$$\eta_{modelo}(\dot{\gamma}) = \frac{\tau_{modelo}(\dot{\gamma})}{\dot{\gamma}}$$
+* **Propósito/Utilização:** Calcular a viscosidade prevista por cada modelo ajustado em função da taxa de cisalhamento, para comparação visual com os dados experimentais de viscosidade.
+
+---
