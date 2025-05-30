@@ -7,9 +7,7 @@ Este projeto tem como objetivo a construção de um reômetro capilar de baixo c
 
 O sistema é composto por:
 
--   Uma lata de alumínio;
--   Um cilindro preenchido com a barbotina (tubo PVC DN50);
--   Acessórios e conectores impressos;
+-   Um reometro feito de lata de alumínio (clindro pressurizado), um cilindro preenchido com a barbotina (tubo PVC DN50) e acessórios e conectores impressos;
 -   Um conjunto de capilares (Diâmetros: 3, 4 e 5mm. Comprimentos: 10, 20 e 30mm);
 -   Um manômetro e registro para controle de pressão aplicada;
 -   Quatro extensômetros colados na lata para formar uma ponte de Wheatstone;
