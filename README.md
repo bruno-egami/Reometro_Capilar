@@ -7,38 +7,17 @@ Este projeto tem como objetivo a construção de um reômetro capilar de baixo c
 
 O sistema é composto por:
 
--   Um cilindro (lata de alumínio) preenchido com a barbotina
+-   Uma lata de alumínio;
+-   Um cilindro preenchido com a barbotina (tubo PVC DN50);
+-   Acessórios e conectores impressos;
+-   Um conjunto de capilares (Diâmetros: 3, 4 e 5mm. Comprimentos: 10, 20 e 30mm);
+-   Um manômetro e registro para controle de pressão aplicada;
+-   Quatro extensômetros colados na lata para formar uma ponte de Wheatstone;
+-   Um módulo HX711 para leitura de variações de tensão;
+-   Um Arduino Pro Micro para captura da pressão aplicada;
+-   Um script em pyton para análise da reologia.
     
--   Um bico extrusor capilar (diâmetro: 3 mm, comprimento: 10 mm)
-    
--   Um manômetro para controle de pressão aplicada
-    
--   Quatro extensômetros colados na lata para formar uma ponte de Wheatstone
-    
--   Um módulo HX711 para leitura de variações de tensão
-    
--   Um Arduino que processa os dados e calcula a viscosidade
-
--   Um script em pyton para análise da reologia
-    
-
-## Componentes Utilizados
-
--   **Arduino Pro Micro:** microcontrolador principal
-    
--   **HX711:** amplificador de carga de alta precisão
-    
--   **Strain Gauges (350 Ω):** sensores para medir a deformação do recipiente
-   
--   **Lata de alumínio:** câmara de pressurização
-    
--   **Capilar (3 mm x 10 mm):** bico extrusor
-    
--   **Balança de precisão:** para aferir a massa extrudada
-    
-## Sobre o funcionamento do script, consultar o manual-script.pdf 
-
-
+## Para detalhes de funcionamento do script, consultar o [manual-script.pdf](https://github.com/bruno-egami/HX711-4xSG350/blob/Re%C3%B4metro-capilar/Manual-script.pdf) 
   
 
 ## Autor
