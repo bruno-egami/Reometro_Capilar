@@ -3,6 +3,7 @@ import time
 import json
 import os
 from datetime import datetime
+import serial.tools.list_ports
 
 # --- Configurações ---
 SERIAL_PORT = None 
@@ -12,7 +13,7 @@ CALIBRATION_FILE = 'calibracao_reometro.json'
 RESULTS_JSON_DIR = "resultados_testes_reometro" # NOME DA PASTA ALTERADO
 
 NUM_PONTOS_CALIBRACAO = 4
-PRESSOES_CALIBRACAO_CONHECIDAS = [1.0, 2.0, 3.0, 4.0]
+PRESSOES_CALIBRACAO_CONHECIDAS = [1.5, 2.0, 2.3, 2.5]
 
 MIN_SENSOR_STEP_DIFFERENCE_PY = 1e-5
 
@@ -73,9 +74,29 @@ def determinar_tendencia_e_monotonicidade_py(leituras, num_pontos):
     return tendencia_detectada, monotonicidade_ok
 
 def realizar_calibracao_interativa_py(ser):
-    global g_calibracao_leituras_sensor, g_calibracao_tendencia, g_calibracao_concluida
-    print("\n=== CALIBRAÇÃO INTERATIVA (1-4 BAR) - PYTHON ===")
-    input("Despressurize e pressione ENTER para tarar sensor...");
+    global g_calibracao_leituras_sensor, g_calibracao_tendencia, g_calibracao_concluida, PRESSOES_CALIBRACAO_CONHECIDAS, NUM_PONTOS_CALIBRACAO
+
+    print("\n=== CALIBRAÇÃO INTERATIVA DO SENSOR DE PRESSÃO ===")
+    
+    # --- LÓGICA DE PERSONALIZAÇÃO ADICIONADA ---
+    print(f"As pressões de calibração padrão são: {PRESSOES_CALIBRACAO_CONHECIDAS}")
+    if input("Deseja usar as pressões padrão? (s/n): ").lower() != 's':
+        try:
+            novas_pressoes_str = input("Digite as novas pressões separadas por vírgula (ex: 1.0, 2.5, 3.0): ")
+            novas_pressoes = [float(p.strip()) for p in novas_pressoes_str.split(',')]
+            if len(novas_pressoes) > 1:
+                PRESSOES_CALIBRACAO_CONHECIDAS = novas_pressoes
+                NUM_PONTOS_CALIBRACAO = len(novas_pressoes)
+                g_calibracao_leituras_sensor = [0.0] * NUM_PONTOS_CALIBRACAO # Redimensiona o array global
+                print(f"Novas pressões de calibração definidas: {PRESSOES_CALIBRACAO_CONHECIDAS}")
+            else:
+                print("Entrada inválida. Usando as pressões padrão.")
+        except ValueError:
+            print("Formato inválido. Usando as pressões padrão.")
+    # --- FIM DA LÓGICA DE PERSONALIZAÇÃO ---
+
+    input("\nDespressurize completamente o sistema e pressione ENTER para tarar o sensor...");
+    # ... resto da função original, sem alterações ...
     if not enviar_comando_e_ler_resposta(ser, "TARE_PRESSURE"): print("ERRO: Falha ao tarar."); return
     temp_leituras = [0.0] * NUM_PONTOS_CALIBRACAO; leituras_por_ponto_cal = 5
     for i in range(NUM_PONTOS_CALIBRACAO):
@@ -484,7 +505,7 @@ def menu_principal_py(ser):
                         leitura_ema = ler_float_do_arduino(ser, "READ_PRESSURE_EMA")
                         if leitura_ema is not None:
                             pressao = converter_sensor_para_pressao_py(leitura_ema)
-                            print(f"Pressão Imediata: {pressao:.2f} bar        \r", end="")
+                            print(f"Pressão Imediata: {pressao:.2f} bar (EMA: {leitura_ema:.2f})   
                         time.sleep(0.25)
                 except KeyboardInterrupt: print("\nLeitura imediata interrompida.")
             elif not ser: print("Arduino não conectado.")
@@ -497,19 +518,58 @@ def menu_principal_py(ser):
             print("Opção inválida.")
 
 if __name__ == "__main__":
-    # ... (código de conexão como antes) ...
     arduino_ser = None
     try:
         print("Tentando conectar ao Arduino...")
-        if SERIAL_PORT :
-             arduino_ser = conectar_arduino(SERIAL_PORT, BAUD_RATE)
-        else: 
-            ports_to_try = [f'/dev/ttyACM{i}' for i in range(4)] + [f'/dev/ttyUSB{i}' for i in range(4)] + [f'COM{i}' for i in range(1,11)]
-            for port_try in ports_to_try:
-                # Lógica de tentativa de porta pode ser melhorada para ser mais silenciosa até encontrar
-                # print(f"Tentando porta {port_try}...") 
-                arduino_ser = conectar_arduino(port_try, BAUD_RATE)
-                if arduino_ser: SERIAL_PORT = port_try; print(f"Conectado na porta: {SERIAL_PORT}"); break
+        if SERIAL_PORT:
+            arduino_ser = conectar_arduino(SERIAL_PORT, BAUD_RATE)
+        else:
+            # --- LÓGICA DE DETECÇÃO AUTOMÁTICA E MULTIPLATAFORMA ---
+            print("Nenhuma porta serial especificada. Procurando portas disponíveis...")
+            portas_disponiveis = serial.tools.list_ports.comports()
+            
+            if not portas_disponiveis:
+                print("Nenhuma porta serial física foi encontrada no sistema.")
+            else:
+                print("Portas encontradas:")
+                for porta in portas_disponiveis:
+                    # Tenta se conectar a portas que parecem ser um Arduino
+                    if "USB" in porta.description.upper() or \
+                       "ARDUINO" in porta.description.upper() or \
+                       "CH340" in porta.description.upper():
+                        
+                        print(f"  Tentando porta promissora: {porta.device} ({porta.description})")
+                        arduino_ser = conectar_arduino(porta.device, BAUD_RATE)
+                        if arduino_ser:
+                            SERIAL_PORT = porta.device
+                            print(f"Conexão bem-sucedida em: {SERIAL_PORT}")
+                            break # Sai do laço se conectar com sucesso
+            
+            # Se ainda não conectou, tenta todas as portas como último recurso
+            if not arduino_ser and portas_disponiveis:
+                print("\nNão foi possível conectar a uma porta conhecida. Tentando todas as portas...")
+                for porta in portas_disponiveis:
+                    print(f"  Tentando porta genérica {porta.device}...")
+                    arduino_ser = conectar_arduino(porta.device, BAUD_RATE)
+                    if arduino_ser:
+                        SERIAL_PORT = porta.device
+                        print(f"Conexão bem-sucedida em: {SERIAL_PORT}")
+                        break
+            # --- FIM DA NOVA LÓGICA ---
+
+        if not arduino_ser:
+            print("\nNão foi possível conectar ao Arduino.")
+            if input("Deseja continuar offline para ver/inserir calibração ou ver resultados? (s/n):").lower() != 's': 
+                exit()
+        
+        carregar_dados_calibracao_py(CALIBRATION_FILE)
+        menu_principal_py(arduino_ser)
+    except Exception as e:
+        print(f"Ocorreu um erro geral no script: {e}")
+    finally:
+        if arduino_ser and arduino_ser.isOpen():
+            arduino_ser.close()
+            print("Porta serial fechada.")
         
         if not arduino_ser:
             print("\nNão foi possível conectar ao Arduino.")
