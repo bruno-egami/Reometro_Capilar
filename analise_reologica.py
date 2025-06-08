@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 # SCRIPT PARA ANÁLISE REOLÓGICA DE PASTAS EM REÔMETRO CAPILAR
-# (Versão SUPER AVANÇADA com CSV, JSON, Bagley & Plots, Mooney & Plots, Casson, Relatório TXT)
+# (Versão com CSV, JSON, Bagley & Plots, Mooney & Plots, Casson, Relatório TXT)
 # --- VERSÃO MODIFICADA COM SALVAMENTO E APLICAÇÃO DE CALIBRAÇÕES ---
 # -----------------------------------------------------------------------------
 
@@ -9,6 +9,8 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('QtAgg') 
 import pandas as pd
 from datetime import datetime
 import os 
@@ -995,7 +997,19 @@ if realizar_mooney:
             salvar_calibracao_json(tipo_cal, tau_w_an, gamma_dot_aw_an, _json_files_resumo, calibrations_folder)
     else: 
         print("ALERTA: Mooney não resultou em pontos válidos.")
-        # ... (lógica de fallback mantida)
+        if realizar_bagley and len(tau_w_for_mooney) > 0:
+            # --- AVISO VISUAL ADICIONADO ---
+            print("\n" + "="*70)
+            print("ATENÇÃO: A CORREÇÃO DE MOONEY FALHOU.")
+            print("A análise prosseguirá usando APENAS os dados da correção de Bagley.")
+            print("Os resultados FINAIS NÃO incluem a correção para deslizamento na parede.")
+            print("="*70 + "\n")
+            realizar_mooney = False # Garante consistência para o relatório
+        else:
+            # Se nem Bagley foi feito, a análise para
+            tau_w_an = np.array([])
+            gamma_dot_aw_an = np.array([])
+            num_testes_para_analise = 0
 
 # --- APLICA FATOR DE CALIBRAÇÃO E CORREÇÃO W-R ---
 if num_testes_para_analise > 0 and len(tau_w_an) > 0:
@@ -1161,6 +1175,37 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_
                 print(f"\nResumo salvo: {csv_sum_f}")
         except Exception as e: print(f"\nERRO CSV Resumo: {e}")
 
+# Salva os parâmetros de TODOS os modelos ajustados em um arquivo JSON
+if model_results:
+    results_to_save = {}
+    # Salva os parâmetros de TODOS os modelos ajustados
+    for name, data in model_results.items():
+        results_to_save[name] = {
+            'params': data['params'].tolist(),
+            'R2': data['R2']
+        }
+    
+    # ADIÇÃO: Salva também os parâmetros n' e log_K_prime
+    parametros_wr = {
+        'n_prime': n_prime if 'n_prime' in locals() else None,
+        'log_K_prime': log_K_prime if 'log_K_prime' in locals() else None
+    }
+    
+    dados_completos_para_salvar = {
+        "modelos_ajustados": results_to_save,
+        "parametros_wr": parametros_wr
+    }
+    
+    json_models_f = os.path.join(output_folder, f"{timestamp_str}_parametros_modelos.json")
+    arquivos_gerados_lista.append(os.path.basename(json_models_f))
+    try:
+        with open(json_models_f, 'w', encoding='utf-8') as f:
+            json.dump(dados_completos_para_salvar, f, indent=4)
+        print(f"Parâmetros dos modelos salvos em: {json_models_f}")
+    except Exception as e:
+        print(f"ERRO ao salvar parâmetros dos modelos: {e}")
+
+
     print("\n\n"+"="*70+"\n--- TABELAS DE RESULTADOS --- \n"+"="*70)
     q_calc_mm3_s = np.full_like(gamma_dot_aw_an, np.nan)
     R_eff_q = np.nan
@@ -1228,15 +1273,27 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
     min_gp, max_gp = max(1e-9, min_gp_val * 0.5), max_gp_val * 1.5
     gd_plot = np.geomspace(min_gp, max_gp, 200) if max_gp > min_gp else np.array([min_gp, min_gp*10])
 
-    # --- Gráfico 1: Curva de Fluxo ---
-    fig1,ax1=plt.subplots(figsize=(10,7))
-    ax1.scatter(gamma_dot_w_an_wr[valid_fit],tau_w_an[valid_fit],label='Dados Experimentais Processados',c='k',marker='o',s=60,zorder=10)
-    if len(gd_plot)>0:
-        for n_model_name,d_model_data in model_results.items():
-            try:
-                tau_plot_model = models[n_model_name](gd_plot,*d_model_data['params'])
-                ax1.plot(gd_plot, tau_plot_model, label=fr'Modelo {n_model_name} (R²={d_model_data["R2"]:.4f})', lw=2.5, alpha=0.8)
-            except Exception as e_plot_model: print(f"  Aviso ao plotar modelo {n_model_name}: {e_plot_model}")
+    # --- Gráfico 1: Curva de Fluxo (com destaque) ---
+fig1,ax1=plt.subplots(figsize=(10,7))
+ax1.scatter(gamma_dot_w_an_wr[valid_fit],tau_w_an[valid_fit],label='Dados Experimentais Processados',c='k',marker='o',s=60,zorder=10)
+if len(gd_plot)>0:
+    for n_model_name,d_model_data in model_results.items():
+        try:
+            tau_plot_model = models[n_model_name](gd_plot,*d_model_data['params'])
+            
+            # --- LÓGICA DE DESTAQUE ADICIONADA ---
+            if n_model_name == best_model_nome:
+                # Plota a linha do melhor modelo com destaque (mais grossa, vermelha e na frente)
+                ax1.plot(gd_plot, tau_plot_model, 
+                         label=fr'**Melhor Modelo: {n_model_name}** (R²={d_model_data["R2"]:.4f})', 
+                         linewidth=3.5, linestyle='--', color='red', zorder=20)
+            else:
+                # Plota as outras linhas de forma mais sutil
+                ax1.plot(gd_plot, tau_plot_model, 
+                         label=fr'Modelo {n_model_name} (R²={d_model_data["R2"]:.4f})', 
+                         linewidth=2, alpha=0.6)
+        except Exception as e_plot_model:
+            print(f"  Aviso ao plotar modelo {n_model_name}: {e_plot_model}")
     ax1.set_xlabel("Taxa de Cisalhamento Corrigida (" + r"$\dot{\gamma}_w$" + ", s⁻¹)")
     ax1.set_ylabel("Tensão de Cisalhamento na Parede Corrigida (" + r"$\tau_w$" + ", Pa)")
     ax1.set_title("Curva de Fluxo: Tensão de Cisalhamento vs. Taxa de Cisalhamento")
