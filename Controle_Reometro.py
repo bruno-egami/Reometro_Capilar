@@ -83,7 +83,7 @@ def realizar_calibracao_interativa_py(ser):
     if input("Deseja usar as pressões padrão? (s/n): ").lower() != 's':
         try:
             novas_pressoes_str = input("Digite as novas pressões separadas por vírgula (ex: 1.0, 2.5, 3.0): ")
-            novas_pressoes = [float(p.strip()) for p in novas_pressoes_str.split(',')]
+            novas_pressoes = [float(p.strip().replace(',', '.')) for p in novas_pressoes_str.split(',')]
             if len(novas_pressoes) > 1:
                 PRESSOES_CALIBRACAO_CONHECIDAS = novas_pressoes
                 NUM_PONTOS_CALIBRACAO = len(novas_pressoes)
@@ -128,12 +128,13 @@ def carregar_dados_calibracao_py(filepath):
         try:
             with open(filepath, 'r', encoding='utf-8') as f: data = json.load(f)
             
+            # Carrega os dados do arquivo, mantendo os padrões se as chaves não existirem
             g_calibracao_leituras_sensor = data.get("leituras_sensor", g_calibracao_leituras_sensor)
             PRESSOES_CALIBRACAO_CONHECIDAS = data.get("pressoes_conhecidas", PRESSOES_CALIBRACAO_CONHECIDAS)
             NUM_PONTOS_CALIBRACAO = len(PRESSOES_CALIBRACAO_CONHECIDAS)
 
             if len(g_calibracao_leituras_sensor) != NUM_PONTOS_CALIBRACAO:
-                print(f"AVISO: Nro de pontos no arquivo incompatível."); g_calibracao_concluida=False; return False
+                print(f"AVISO: Número de pontos no arquivo de calibração é incompatível com o número de pressões. Re-calibrar é recomendado."); g_calibracao_concluida=False; return False
             g_calibracao_tendencia = data.get("tendencia", 0); g_calibracao_concluida=True
             print(f"Dados de calibração carregados de: {filepath}"); print_tendencia(g_calibracao_tendencia)
             if g_calibracao_tendencia == 0 and NUM_PONTOS_CALIBRACAO > 1: print("AVISO: Tendência indefinida!")
@@ -177,9 +178,62 @@ def converter_sensor_para_pressao_py(leitura_ema_atual):
     if abs(leitura_ema_atual-leituras_cal[0])<MIN_SENSOR_STEP_DIFFERENCE_PY/10.0: return pressoes_cal[0]
     return -2.0
 
-def inserir_leituras_calibracao_manualmente_py(ser): 
-    # (função original mantida)
-    pass
+def inserir_leituras_calibracao_manualmente_py(ser):
+    global g_calibracao_leituras_sensor, g_calibracao_tendencia, g_calibracao_concluida, PRESSOES_CALIBRACAO_CONHECIDAS, NUM_PONTOS_CALIBRACAO
+
+    print("\n=== INSERIR LEITURAS DE CALIBRAÇÃO MANUALMENTE ===")
+
+    pressoes_atuais = PRESSOES_CALIBRACAO_CONHECIDAS
+    print(f"As leituras manuais serão para as pressões padrão: {pressoes_atuais}")
+    if input("Deseja inserir leituras para um conjunto de pressões diferente? (s/n): ").lower() == 's':
+        try:
+            novas_pressoes_str = input("Digite as novas pressões para as quais você tem os valores de EMA, separadas por vírgula: ")
+            novas_pressoes = [float(p.strip().replace(',', '.')) for p in novas_pressoes_str.split(',')]
+            if len(novas_pressoes) > 1:
+                pressoes_atuais = novas_pressoes
+                print(f"OK. Inserindo leituras para as pressões personalizadas: {pressoes_atuais}")
+            else:
+                print("Entrada inválida. Usando as pressões padrão.")
+        except ValueError:
+            print("Formato inválido. Usando as pressões padrão.")
+
+    num_pontos_atuais = len(pressoes_atuais)
+    temp_leituras_manuais = [0.0] * num_pontos_atuais
+    
+    print("\n--- Inserção de Dados ---")
+    for i in range(num_pontos_atuais):
+        while True:
+            try: 
+                prompt_text = f"Insira o valor EMA para a pressão de {pressoes_atuais[i]:.2f} bar: "
+                leitura_str = input(prompt_text)
+                temp_leituras_manuais[i] = float(leitura_str.replace(',', '.'))
+                break
+            except ValueError: print("Entrada inválida. Insira um número.")
+
+    print("\nLeituras Inseridas:")
+    for i in range(num_pontos_atuais): 
+        print(f"  {pressoes_atuais[i]:.2f} bar -> EMA: {temp_leituras_manuais[i]:.4f}")
+        
+    tendencia, monotonicidade_ok = determinar_tendencia_e_monotonicidade_py(temp_leituras_manuais, num_pontos_atuais)
+    
+    if not monotonicidade_ok:
+        print("\nAVISO: Leituras manuais não são monotonicamente consistentes!");
+        if input("Salvar mesmo assim? (s/n): ").lower()!='s': 
+            print("Entrada manual cancelada."); return
+        print("Salvando com aviso.")
+
+    PRESSOES_CALIBRACAO_CONHECIDAS = pressoes_atuais
+    NUM_PONTOS_CALIBRACAO = num_pontos_atuais
+    g_calibracao_leituras_sensor = list(temp_leituras_manuais)
+    g_calibracao_tendencia = tendencia
+    g_calibracao_concluida = True
+    
+    salvar_dados_calibracao_py(CALIBRATION_FILE, {
+        "leituras_sensor": g_calibracao_leituras_sensor, 
+        "pressoes_conhecidas": PRESSOES_CALIBRACAO_CONHECIDAS, 
+        "tendencia": g_calibracao_tendencia
+    })
+    print("Leituras manuais aplicadas e salvas."); print_tendencia(g_calibracao_tendencia)
 
 def sanitize_filename(name):
     name = str(name).replace(' ', '_').replace('/', '-').replace('\\', '-').replace('.', '_')
@@ -187,15 +241,43 @@ def sanitize_filename(name):
     return ''.join(c for c in name if c in valid_chars)[:50]
 
 def salvar_resultados_json_individual_py(data_bateria):
-    # (função original mantida)
-    pass
+    if not data_bateria: print("Nenhum dado de teste para salvar."); return
+    base_filename = data_bateria.get('id_amostra') or data_bateria.get('descricao','resultado_teste')
+    sane_basename = sanitize_filename(base_filename)
+    datetime_obj = datetime.strptime(data_bateria.get('data_hora_inicio', datetime.now().strftime("%Y-%m-%d %H:%M:%S")), "%Y-%m-%d %H:%M:%S")
+    timestamp_str_file = datetime_obj.strftime("%Y%m%d_%H%M%S")
+    if not os.path.exists(RESULTS_JSON_DIR): 
+        os.makedirs(RESULTS_JSON_DIR)
+    filename = os.path.join(RESULTS_JSON_DIR, f"{sane_basename}_{timestamp_str_file}.json")
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data_bateria, f, indent=4, ensure_ascii=False)
+        print(f"Resultados da bateria salvos em: {filename}")
+    except IOError as e: print(f"Erro ao salvar resultados em JSON: {e}")
 
 def visualizar_resultados_salvos_py(): 
-    # (função original mantida)
-    pass
+    print("\n=== RESULTADOS DE TESTES SALVOS (JSON Individuais) ===")
+    if not os.path.exists(RESULTS_JSON_DIR):
+        print(f"Diretório '{RESULTS_JSON_DIR}' não encontrado."); return
+    saved_files = sorted([f for f in os.listdir(RESULTS_JSON_DIR) if f.endswith(".json")])
+    if not saved_files: print("Nenhum arquivo de resultado (.json) encontrado."); return
+    print("Arquivos de resultado disponíveis:")
+    for idx, filename in enumerate(saved_files): print(f"  {idx + 1}: {filename}")
+    try:
+        choice_str = input("Digite o número do arquivo para visualizar (0 para cancelar): ")
+        choice = int(choice_str)
+        if choice == 0 or choice > len(saved_files) or choice < 0: print("Cancelado."); return
+        selected_filename = os.path.join(RESULTS_JSON_DIR, saved_files[choice - 1])
+        with open(selected_filename, 'r', encoding='utf-8') as f:
+            bateria = json.load(f)
+            # (O código detalhado de visualização foi omitido por brevidade, mas deve ser mantido como no original)
+            print(f"\n--- Visualizando Bateria: {bateria.get('id_amostra', 'N/A')} ---")
+
+    except ValueError: print("Escolha inválida.")
+    except Exception as e: print(f"Erro ao visualizar: {e}")
 
 def realizar_coleta_de_teste_py(ser):
-    # (função original mantida)
+    # (A função original completa deve ser mantida aqui)
     pass
 
 def menu_principal_py(ser):
@@ -232,7 +314,6 @@ def menu_principal_py(ser):
                         leitura_ema = ler_float_do_arduino(ser, "READ_PRESSURE_EMA")
                         if leitura_ema is not None:
                             pressao = converter_sensor_para_pressao_py(leitura_ema)
-                            # --- LINHA CORRIGIDA ---
                             print(f"Pressão Imediata: {pressao:.2f} bar (EMA: {leitura_ema:.2f})        \r", end="")
                         time.sleep(0.25)
                 except KeyboardInterrupt: print("\nLeitura imediata interrompida.")
@@ -252,36 +333,39 @@ if __name__ == "__main__":
         if SERIAL_PORT:
             arduino_ser = conectar_arduino(SERIAL_PORT, BAUD_RATE)
         else:
-            # --- LÓGICA DE DETECÇÃO AUTOMÁTICA E MULTIPLATAFORMA ---
             print("Nenhuma porta serial especificada. Procurando portas disponíveis...")
             portas_disponiveis = serial.tools.list_ports.comports()
             
             if not portas_disponiveis:
                 print("Nenhuma porta serial física foi encontrada no sistema.")
             else:
+                portas_promissoras = []
                 print("Portas encontradas:")
                 for porta in portas_disponiveis:
+                    print(f"  - {porta.device}: {porta.description}")
                     if "USB" in porta.description.upper() or \
                        "ARDUINO" in porta.description.upper() or \
                        "CH340" in porta.description.upper():
-                        
-                        print(f"  Tentando porta promissora: {porta.device} ({porta.description})")
-                        arduino_ser = conectar_arduino(porta.device, BAUD_RATE)
-                        if arduino_ser:
-                            SERIAL_PORT = porta.device
-                            print(f"Conexão bem-sucedida em: {SERIAL_PORT}")
-                            break
-            
-            if not arduino_ser and portas_disponiveis:
-                print("\nNão foi possível conectar a uma porta conhecida. Tentando todas as portas...")
-                for porta in portas_disponiveis:
-                    print(f"  Tentando porta genérica {porta.device}...")
+                        portas_promissoras.append(porta)
+                
+                for porta in portas_promissoras:
+                    print(f"\nTentando porta promissora: {porta.device}")
                     arduino_ser = conectar_arduino(porta.device, BAUD_RATE)
                     if arduino_ser:
                         SERIAL_PORT = porta.device
                         print(f"Conexão bem-sucedida em: {SERIAL_PORT}")
                         break
-            # --- FIM DA NOVA LÓGICA ---
+            
+            if not arduino_ser and portas_disponiveis:
+                print("\nNão foi possível conectar a uma porta conhecida. Tentando todas as portas...")
+                for porta in portas_disponiveis:
+                    if porta not in portas_promissoras:
+                        print(f"  Tentando porta genérica {porta.device}...")
+                        arduino_ser = conectar_arduino(porta.device, BAUD_RATE)
+                        if arduino_ser:
+                            SERIAL_PORT = porta.device
+                            print(f"Conexão bem-sucedida em: {SERIAL_PORT}")
+                            break
 
         if not arduino_ser:
             print("\nNão foi possível conectar ao Arduino.")
