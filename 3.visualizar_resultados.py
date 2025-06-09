@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 # SCRIPT PARA VISUALIZAÇÃO DE RESULTADOS DE ANÁLISE REOLÓGICA
-# Versão 4.1 - Correção de Gráficos em Branco
+# Versão 4.2 - Correção de Gráficos em Branco
 # -----------------------------------------------------------------------------
 
 import os
@@ -123,51 +123,64 @@ def visualizador_principal():
     adicionar_texto_explicativo(fig2, texto_fig2)
     fig2.tight_layout(rect=[0, 0.05, 1, 0.95])
 
-    # --- GRUPO 2: DASHBOARD CONSOLIDADO ---
-    print("Gerando dashboard consolidado...")
-    fig_dash, axs = plt.subplots(2, 2, figsize=(18, 12), constrained_layout=True)
-    fig_dash.suptitle(f"Dashboard Reológico da Sessão: {os.path.basename(pasta_selecionada)}", fontsize=18)
+# --- GRUPO 2: DASHBOARD DE COMPORTAMENTO DO MATERIAL (NOVO) ---
+    print("Gerando Dashboard 1: Comportamento do Material...")
+    fig_dash1, axs1 = plt.subplots(1, 2, figsize=(16, 7), constrained_layout=True)
+    fig_dash1.suptitle(f"Dashboard Principal: Comportamento do Material\nSessão: {os.path.basename(pasta_selecionada)}", fontsize=16)
 
-    # Plot 1: Curva de Fluxo (Melhor Modelo)
-    axs[0, 0].scatter(gamma_dot_w_an_wr[valid_fit], tau_w_an[valid_fit], c='k', marker='o', label='Dados')
+    # Plot 1.1: Curva de Fluxo (Melhor Modelo)
+    axs1[0].scatter(gamma_dot_w_an_wr[valid_fit], tau_w_an[valid_fit], c='k', marker='o', label='Dados')
     if model_results:
         best_model_params = model_results[best_model_nome]['params']
         best_model_r2 = model_results[best_model_nome]['R2']
         tau_plot_best_model = models[best_model_nome](gd_plot, *best_model_params)
-        axs[0, 0].plot(gd_plot, tau_plot_best_model, color='red', label=f'{best_model_nome} (R²={best_model_r2:.4f})')
-    axs[0, 0].set_title("Curva de Fluxo (Melhor Modelo)"); axs[0, 0].set_xlabel("γ̇w (s⁻¹)"); axs[0, 0].set_ylabel("τw (Pa)")
-    axs[0, 0].legend(); axs[0, 0].grid(True, which="both", ls="--"); axs[0, 0].set_xscale('log'); axs[0, 0].set_yscale('log')
+        axs1[0].plot(gd_plot, tau_plot_best_model, color='red', label=f'{best_model_nome} (R²={best_model_r2:.4f})')
+    axs1[0].set_title("Curva de Fluxo (Melhor Modelo)")
+    axs1[0].set_xlabel("Taxa de Cisalhamento Corrigida (" + r"$\dot{\gamma}_w$, s⁻¹)")
+    axs1[0].set_ylabel("Tensão de Cisalhamento (" + r"$\tau_w$, Pa)")
+    axs1[0].legend(); axs1[0].grid(True, which="both", ls="--"); axs1[0].set_xscale('log'); axs1[0].set_yscale('log')
 
-    # Plot 2: Curva de Viscosidade (Melhor Modelo)
-    axs[0, 1].scatter(gamma_dot_w_an_wr[valid_fit], eta_true_an[valid_fit], c='g', marker='s', label='Dados')
+    # Plot 1.2: Curva de Viscosidade (Melhor Modelo)
+    axs1[1].scatter(gamma_dot_w_an_wr[valid_fit], eta_true_an[valid_fit], c='g', marker='s', label='Dados')
     if model_results:
         eta_plot_best_model = models[best_model_nome](gd_plot, *best_model_params) / gd_plot
-        axs[0, 1].plot(gd_plot, eta_plot_best_model, color='red', label=f'{best_model_nome}')
-    axs[0, 1].set_title("Curva de Viscosidade (Melhor Modelo)"); axs[0, 1].set_xlabel("γ̇w (s⁻¹)"); axs[0, 1].set_ylabel("η (Pa·s)")
-    axs[0, 1].legend(); axs[0, 1].grid(True, which="both", ls="--"); axs[0, 1].set_xscale('log'); axs[0, 1].set_yscale('log')
+        axs1[1].plot(gd_plot, eta_plot_best_model, color='red', label=f'{best_model_nome}')
+    axs1[1].set_title("Curva de Viscosidade (Melhor Modelo)")
+    axs1[1].set_xlabel("Taxa de Cisalhamento Corrigida (" + r"$\dot{\gamma}_w$, s⁻¹)")
+    axs1[1].set_ylabel("Viscosidade Real (" + r"$\eta$, Pa·s)")
+    axs1[1].legend(); axs1[1].grid(True, which="both", ls="--"); axs1[1].set_xscale('log'); axs1[1].set_yscale('log')
 
-    # Plot 3: Gráfico de Resíduos
+
+    # --- GRUPO 3: DASHBOARD DE DIAGNÓSTICO (NOVO) ---
+    print("Gerando Dashboard 2: Diagnóstico da Análise...")
+    fig_dash2, axs2 = plt.subplots(1, 2, figsize=(16, 7), constrained_layout=True)
+    fig_dash2.suptitle(f"Dashboard de Diagnóstico: Qualidade do Ajuste e Correções\nSessão: {os.path.basename(pasta_selecionada)}", fontsize=16)
+
+    # Plot 2.1: Gráfico de Resíduos
     if model_results:
         tau_w_predito = models[best_model_nome](gd_fit, *model_results[best_model_nome]['params'])
         residuos = tau_w_an[valid_fit] - tau_w_predito
-        axs[1, 0].scatter(gd_fit, residuos, c='purple', marker='x')
-    axs[1, 0].axhline(y=0, color='k', linestyle='--')
-    axs[1, 0].set_title("Gráfico de Resíduos"); axs[1, 0].set_xlabel("γ̇w (s⁻¹)"); axs[1, 0].set_ylabel("Resíduo (Pa)")
-    axs[1, 0].set_xscale('log'); axs[1, 0].grid(True)
+        axs2[0].scatter(gd_fit, residuos, c='purple', marker='x')
+    axs2[0].axhline(y=0, color='k', linestyle='--')
+    axs2[0].set_title("Gráfico de Resíduos do Melhor Modelo")
+    axs2[0].set_xlabel("Taxa de Cisalhamento Corrigida (" + r"$\dot{\gamma}_w$, s⁻¹)")
+    axs2[0].set_ylabel("Resíduo (τ_exp - τ_mod) [Pa]")
+    axs2[0].set_xscale('log'); axs2[0].grid(True)
     
-    # Plot 4: Comparativo de Viscosidades (se dados disponíveis)
-    eta_a_an_valid = df_res['ηa (Pa·s)'].dropna()
-    gamma_dot_aw_an_valid = df_res['γ̇aw (s⁻¹)'][eta_a_an_valid.index]
-    if not eta_a_an_valid.empty:
-        axs[1, 1].plot(gamma_dot_aw_an_valid, eta_a_an_valid, label=r'Aparente ($\eta_a$)', marker='o', linestyle='--')
-        axs[1, 1].plot(gamma_dot_w_an_wr[valid_fit], eta_true_an[valid_fit], label=r'Real ($\eta$)', marker='s', linestyle='-')
-        axs[1, 1].set_title("Comparativo de Viscosidades"); axs[1, 1].set_xlabel("γ̇ (s⁻¹)"); axs[1, 1].set_ylabel("Viscosidade (Pa·s)")
-        axs[1, 1].legend(); axs[1, 1].grid(True, which="both", ls="--"); axs[1, 1].set_xscale('log'); axs[1, 1].set_yscale('log')
+    # Plot 2.2: Comparativo de Viscosidades
+    valid_apparent_idx = ~np.isnan(df_res['ηa (Pa·s)'].values)
+    if np.any(valid_apparent_idx):
+        axs2[1].plot(df_res['γ̇aw (s⁻¹)'][valid_apparent_idx], df_res['ηa (Pa·s)'][valid_apparent_idx], label=r'Aparente ($\eta_a$)', marker='o', linestyle='--')
+        axs2[1].plot(df_res['γ̇w (s⁻¹)'][valid_fit], df_res['η (Pa·s)'][valid_fit], label=r'Real ($\eta$)', marker='s', linestyle='-')
+        axs2[1].set_title("Comparativo de Viscosidades")
+        axs2[1].set_xlabel("Taxa de Cisalhamento (" + r"$\dot{\gamma}$, s⁻¹)")
+        axs2[1].set_ylabel("Viscosidade (" + r"$\eta$, Pa·s)")
+        axs2[1].legend(); axs2[1].grid(True, which="both", ls="--"); axs2[1].set_xscale('log'); axs2[1].set_yscale('log')
     else:
-        axs[1, 1].text(0.5, 0.5, 'Dados de Viscosidade Aparente\n não disponíveis para este plot.', ha='center', va='center')
-        axs[1, 1].set_title("Comparativo de Viscosidades")
+        axs2[1].text(0.5, 0.5, 'Dados de Viscosidade Aparente\n não disponíveis para este plot.', ha='center', va='center')
+        axs2[1].set_title("Comparativo de Viscosidades")
+        axs2[1].set_xticks([]); axs2[1].set_yticks([])
 
-    # fig_dash.tight_layout(rect=[0, 0, 1, 0.96])
     
     print("\nVisualização pronta. Feche as janelas dos gráficos para encerrar.")
     plt.show()
