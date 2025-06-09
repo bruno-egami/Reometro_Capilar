@@ -24,9 +24,19 @@ from scipy.interpolate import interp1d
 main_output_base_folder = "resultados_analise_reologica"
 calibrations_folder = "correcoes_bagley_mooney" 
 
+# ---- MODIFICAÇÃO: Solicita um nome para a pasta de resultados ----
+while True:
+    folder_prefix = input("\nDigite um prefixo para o nome da pasta de resultados (ex: LOTE_ABC_AMOSTRA_1): ").strip()
+    if folder_prefix:
+        break
+    else:
+        print("ERRO: O prefixo não pode ser vazio. Por favor, insira um identificador para a análise.")
+
 # Cria as pastas se elas não existirem
 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_folder = os.path.join(main_output_base_folder, timestamp_str)
+# ---- MODIFICAÇÃO: Combina o prefixo com o timestamp ----
+output_folder_name = f"{folder_prefix}_{timestamp_str}"
+output_folder = os.path.join(main_output_base_folder, output_folder_name)
 
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
@@ -1274,33 +1284,33 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
     gd_plot = np.geomspace(min_gp, max_gp, 200) if max_gp > min_gp else np.array([min_gp, min_gp*10])
 
     # --- Gráfico 1: Curva de Fluxo (com destaque) ---
-fig1,ax1=plt.subplots(figsize=(10,7))
-ax1.scatter(gamma_dot_w_an_wr[valid_fit],tau_w_an[valid_fit],label='Dados Experimentais Processados',c='k',marker='o',s=60,zorder=10)
-if len(gd_plot)>0:
-    for n_model_name,d_model_data in model_results.items():
-        try:
-            tau_plot_model = models[n_model_name](gd_plot,*d_model_data['params'])
-            
-            # --- LÓGICA DE DESTAQUE ADICIONADA ---
-            if n_model_name == best_model_nome:
-                # Plota a linha do melhor modelo com destaque (mais grossa, vermelha e na frente)
-                ax1.plot(gd_plot, tau_plot_model, 
-                         label=fr'**Melhor Modelo: {n_model_name}** (R²={d_model_data["R2"]:.4f})', 
-                         linewidth=3.5, linestyle='--', color='red', zorder=20)
-            else:
-                # Plota as outras linhas de forma mais sutil
-                ax1.plot(gd_plot, tau_plot_model, 
-                         label=fr'Modelo {n_model_name} (R²={d_model_data["R2"]:.4f})', 
-                         linewidth=2, alpha=0.6)
-        except Exception as e_plot_model:
-            print(f"  Aviso ao plotar modelo {n_model_name}: {e_plot_model}")
-    ax1.set_xlabel("Taxa de Cisalhamento Corrigida (" + r"$\dot{\gamma}_w$" + ", s⁻¹)")
-    ax1.set_ylabel("Tensão de Cisalhamento na Parede Corrigida (" + r"$\tau_w$" + ", Pa)")
-    ax1.set_title("Curva de Fluxo: Tensão de Cisalhamento vs. Taxa de Cisalhamento")
-    ax1.legend(); ax1.grid(True,which="both",ls="--"); ax1.set_xscale('log'); ax1.set_yscale('log'); fig1.tight_layout()
-    f1_name = os.path.join(output_folder,f"{timestamp_str}_curva_fluxo.png"); arquivos_gerados_lista.append(os.path.basename(f1_name))
-    try: fig1.savefig(f1_name,dpi=300); print(f"Gráfico Curva Fluxo salvo: {f1_name}")
-    except Exception as e: print(f"ERRO ao salvar Curva Fluxo: {e}")
+    fig1,ax1=plt.subplots(figsize=(10,7))
+    ax1.scatter(gamma_dot_w_an_wr[valid_fit],tau_w_an[valid_fit],label='Dados Experimentais Processados',c='k',marker='o',s=60,zorder=10)
+    if len(gd_plot)>0:
+        for n_model_name,d_model_data in model_results.items():
+            try:
+                tau_plot_model = models[n_model_name](gd_plot,*d_model_data['params'])
+                
+                # --- LÓGICA DE DESTAQUE ADICIONADA ---
+                if n_model_name == best_model_nome:
+                    # Plota a linha do melhor modelo com destaque (mais grossa, vermelha e na frente)
+                    ax1.plot(gd_plot, tau_plot_model, 
+                             label=fr'**Melhor Modelo: {n_model_name}** (R²={d_model_data["R2"]:.4f})', 
+                             linewidth=3.5, linestyle='--', color='red', zorder=20)
+                else:
+                    # Plota as outras linhas de forma mais sutil
+                    ax1.plot(gd_plot, tau_plot_model, 
+                             label=fr'Modelo {n_model_name} (R²={d_model_data["R2"]:.4f})', 
+                             linewidth=2, alpha=0.6)
+            except Exception as e_plot_model:
+                print(f"  Aviso ao plotar modelo {n_model_name}: {e_plot_model}")
+        ax1.set_xlabel("Taxa de Cisalhamento Corrigida (" + r"$\dot{\gamma}_w$" + ", s⁻¹)")
+        ax1.set_ylabel("Tensão de Cisalhamento na Parede Corrigida (" + r"$\tau_w$" + ", Pa)")
+        ax1.set_title("Curva de Fluxo: Tensão de Cisalhamento vs. Taxa de Cisalhamento")
+        ax1.legend(); ax1.grid(True,which="both",ls="--"); ax1.set_xscale('log'); ax1.set_yscale('log'); fig1.tight_layout()
+        f1_name = os.path.join(output_folder,f"{timestamp_str}_curva_fluxo.png"); arquivos_gerados_lista.append(os.path.basename(f1_name))
+        try: fig1.savefig(f1_name,dpi=300); print(f"Gráfico Curva Fluxo salvo: {f1_name}")
+        except Exception as e: print(f"ERRO ao salvar Curva Fluxo: {e}")
 
     # --- Gráfico 2: Determinação de n' ---
     if num_testes_para_analise > 1 and 'n_prime' in locals() and not np.isclose(n_prime, 1.0, atol=0.001) and 'log_K_prime' in locals() and not np.isnan(log_K_prime):
@@ -1412,4 +1422,3 @@ gerar_relatorio_texto(
 )
 
 print("\n"+"="*70+"\n--- FIM DA ANÁLISE ---\n"+"="*70)
-
