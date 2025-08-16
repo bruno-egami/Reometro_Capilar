@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # SCRIPT PARA ANÁLISE REOLÓGICA DE PASTAS EM REÔMETRO CAPILAR
 # (Versão com CSV, JSON, Bagley & Plots, Mooney & Plots, Casson, Relatório TXT)
-# --- VERSÃO MODIFICADA COM SALVAMENTO E APLICAÇÃO DE CALIBRAÇÕES ---
+# --- VERSÃO MODIFICADA COM SALVAMENTO, APLICAÇÃO DE CALIBRAÇÕES E TEMPO VARIÁVEL ---
 # -----------------------------------------------------------------------------
 
 # 1. Importação de Bibliotecas
@@ -75,43 +75,65 @@ def format_float_for_table(value, decimal_places=4):
              return f"{value:.{max(1,decimal_places)}g}"
         return f"{value:.{decimal_places}f}"
     return str(value)
-# --- FUNÇÃO PARA LER DADOS JSON ---
+
+# --- FUNÇÃO PARA LER DADOS JSON (MODIFICADA PARA TEMPO VARIÁVEL) ---
 def ler_dados_json(json_filepath):
-    """Lê os dados de um único arquivo JSON, validando a presença de campos essenciais."""
+    """Lê dados de um arquivo JSON, suportando duração fixa ('duracao_por_teste_s') ou variável ('duracao_real_s')."""
     try:
         with open(json_filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        # Extrai os parâmetros globais e a geometria do arquivo
+
+        # Parâmetros essenciais (exceto tempo)
         json_rho_g_cm3 = data.get('densidade_pasta_g_cm3')
-        json_t_ext_s = data.get('duracao_por_teste_s')
         D_mm = data.get('diametro_capilar_mm')
         L_mm = data.get('comprimento_capilar_mm')
-        if D_mm is None or L_mm is None or json_rho_g_cm3 is None or json_t_ext_s is None:
-            print(f"ERRO JSON: Faltam dados essenciais (diametro_capilar_mm, comprimento_capilar_mm, densidade_pasta_g_cm3, duracao_por_teste_s) em '{os.path.basename(json_filepath)}'")
+        if D_mm is None or L_mm is None or json_rho_g_cm3 is None:
+            print(f"ERRO JSON: Faltam dados essenciais (diametro_capilar_mm, comprimento_capilar_mm, densidade_pasta_g_cm3) em '{os.path.basename(json_filepath)}'")
             return None
+
+        # Parâmetro de tempo (opcional global)
+        json_t_ext_s = data.get('duracao_por_teste_s')
+
+        # Extrai listas de pressão, massa e duração (se variável)
+        pressoes_bar_list, massas_g_list, duracoes_s_list = [], [], []
         
-        # Extrai as listas de pressão e massa de cada teste
-        pressoes_bar_list = []
-        massas_g_list = []
         if 'testes' in data and isinstance(data['testes'], list):
-            for teste in data['testes']:
+            for i, teste in enumerate(data['testes']):
                 p = teste.get('media_pressao_final_ponto_bar')
                 m = teste.get('massa_g_registrada')
-                if p is not None and m is not None:
-                    pressoes_bar_list.append(float(p))
-                    massas_g_list.append(float(m))
-                else:
-                    print(f"ALERTA JSON: Teste em '{os.path.basename(json_filepath)}' sem 'media_pressao_final_ponto_bar' ou 'massa_g_registrada'. Pulando teste.")
+                t_real = teste.get('duracao_real_s')
+
+                if p is None or m is None:
+                    print(f"ALERTA JSON: Teste {i+1} em '{os.path.basename(json_filepath)}' sem 'media_pressao_final_ponto_bar' ou 'massa_g_registrada'. Pulando.")
+                    continue
+                
+                # Se não há tempo global, o tempo individual é obrigatório
+                if json_t_ext_s is None and t_real is None:
+                    print(f"ERRO JSON: Duração não encontrada para o Teste {i+1}. Forneça 'duracao_por_teste_s' (global) ou 'duracao_real_s' (em cada teste).")
+                    return None
+                
+                pressoes_bar_list.append(float(p))
+                massas_g_list.append(float(m))
+                if t_real is not None:
+                    duracoes_s_list.append(float(t_real))
         
-        # Retorna um dicionário com todos os dados lidos
+        # Se não há tempo global e a lista de tempos individuais não foi preenchida (mas deveria ter sido), é um erro.
+        if json_t_ext_s is None and len(duracoes_s_list) != len(pressoes_bar_list):
+             print(f"ERRO JSON: Inconsistência nos dados de duração variável em '{os.path.basename(json_filepath)}'")
+             return None
+
         return {
             'D_mm': float(D_mm), 'L_mm': float(L_mm),
-            'rho_g_cm3_json': float(json_rho_g_cm3), 't_ext_s_json': float(json_t_ext_s),
-            'pressoes_bar_list': pressoes_bar_list, 'massas_g_list': massas_g_list
+            'rho_g_cm3_json': float(json_rho_g_cm3),
+            't_ext_s_json': float(json_t_ext_s) if json_t_ext_s is not None else None,
+            'pressoes_bar_list': pressoes_bar_list,
+            'massas_g_list': massas_g_list,
+            'duracoes_s_list': duracoes_s_list
         }
     except FileNotFoundError: print(f"ERRO: Arquivo JSON não encontrado '{json_filepath}'."); return None
     except json.JSONDecodeError: print(f"ERRO: Falha ao decodificar o arquivo JSON '{json_filepath}'. Verifique o formato."); return None
     except Exception as e: print(f"ERRO ao ler ou processar o arquivo JSON '{json_filepath}': {e}"); return None
+
 
 # --- FUNÇÕES PARA LISTAR E SELECIONAR ARQUIVO JSON ---
 def listar_arquivos_json_numerados(pasta_json):
@@ -445,7 +467,7 @@ def perform_mooney_correction(capilares_data, common_L_mm, rho_si, t_ext_si, out
     print("--- Correção de Mooney (Deslizamento) Concluída com Sucesso ---")
     return np.array(gamma_dot_s_final), np.array(tau_w_final)
 
-def gerar_relatorio_texto(timestamp_str_report, rho_g_cm3, t_ext_s,
+def gerar_relatorio_texto(timestamp_str_report, rho_g_cm3, tempo_extrusao_info,
                           metodo_entrada_rel, json_files_usados_rel, csv_path_rel,
                           realizar_bagley, D_bagley_mm, capilares_bagley_info,
                           realizar_mooney, L_mooney_mm, capilares_mooney_D_info,
@@ -463,7 +485,12 @@ def gerar_relatorio_texto(timestamp_str_report, rho_g_cm3, t_ext_s,
             f.write(f"Pasta de Saída: {output_folder}\n")
             f.write("\n--- PARÂMETROS GLOBAIS DO ENSAIO ---\n")
             f.write(f"Densidade da Pasta: {rho_g_cm3:.3f} g/cm³\n")
-            f.write(f"Tempo de Extrusão Fixo: {t_ext_s:.2f} s\n")
+            # MODIFICADO: Exibe informação de tempo fixo ou variável
+            if isinstance(tempo_extrusao_info, str):
+                 f.write(f"Tempo de Extrusão: {tempo_extrusao_info}\n")
+            else:
+                 f.write(f"Tempo de Extrusão Fixo: {tempo_extrusao_info:.2f} s\n")
+
             if fator_calibracao != 1.0:
                  f.write(f"Fator de Calibração Empírico Aplicado: {fator_calibracao:.4f}\n")
 
@@ -550,7 +577,7 @@ while not dados_confirmados:
     D_cap_mm_unico_val, L_cap_mm_unico_val = 0.0, 0.0
     capilares_bagley_data_input, capilares_mooney_data_input = [], []
     bagley_capilares_L_mm_info, mooney_capilares_D_mm_info = [], []
-    pressoes_bar_display_tab, massas_g_display_tab = [], []
+    pressoes_bar_display_tab, massas_g_display_tab, tempos_s_display_tab = [], [], []
     _json_files_resumo = []
     num_testes_para_analise = 0
     _D_cap_mm_bagley_comum_val_resumo, _L_cap_mm_mooney_comum_val_resumo = "N/A", "N/A"
@@ -584,13 +611,23 @@ while not dados_confirmados:
         _json_files_resumo.append(json_filename_unico)
 
         rho_pasta_g_cm3_fixo = json_data['rho_g_cm3_json']
-        tempo_extrusao_fixo_s_val = json_data['t_ext_s_json']
         D_cap_mm_unico_val = json_data['D_mm']
         L_cap_mm_unico_val = json_data['L_mm']
 
-        if rho_pasta_g_cm3_fixo <= 0 or tempo_extrusao_fixo_s_val <= 0 or \
-           D_cap_mm_unico_val <= 0 or L_cap_mm_unico_val <= 0:
-            print(f"ERRO JSON Único: Valores inválidos (rho, t_ext, D ou L <= 0) em '{json_filename_unico}'."); continue
+        # Lógica para carregar tempo fixo ou variável
+        if json_data['t_ext_s_json'] is not None:
+            tempo_extrusao_fixo_s_val = json_data['t_ext_s_json']
+            print(f"  Dados de tempo: Encontrado tempo de extrusão FIXO de {tempo_extrusao_fixo_s_val:.2f} s no JSON.")
+        elif json_data['duracoes_s_list']:
+            tempos_s_display_tab = json_data['duracoes_s_list']
+            # Para fins de relatório e compatibilidade, definimos um valor médio
+            tempo_extrusao_fixo_s_val = np.mean(tempos_s_display_tab)
+            print(f"  Dados de tempo: Encontrados tempos de extrusão VARIÁVEIS no JSON (média: {tempo_extrusao_fixo_s_val:.2f} s).")
+        else:
+            print(f"ERRO: Não foi possível carregar os dados de tempo do arquivo JSON '{json_filename_unico}'."); continue
+
+        if rho_pasta_g_cm3_fixo <= 0 or D_cap_mm_unico_val <= 0 or L_cap_mm_unico_val <= 0:
+            print(f"ERRO JSON Único: Valores inválidos (rho, D ou L <= 0) em '{json_filename_unico}'."); continue
 
         rho_pasta_si = rho_pasta_g_cm3_fixo * 1000
         _D_cap_mm_unico_val_resumo = f"{D_cap_mm_unico_val:.3f}"
@@ -604,13 +641,17 @@ while not dados_confirmados:
              print(f"ERRO JSON Único: Dados de P/M inválidos, vazios ou com tamanhos diferentes em '{json_filename_unico}'."); continue
 
         num_testes_para_analise = len(pressoes_bar_display_tab)
-        print(f"Dados de '{json_filename_unico}' carregados e definidos como globais:\n"
-              f"  Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Tempo Ext.: {tempo_extrusao_fixo_s_val:.2f} s\n"
-              f"  Diâmetro: {D_cap_mm_unico_val:.3f} mm, Comprimento: {L_cap_mm_unico_val:.2f} mm")
+        # Se os tempos não foram preenchidos (caso de tempo fixo), preenche agora
+        if not tempos_s_display_tab:
+            tempos_s_display_tab = [tempo_extrusao_fixo_s_val] * num_testes_para_analise
 
-    # CASO B: JSON com Correções de Bagley e/ou Mooney
+        print(f"Dados de '{json_filename_unico}' carregados e definidos como globais:\n"
+              f"  Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Diâmetro: {D_cap_mm_unico_val:.3f} mm, Comprimento: {L_cap_mm_unico_val:.2f} mm")
+
+    # CASO B: JSON com Correções de Bagley e/ou Mooney (ainda usa tempo fixo)
     elif metodo_entrada == "3" and (realizar_bagley or realizar_mooney):
         print("\n--- Entrada JSON com Correções (Bagley/Mooney) ---")
+        print("AVISO: Esta modalidade ainda requer um tempo de extrusão fixo ('duracao_por_teste_s') nos arquivos JSON.")
         if not os.path.exists(json_base_path):
             print(f"ERRO: Pasta '{json_base_path}' não encontrada."); continue
 
@@ -629,7 +670,9 @@ while not dados_confirmados:
                 json_filename = selecionar_arquivo_json(json_base_path, f"Escolha o JSON para capilar Bagley {i+1}")
                 if not json_filename: erro_na_leitura = True; break
                 json_data = ler_dados_json(os.path.join(json_base_path, json_filename))
-                if not json_data: erro_na_leitura = True; break
+                if not json_data or json_data.get('t_ext_s_json') is None: 
+                    print(f"ERRO: O arquivo '{json_filename}' não contém a chave 'duracao_por_teste_s' necessária para esta análise.")
+                    erro_na_leitura = True; break
                 _json_files_resumo.append(json_filename)
 
                 if not params_globais_definidos:
@@ -653,9 +696,7 @@ while not dados_confirmados:
                 capilares_bagley_data_input.append({'L_mm': L_i_mm, 'L_m': L_i_mm/1000.0, 'D_mm': D_cap_mm_bagley_comum_val,
                                                   'pressoes_Pa': np.array(p_bar_cap_i)*1e5, 'massas_kg': np.array(m_g_cap_i)/1000.0})
         
-        # Ponto de checagem: se erro ocorreu no laço do Bagley, reinicia o laço principal
-        if erro_na_leitura:
-            continue
+        if erro_na_leitura: continue
 
         if realizar_mooney:
             print("\n--- Configuração JSON para Mooney ---")
@@ -669,7 +710,9 @@ while not dados_confirmados:
                 json_filename = selecionar_arquivo_json(json_base_path, f"Escolha o JSON para capilar Mooney {i+1}")
                 if not json_filename: erro_na_leitura = True; break
                 json_data = ler_dados_json(os.path.join(json_base_path, json_filename))
-                if not json_data: erro_na_leitura = True; break
+                if not json_data or json_data.get('t_ext_s_json') is None: 
+                    print(f"ERRO: O arquivo '{json_filename}' não contém a chave 'duracao_por_teste_s' necessária para esta análise.")
+                    erro_na_leitura = True; break
                 _json_files_resumo.append(json_filename)
 
                 if not params_globais_definidos:
@@ -698,11 +741,9 @@ while not dados_confirmados:
                 capilares_mooney_data_input.append({'D_mm': D_i_mm, 'L_mm': L_cap_mm_mooney_comum_val, 'L_m': L_cap_mm_mooney_comum_val/1000.0,
                                                    'pressoes_Pa': np.array(p_bar_cap_i)*1e5, 'massas_kg': np.array(m_g_cap_i)/1000.0})
         
-        # Ponto de checagem: se erro ocorreu no laço do Mooney, reinicia o laço principal
-        if erro_na_leitura:
-            continue
+        if erro_na_leitura: continue
 
-    # CASO C: Manual ou CSV
+    # CASO C: Manual ou CSV (tempo sempre fixo)
     else:
         print("\n--- Dados Fixos Globais da Pasta e Ensaio ---")
         rho_pasta_g_cm3_fixo = input_float_com_virgula("Densidade da pasta (rho) em [g/cm³]: ")
@@ -797,6 +838,7 @@ while not dados_confirmados:
                     temp_pressoes_bar.append(p); temp_massas_g.append(m)
                 if not all_unico_manual_ok : continue
                 pressoes_bar_display_tab, massas_g_display_tab = temp_pressoes_bar, temp_massas_g
+                tempos_s_display_tab = [tempo_extrusao_fixo_s_val] * num_testes_para_analise
 
         elif metodo_entrada == "2": # CSV
             print("\n--- Carregando Dados de Arquivo CSV ---")
@@ -858,6 +900,7 @@ while not dados_confirmados:
                     pressoes_bar_display_tab = df_csv['pressao_bar'].astype(float).tolist()
                     massas_g_display_tab = df_csv['massa_g'].astype(float).tolist()
                     num_testes_para_analise = len(pressoes_bar_display_tab)
+                    tempos_s_display_tab = [tempo_extrusao_fixo_s_val] * num_testes_para_analise
                     if num_testes_para_analise == 0: print("ERRO CSV: Capilar único sem dados P/m."); continue
                 print("Dados carregados do CSV com sucesso.")
             except FileNotFoundError: print(f"ERRO: CSV não encontrado '{csv_path}'. Tente novamente."); continue
@@ -871,7 +914,14 @@ while not dados_confirmados:
         continue
 
     print(f"Densidade da Pasta: {rho_pasta_g_cm3_fixo:.3f} g/cm³")
-    print(f"Tempo de Extrusão Fixo: {tempo_extrusao_fixo_s_val:.2f} s")
+    
+    # MODIFICADO: Lógica para exibir tempo fixo ou variável
+    is_variable_time = len(tempos_s_display_tab) > 1 and len(set(tempos_s_display_tab)) > 1
+    if is_variable_time:
+        print(f"Tempo de Extrusão: Variável (média: {np.mean(tempos_s_display_tab):.2f} s)")
+    else:
+        print(f"Tempo de Extrusão Fixo: {tempo_extrusao_fixo_s_val:.2f} s")
+
     if fator_calibracao_empirico != 1.0:
         print(f"Fator de Calibração Empírico a ser aplicado: {fator_calibracao_empirico:.4f}")
 
@@ -915,20 +965,18 @@ while not dados_confirmados:
         print("\nAnálise com Capilar Único:")
         print(f"  Diâmetro do Capilar: {_D_cap_mm_unico_val_resumo} mm")
         print(f"  Comprimento do Capilar: {_L_cap_mm_unico_val_resumo} mm")
-        num_testes_exibir = 0
-        if metodo_entrada == '1': num_testes_exibir = num_testes_unico_manual
-        elif metodo_entrada == '2' or metodo_entrada == '3': num_testes_exibir = num_testes_para_analise
+        num_testes_exibir = num_testes_para_analise
 
-        if num_testes_exibir > 0: print(f"  Número de Testes (P,m): {num_testes_exibir}")
-        if pressoes_bar_display_tab and massas_g_display_tab and \
-           len(pressoes_bar_display_tab) == len(massas_g_display_tab) and \
-           len(pressoes_bar_display_tab) > 0:
-            print("  Dados dos Testes (Pressão [bar] | Massa [g]):")
+        if num_testes_exibir > 0: print(f"  Número de Testes (P,m,t): {num_testes_exibir}")
+        if pressoes_bar_display_tab and massas_g_display_tab and tempos_s_display_tab and \
+           len(pressoes_bar_display_tab) == len(massas_g_display_tab) == len(tempos_s_display_tab) > 0:
+            print("  Dados dos Testes (Pressão [bar] | Massa [g] | Duração [s]):")
             for i in range(len(pressoes_bar_display_tab)):
-                p_val, m_val = pressoes_bar_display_tab[i], massas_g_display_tab[i]
+                p_val, m_val, t_val = pressoes_bar_display_tab[i], massas_g_display_tab[i], tempos_s_display_tab[i]
                 p_d = f"{p_val:.2f}" if isinstance(p_val,(int,float)) else str(p_val)
                 m_d = f"{m_val:.2f}" if isinstance(m_val,(int,float)) else str(m_val)
-                print(f"    - Teste {i+1}: {p_d} bar | {m_d} g")
+                t_d = f"{t_val:.2f}" if isinstance(t_val,(int,float)) else str(t_val)
+                print(f"    - Teste {i+1}: {p_d} bar | {m_d} g | {t_d} s")
 
     print("="* (50 + len(" RESUMO DOS DADOS INSERIDOS PARA CONFIRMAÇÃO ")))
     if input_sim_nao("\nDados corretos para prosseguir? (s/n): "):
@@ -952,10 +1000,12 @@ if not realizar_bagley and not realizar_mooney:
     if num_testes_para_analise > 0:
         p_Pa = np.array(pressoes_bar_display_tab)*1e5
         m_kg = np.array(massas_g_display_tab)/1000
-        t_s = np.full(num_testes_para_analise, tempo_extrusao_fixo_s_val) 
+        # MODIFICADO: t_s agora é um array com os tempos de cada teste
+        t_s = np.array(tempos_s_display_tab) 
         R_cap_si, L_cap_m = (D_cap_mm_unico_val/2000), L_cap_mm_unico_val/1000
         
         vol_m3 = m_kg/rho_pasta_si
+        # MODIFICADO: Cálculo de vazão agora é elemento a elemento
         Q_m3_s = vol_m3/t_s
         
         if L_cap_m > 0 and R_cap_si > 0:
@@ -1031,10 +1081,30 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0:
     valid_an_idx = (gamma_dot_aw_an != 0) & (~np.isnan(gamma_dot_aw_an)) & (~np.isnan(tau_w_an))
     if np.any(valid_an_idx): eta_a_an[valid_an_idx] = tau_w_an[valid_an_idx] / gamma_dot_aw_an[valid_an_idx]
     
-    # ... (código de ordenação dos dados mantido)
+    # Ordena os dados para a correção W-R e para os plots
+    sort_indices = np.argsort(gamma_dot_aw_an)
+    tau_w_an, gamma_dot_aw_an, eta_a_an = tau_w_an[sort_indices], gamma_dot_aw_an[sort_indices], eta_a_an[sort_indices]
+    
+    # Reordena os dados brutos para manter a consistência na tabela final
+    if not (realizar_bagley or realizar_mooney):
+        pressoes_bar_display_tab = np.array(pressoes_bar_display_tab)[sort_indices].tolist()
+        massas_g_display_tab = np.array(massas_g_display_tab)[sort_indices].tolist()
+        tempos_s_display_tab = np.array(tempos_s_display_tab)[sort_indices].tolist()
 
-    n_prime, K_prime = 1.0, 1.0
-    # ... (código de cálculo de n' e K' mantido)
+
+    # Calcula n' (índice da lei de potência aparente) para a correção de Weissenberg-Rabinowitsch
+    n_prime, log_K_prime, K_prime = np.nan, np.nan, np.nan
+    valid_for_n_prime = (tau_w_an > 0) & (gamma_dot_aw_an > 0) & (~np.isnan(tau_w_an)) & (~np.isnan(gamma_dot_aw_an))
+    if np.sum(valid_for_n_prime) > 1:
+        log_tau = np.log(tau_w_an[valid_for_n_prime])
+        log_gamma = np.log(gamma_dot_aw_an[valid_for_n_prime])
+        try:
+            n_prime, log_K_prime, _, _, _ = linregress(log_gamma, log_tau)
+            if not np.isnan(log_K_prime):
+                 K_prime = np.exp(log_K_prime)
+        except ValueError:
+            print("AVISO (W-R): Falha ao calcular n' por regressão linear. Usando n'=1.")
+            n_prime = 1.0
 
     n_corr = n_prime if (n_prime != 0 and not np.isnan(n_prime)) else 1.0
     
@@ -1185,35 +1255,35 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_
                 print(f"\nResumo salvo: {csv_sum_f}")
         except Exception as e: print(f"\nERRO CSV Resumo: {e}")
 
-# Salva os parâmetros de TODOS os modelos ajustados em um arquivo JSON
-if model_results:
-    results_to_save = {}
-    # Salva os parâmetros de TODOS os modelos ajustados
-    for name, data in model_results.items():
-        results_to_save[name] = {
-            'params': data['params'].tolist(),
-            'R2': data['R2']
+    # Salva os parâmetros de TODOS os modelos ajustados em um arquivo JSON
+    if model_results:
+        results_to_save = {}
+        # Salva os parâmetros de TODOS os modelos ajustados
+        for name, data in model_results.items():
+            results_to_save[name] = {
+                'params': data['params'].tolist(),
+                'R2': data['R2']
+            }
+        
+        # ADIÇÃO: Salva também os parâmetros n' e log_K_prime
+        parametros_wr = {
+            'n_prime': n_prime if 'n_prime' in locals() else None,
+            'log_K_prime': log_K_prime if 'log_K_prime' in locals() else None
         }
-    
-    # ADIÇÃO: Salva também os parâmetros n' e log_K_prime
-    parametros_wr = {
-        'n_prime': n_prime if 'n_prime' in locals() else None,
-        'log_K_prime': log_K_prime if 'log_K_prime' in locals() else None
-    }
-    
-    dados_completos_para_salvar = {
-        "modelos_ajustados": results_to_save,
-        "parametros_wr": parametros_wr
-    }
-    
-    json_models_f = os.path.join(output_folder, f"{timestamp_str}_parametros_modelos.json")
-    arquivos_gerados_lista.append(os.path.basename(json_models_f))
-    try:
-        with open(json_models_f, 'w', encoding='utf-8') as f:
-            json.dump(dados_completos_para_salvar, f, indent=4)
-        print(f"Parâmetros dos modelos salvos em: {json_models_f}")
-    except Exception as e:
-        print(f"ERRO ao salvar parâmetros dos modelos: {e}")
+        
+        dados_completos_para_salvar = {
+            "modelos_ajustados": results_to_save,
+            "parametros_wr": parametros_wr
+        }
+        
+        json_models_f = os.path.join(output_folder, f"{timestamp_str}_parametros_modelos.json")
+        arquivos_gerados_lista.append(os.path.basename(json_models_f))
+        try:
+            with open(json_models_f, 'w', encoding='utf-8') as f:
+                json.dump(dados_completos_para_salvar, f, indent=4)
+            print(f"Parâmetros dos modelos salvos em: {json_models_f}")
+        except Exception as e:
+            print(f"ERRO ao salvar parâmetros dos modelos: {e}")
 
 
     print("\n\n"+"="*70+"\n--- TABELAS DE RESULTADOS --- \n"+"="*70)
@@ -1234,13 +1304,17 @@ if model_results:
         pressoes_bar_display_tab = [np.nan] * num_testes_para_analise
     if len(massas_g_display_tab) != num_testes_para_analise:
         massas_g_display_tab = [np.nan] * num_testes_para_analise
+    if len(tempos_s_display_tab) != num_testes_para_analise:
+        tempos_s_display_tab = [np.nan] * num_testes_para_analise
 
     D_cap_mm_display = f"{D_cap_mm_unico_val:.3f}" if not (realizar_bagley or realizar_mooney) else "Vários"
     L_cap_mm_display = f"{L_cap_mm_unico_val:.2f}" if not (realizar_bagley or realizar_mooney) else "Vários"
 
     df_res = pd.DataFrame({
         "Ponto": list(range(1,num_testes_para_analise+1)), "D_cap(mm)": [D_cap_mm_display]*num_testes_para_analise, "L_cap(mm)": [L_cap_mm_display]*num_testes_para_analise,
-        "rho(g/cm³)": np.full(num_testes_para_analise,rho_pasta_g_cm3_fixo), "t_ext(s)": np.full(num_testes_para_analise,tempo_extrusao_fixo_s_val), "P_ext(bar)": pressoes_bar_display_tab,
+        "rho(g/cm³)": np.full(num_testes_para_analise,rho_pasta_g_cm3_fixo), 
+        "t_ext(s)": tempos_s_display_tab, # MODIFICADO: Usa a lista de tempos
+        "P_ext(bar)": pressoes_bar_display_tab,
         "M_ext(g)": massas_g_display_tab, "Q_calc(mm³/s)": q_calc_mm3_s, "τw (Pa)": tau_w_an,
         "γ̇aw (s⁻¹)": gamma_dot_aw_an, "ηa (Pa·s)": eta_a_an,
         "γ̇w (s⁻¹)": gamma_dot_w_an_wr, "η (Pa·s)": eta_true_an })
@@ -1257,7 +1331,7 @@ if model_results:
         df_res.to_csv(csv_f,index=False,sep=';',decimal=',',float_format='%.4f',na_rep='N/A_Corr', encoding='utf-8-sig')
         print(f"\nTabela salva: {csv_f}")
     except Exception as e: print(f"\nERRO CSV: {e}")
-
+        
     if realizar_bagley and capilares_bagley_data_input:
         print("\n--- Gerando CSV de Dados Brutos Bagley ---")
         # ... (código original para criar e salvar a tabela de dados brutos de Bagley)
@@ -1396,10 +1470,13 @@ metodo_entrada_str_relatorio = "Manual"
 if metodo_entrada == "2": metodo_entrada_str_relatorio = "Arquivo CSV"
 elif metodo_entrada == "3": metodo_entrada_str_relatorio = "Arquivo(s) JSON"
 
+# MODIFICADO: Passa a informação correta sobre o tempo para o relatório
+tempo_info_relatorio = "Variável (ver tabela)" if (len(tempos_s_display_tab) > 1 and len(set(tempos_s_display_tab)) > 1) else (tempo_extrusao_fixo_s_val if 'tempo_extrusao_fixo_s_val' in locals() and tempo_extrusao_fixo_s_val is not None else 0.0)
+
 gerar_relatorio_texto(
     timestamp_str,
     rho_pasta_g_cm3_fixo if 'rho_pasta_g_cm3_fixo' in locals() and rho_pasta_g_cm3_fixo is not None else 0.0,
-    tempo_extrusao_fixo_s_val if 'tempo_extrusao_fixo_s_val' in locals() and tempo_extrusao_fixo_s_val is not None else 0.0,
+    tempo_info_relatorio,
     metodo_entrada_str_relatorio,
     _json_files_resumo if '_json_files_resumo' in locals() else [],
     _csv_path_resumo if '_csv_path_resumo' in locals() else "N/A",
@@ -1411,14 +1488,14 @@ gerar_relatorio_texto(
     mooney_capilares_D_mm_info if realizar_mooney else [],
     D_cap_mm_unico_val if not (realizar_bagley or realizar_mooney) else "N/A",
     L_cap_mm_unico_val if not (realizar_bagley or realizar_mooney) else "N/A",
-    caminho_calibracao_usada, # <--- Argumento novo
+    caminho_calibracao_usada,
     df_res if 'df_res' in locals() else pd.DataFrame(),
     df_summary if 'df_summary' in locals() else pd.DataFrame(),
     best_model_nome if 'best_model_nome' in locals() else "",
     comportamento_fluido_final_para_relatorio if 'comportamento_fluido_final_para_relatorio' in locals() else "N/A",
     arquivos_gerados_lista,
     output_folder,
-    fator_calibracao_empirico # <--- Argumento novo
+    fator_calibracao_empirico
 )
 
 print("\n"+"="*70+"\n--- FIM DA ANÁLISE ---\n"+"="*70)
