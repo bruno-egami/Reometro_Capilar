@@ -9,7 +9,7 @@ Este projeto tem como objetivo a construção de um reômetro capilar de baixo c
 O sistema é composto por:
 
 -   Um reometro feito de um cilindro preenchido com a barbotina (tubo PVC DN50);
--   Um conjunto de capilares);
+-   Um conjunto de capilares metálicos;
 -   Um manômetro e registro para controle de pressão aplicada;
 -   Um transdutor de pressão 0 a 10bar e saída de sinal 0 a 5v;
 -   Um Arduino Pro Micro para captura da pressão aplicada;
