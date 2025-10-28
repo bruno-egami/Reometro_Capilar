@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-# -----------------------------------------------------------------------------
-# SCRIPT 2C.FILTRO_RESIDUOS_MODELO.PY
-# (Filtra Outliers de Pontos pela Discrepância de Tensão em Relação ao Melhor Modelo Ajustado)
-# -----------------------------------------------------------------------------
+"""
+SCRIPT 1D.FILTRO_RESIDUOS_MODELO.PY
+(Filtra outliers comparando dados experimentais corrigidos com o melhor modelo ajustado)
+-----------------------------------------------------------------------------
+"""
 
 # 1. Importação de Bibliotecas
 import numpy as np
@@ -10,9 +11,9 @@ import pandas as pd
 from datetime import datetime
 import os 
 import glob
-import re
 import json
 import inspect 
+import re 
 from scipy.stats import linregress
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
@@ -70,7 +71,7 @@ def input_sim_nao(mensagem_prompt):
         elif resposta in ['n', 'nao', 'não']: return False
         else: print("ERRO: Resposta inválida. Digite 's' ou 'n'.")
 
-def ler_dados_json_cru(json_filepath):
+def ler_dados_json(json_filepath):
     """Lê dados de um arquivo JSON, retornando o dicionário completo."""
     try:
         with open(json_filepath, 'r', encoding='utf-8') as f:
@@ -112,13 +113,8 @@ def selecionar_arquivo_json(pasta_json, mensagem_prompt):
             print(f"Ocorreu um erro inesperado na seleção: {e}")
             return None
 
-
-# CORREÇÃO REFINADA APLICADA AQUI
 def selecionar_arquivos_analise():
-    """
-    Lista e permite selecionar a sessão de análise (pasta) para carregar os resultados.
-    A busca pelo JSON bruto foi aprimorada para lidar com nomes compostos e timestamps.
-    """
+    """Lista e permite selecionar a sessão de análise (pasta) para carregar os resultados."""
     print("="*70); print("--- SELECIONAR SESSÃO DE ANÁLISE PARA FILTRO POR RESÍDUOS ---"); print("="*70)
     
     # 1. Lista as pastas de resultados de análise
@@ -140,12 +136,11 @@ def selecionar_arquivos_analise():
             escolha_str = input("\nDigite o NÚMERO da sessão (pasta) cujos dados você deseja filtrar: ").strip()
             if not escolha_str.isdigit(): continue
             escolha = int(escolha_str) - 1
-            
             if 0 <= escolha < len(pastas_disponiveis):
                 nome_sessao = pastas_disponiveis[escolha]
                 caminho_sessao = os.path.join(OUTPUT_BASE_FOLDER, nome_sessao)
                 
-                # 2. Busca os arquivos processados necessários dentro da sessão
+                # 2. Busca os arquivos necessários dentro da sessão
                 csv_path = glob.glob(os.path.join(caminho_sessao, '*_resultados_reologicos.csv'))
                 json_params_path = glob.glob(os.path.join(caminho_sessao, '*_parametros_modelos.json'))
                 
@@ -157,48 +152,29 @@ def selecionar_arquivos_analise():
                     continue
                     
                 # 3. Tenta encontrar o JSON BRUTO original (Busca inteligente e robusta)
-                
-                # 3.1. Limpa o nome da sessão de todos os timestamps e prefixos conhecidos.
-                # Ex: 'FC1-Caulim40H2O-Capilar15x43_20251028_163819'
-                # -> 'FC1-Caulim40H2O-Capilar15x43'
-                nome_base_clean = re.sub(r'_20\d{6}_\d{6}$', '', nome_sessao)
-                
-                # 3.2. Extrai a parte mais simples (o ID da amostra após o prefixo de calibração/filtro)
-                # O padrão regex busca por um prefixo (FC, F, FCAL, etc.) seguido por números e traços, 
-                # e captura o que vier depois disso como o ID principal.
-                match_id = re.search(r'(?:FC\d+\.?\d*[-_]?|F\d+\.?\d*[-_]?|residuos_)?(.*?)$', nome_base_clean)
-                amostra_id = match_id.group(1).strip('_') if match_id else nome_base_clean.strip('_')
-                
-                # 3.3. Busca JSONs que CONTENHAM o ID principal da amostra
-                # Busca por arquivos que contenham o nome_sessao_base em qualquer lugar do nome.
-                search_pattern_raw = os.path.join(JSON_INPUT_DIR, f"*{amostra_id}*.json")
-                json_caminhos = glob.glob(search_pattern_raw)
-                
-                # Caso a busca principal falhe, tenta a busca super ampla (apenas para diagnóstico)
-                if not json_caminhos:
-                    print(f"AVISO: Busca principal por '{amostra_id}' falhou. Tentando busca ampla.")
-                    search_pattern_super_ampla = os.path.join(JSON_INPUT_DIR, f"*.json")
-                    json_caminhos_all = glob.glob(search_pattern_super_ampla)
+                match = re.search(r'([A-Za-z0-9%_-]+)_20\d{6}_\d{6}', nome_sessao)
+                if match:
+                    # Extrai o ID da amostra da pasta, removendo tags de limpeza intermediárias
+                    nome_base_id = match.group(1).split('_ANALISE_LIMPA')[0].split('_ANALISE_LIMPA')[0].split('_ANALISE_LIMPA')[0]
                     
-                    # Filtra arquivos que contenham o ID da amostra em seu nome base
-                    json_caminhos = [c for c in json_caminhos_all if amostra_id in os.path.basename(c)]
+                    # 3.1. Pesquisa por TODOS os JSONs na pasta de testes que contêm o ID
+                    json_caminhos = glob.glob(os.path.join(JSON_INPUT_DIR, f"*{nome_base_id}*.json"))
                     
-                
-                if not json_caminhos:
-                    print(f"AVISO: JSON Bruto original não encontrado em '{JSON_INPUT_DIR}' para a amostra '{amostra_id}'.")
-                    return None, None, None
-                
-                # 3.4. Seleciona o JSON: prioriza o mais recente, pois é o mais provável de ser o original ou o 'limpo' mais atualizado.
-                json_caminhos.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-                json_bruto_caminho = json_caminhos[0]
-                
-                # 3.5. Verifica a estrutura
-                dados_brutos = ler_dados_json_cru(json_bruto_caminho)
-                if dados_brutos and dados_brutos.get('testes'):
-                    print(f"INFO: JSON de teste original encontrado: {os.path.basename(json_bruto_caminho)}")
+                    # 3.2. Filtra para remover arquivos que definitivamente não são a fonte (ex: parâmetros de outros scripts)
+                    json_caminhos = [p for p in json_caminhos if 'parametros_modelos' not in os.path.basename(p)]
+                    
+                    if not json_caminhos:
+                        print(f"AVISO: JSON Bruto original não encontrado em '{JSON_INPUT_DIR}' com o ID '{nome_base_id}'.")
+                        return None, None, None
+                    
+                    # 3.3. Seleciona o JSON: prioriza a versão MAIS RECENTE como a fonte de dados mais atualizada.
+                    json_caminhos.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                    json_bruto_caminho = json_caminhos[0]
+                    
+                    print(f"INFO: JSON de referência encontrado: {os.path.basename(json_bruto_caminho)}")
                     return csv_path[0], json_params_path[0], json_bruto_caminho
                 else:
-                    print(f"AVISO: JSON encontrado ('{os.path.basename(json_bruto_caminho)}'), mas sem a lista de 'testes' válida.")
+                    print("ERRO: Não foi possível inferir o nome do JSON bruto a partir da pasta de análise. Verifique o formato do nome da pasta.")
                     return None, None, None
             else:
                 print("ERRO: Escolha inválida.")
@@ -229,7 +205,7 @@ def carregar_resultados(csv_path, json_params_path):
 
     # Carregar Parâmetros do Modelo
     try:
-        params_data = ler_dados_json_cru(json_params_path)
+        params_data = ler_dados_json(json_params_path)
         modelos = params_data.get("modelos_ajustados", {})
         
         if not modelos:
@@ -303,7 +279,6 @@ def executar_filtro_por_residuos():
         threshold = limite_multiplicador * std_residuals
         
         # Identifica os outliers com o limite atual
-        # Use o DF original para mapear o índice correto
         outlier_indices_local = np.where(np.abs(residuals) > threshold)[0]
         pontos_a_remover = len(outlier_indices_local)
         
@@ -331,24 +306,15 @@ def executar_filtro_por_residuos():
             print(f"{'Ponto No.':<10} | {'τw (Pa)':<10} | {'Resíduo (Pa)':<15}")
             print("-" * 37)
             
-            pontos_json_a_remover = []
             for index, row in outlier_points_data.iterrows():
-                 ponto_no_original = int(row['Ponto'])
-                 pontos_json_a_remover.append(ponto_no_original)
-                 print(f"{ponto_no_original:<10} | {row['τw (Pa)']:.2f} | {row['Resíduo']:.2f}")
+                 print(f"{int(row['Ponto']):<10} | {row['τw (Pa)']:.2f} | {row['Resíduo']:.2f}")
             print("-" * 37)
 
             # 3. Pedido de Confirmação
             if input_sim_nao("\nCONFIRMA a remoção desses pontos com o limite atual? (s/n): "):
                 
-                # O df_filtrado_final precisa ser recalculado A PARTIR DO DF ORIGINAL (df_res)
-                # usando o índice original do DataFrame antes de qualquer reordenação.
-                
-                # A forma mais segura é filtrar o DF original (df_res) pelos pontos (números) que queremos MANTER
-                pontos_a_manter = df_res[~df_res['Ponto'].isin(pontos_json_a_remover)]['Ponto'].tolist()
-                
-                df_filtrado_final = df_res[df_res['Ponto'].isin(pontos_a_manter)].reset_index(drop=True)
-                
+                # Aplica o filtro final e sai do loop
+                df_filtrado_final = df_res.drop(outlier_indices_local).reset_index(drop=True)
                 pontos_removidos = pontos_a_remover
                 filtro_aplicado = True
                 
@@ -364,23 +330,21 @@ def executar_filtro_por_residuos():
 
     # 4. Geração do Novo JSON Limpo
     
-    if len(df_filtrado_final) < 5 and pontos_removidos > 0:
+    if len(df_filtrado_final) < 5:
         print("ALERTA: Após a filtragem, restam menos de 5 pontos. O resultado final pode ser instável.")
 
     # Abre o JSON BRUTO original para obter os metadados (D, L, rho, etc.) e a lista completa de testes
-    dados_brutos_orig = ler_dados_json_cru(json_bruto_path)
+    dados_brutos_orig = ler_dados_json(json_bruto_path)
     if not dados_brutos_orig: return
 
     # A chave para recriar o JSON é usar os índices dos pontos MANTIDOS no DataFrame
-    pontos_mantidos_no_csv_final = df_filtrado_final['Ponto'].tolist()
+    pontos_mantidos_do_csv = df_filtrado_final['Ponto'].tolist()
     
     testes_limpos_json = []
     
     # Percorre o JSON original e verifica se o Ponto No. está na lista dos mantidos
-    # Nota: A coluna 'Ponto' no df_res corresponde a 'ponto_n' no JSON
-    for i, teste in enumerate(dados_brutos_orig.get("testes", [])):
-        # Verifica se o 'ponto_n' do teste original está na lista de pontos a serem mantidos (os números do JSON original)
-        if teste.get('ponto_n') in pontos_mantidos_no_csv_final:
+    for teste in dados_brutos_orig.get("testes", []):
+        if teste.get('ponto_n') in pontos_mantidos_do_csv:
             testes_limpos_json.append(teste)
             
     # Renumera os pontos sequencialmente para o novo JSON
@@ -390,21 +354,13 @@ def executar_filtro_por_residuos():
     # Atualiza o objeto JSON
     dados_brutos_orig['testes'] = testes_limpos_json
     
-    # Gera o nome do arquivo JSON limpo
-    if 'id_amostra' not in dados_brutos_orig:
-        print("ERRO: O JSON original não possui a chave 'id_amostra'. Usando 'resultado_filtrado'.")
-        nome_sessao_base = "resultado_filtrado"
-    else:
-        # Pega o id_amostra e remove qualquer prefixo 'limpo_' ou 'residuos_' para evitar nomes longos
-        nome_sessao_base = re.sub(r'^(limpo_|residuos_|edit_)', '', dados_brutos_orig['id_amostra'])
-        
-    
-    json_limpo_filename = f"residuos_{nome_sessao_base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    nome_sessao_base = dados_brutos_orig['id_amostra']
+    json_limpo_filename = f"limpo_residuos_{nome_sessao_base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     caminho_json_limpo = os.path.join(JSON_INPUT_DIR, json_limpo_filename)
 
     # Adiciona observação de limpeza
     dados_brutos_orig['data_hora_filtragem_residuos'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    dados_brutos_orig['observacoes_filtragem'] = f"Filtro por Resíduos ({limite_multiplicador:.1f} x STD). {pontos_removidos} ponto(s) removido(s) do total ({len(df_res)} pontos). Modelo: {best_model_info['name']}"
+    dados_brutos_orig['observacoes_filtragem'] = f"Filtro por Resíduos ({limite_multiplicador:.1f} * STD). {pontos_removidos} ponto(s) removido(s) do total ({len(df_res)} pontos)."
 
 
     try:
@@ -420,8 +376,5 @@ def executar_filtro_por_residuos():
 # --- INÍCIO DA EXECUÇÃO ---
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    if not os.path.exists(JSON_INPUT_DIR):
-        os.makedirs(JSON_INPUT_DIR)
-    
     executar_filtro_por_residuos()
     print("\n--- FIM DO SCRIPT DE FILTRAGEM POR RESÍDUOS ---")

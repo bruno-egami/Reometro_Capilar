@@ -219,37 +219,11 @@ def converter_tensao_para_pressao_py(tensao_lida):
 # --- Funções de Coleta e Salvamento ---
 
 def salvar_resultados_json_individual_py(data_bateria, json_filename=None):
-    """
-    Salva os dados completos de um ensaio em um arquivo JSON único,
-    FILTRANDO AUTOMATICAMENTE pontos com massa_g_registrada <= 0.
-    """
+    """Salva os dados completos de um ensaio em um arquivo JSON único.
+       Se json_filename for fornecido, ele sobrescreve o arquivo existente."""
     if not data_bateria or not data_bateria.get('testes'):
         print("Nenhum dado de teste para salvar.")
         return
-
-    # --- BLOCO: FILTRO DE MASSA ZERO E RENUMERAÇÃO ---
-    testes_originais = data_bateria['testes']
-    
-    # 1. Filtra removendo massa <= 0
-    # Usamos 1e-9 como margem de segurança para float
-    testes_filtrados = [t for t in testes_originais if t.get('massa_g_registrada', 0.0) > 1e-9]
-    
-    pontos_removidos = len(testes_originais) - len(testes_filtrados)
-    
-    if pontos_removidos > 0:
-        print(f"\nINFO: Removidos {pontos_removidos} ponto(s) com Massa Registrada zero (Massa <= 0.0g) antes de salvar.")
-    
-    # 2. Renumera os pontos restantes sequencialmente
-    for i, teste in enumerate(testes_filtrados):
-        # Atualiza o 'ponto_n' para ser sequencial após a filtragem
-        teste['ponto_n'] = i + 1 
-        
-    data_bateria['testes'] = testes_filtrados
-    
-    if not data_bateria['testes']:
-        print("AVISO: Todos os pontos foram removidos (massa zero). Salvamento cancelado.")
-        return
-    # --- FIM BLOCO ---
         
     def sanitize_filename(name):
         return "".join(c for c in name if c.isalnum() or c in (' ', '_', '-')).rstrip()[:50].replace(' ', '_')
@@ -270,7 +244,6 @@ def salvar_resultados_json_individual_py(data_bateria, json_filename=None):
         
     try:
         # Reordena os testes pela pressão média antes de salvar (boa prática)
-        # Nota: A renumeração já ocorreu acima, então esta ordenação é para a curva.
         data_bateria['testes'] = sorted(data_bateria['testes'], key=lambda t: t.get('media_pressao_final_ponto_bar', 0))
         
         # Atualiza o timestamp de salvamento
@@ -318,7 +291,7 @@ def executar_ciclo_preview_e_reset(ser):
                 pass 
                  
             if pressao > PRESSURE_THRESHOLD_START:
-                start_time = time.time()
+                start_time_preview = time.time()
                 pressure_triggered = True
                 print(f"\nCiclo INICIADO! Pico de Pressão Detectado. (Início: {pressao:.2f} bar)")
                 break
@@ -484,9 +457,8 @@ def realizar_coleta_de_teste_py(ser, data_bateria=None, json_filename=None):
         
         massa_g = input_float_com_virgula("Digite a massa extrudada durante o ensaio [g]: ")
         
-        # Nota: O filtro de massa negativa ou inválida será feito agora no salvamento.
-        if massa_g is None:
-             print("ERRO: Entrada de massa inválida. Ponto descartado ANTES do salvamento.")
+        if massa_g is None or massa_g < 0:
+             print("ERRO: Massa inválida ou negativa. Ponto descartado.")
              continue
 
         # Calcula a pressão e tensão médias durante o período de extrusão
@@ -510,7 +482,7 @@ def realizar_coleta_de_teste_py(ser, data_bateria=None, json_filename=None):
             
         num_ponto += 1
         
-    # Salvar resultados: Usa a função de salvar, que agora inclui o filtro de massa zero.
+    # Salvar resultados: Usa a função de salvar com o nome do arquivo, se for continuação.
     salvar_resultados_json_individual_py(data_bateria, json_filename)
 
 

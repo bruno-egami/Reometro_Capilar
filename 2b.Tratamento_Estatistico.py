@@ -293,15 +293,6 @@ def processar_estatisticamente(caminho_csv, nome_base_sessao, output_folder):
         
     print(f"Arquivo '{os.path.basename(caminho_csv)}' carregado com sucesso. {len(df)} pontos brutos.")
 
-    # --- CORREÇÃO DE ERRO CRÍTICO (TypeError) ---
-    # Garante que as colunas críticas para o cálculo estatístico sejam numéricas
-    cols_para_stats = ['P_ext(bar)', 'τw (Pa)', 'γ̇w (s⁻¹)', 'η (Pa·s)']
-    for col in cols_para_stats:
-        if col in df.columns:
-            # errors='coerce' transforma strings não numéricas em NaN, permitindo o cálculo da média
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    # --- FIM CORREÇÃO ---
-
     # Extrai o timestamp do nome do arquivo original para nomear os resultados
     match = re.search(r'(\d{8}_\d{6})', os.path.basename(caminho_csv))
     timestamp_arquivo = match.group(0) if match else datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -316,7 +307,7 @@ def processar_estatisticamente(caminho_csv, nome_base_sessao, output_folder):
     print(contagem_repeticoes)
 
     # Colunas para cálculo estatístico
-    # cols_para_stats já está definida no bloco de correção
+    cols_para_stats = ['P_ext(bar)', 'τw (Pa)', 'γ̇w (s⁻¹)', 'η (Pa·s)']
     
     # Calcula Média e Desvio Padrão por grupo de pressão
     df_mean = df.groupby('P_NOMINAL_AGRUPADA')[cols_para_stats].mean().reset_index()
@@ -376,8 +367,7 @@ def processar_estatisticamente(caminho_csv, nome_base_sessao, output_folder):
     # =========================================================================
     # --- 3. Ajuste de Modelos na Curva Média ---
     # =========================================================================
-    # --- CORREÇÃO DE SINTAXE (SyntaxWarning) ---
-    print(r"\n--- 3. Ajustando Modelos Reológicos na Curva Média ($\mu(\tau_w)$ vs $\mu(\dot{\gamma}_{w})$) ---")
+    print("\n--- 3. Ajustando Modelos Reológicos na Curva Média ($\mu(\tau_w)$ vs $\mu(\dot{\gamma}_{w})$) ---")
     
     # Prepara dados para ajuste
     gd_fit_mean = df_estatistico['γ̇w_MEDIA(s⁻¹)'].values
@@ -497,9 +487,8 @@ def processar_estatisticamente(caminho_csv, nome_base_sessao, output_folder):
                 zorder=20)
 
     ax.set_title(f"Curva de Fluxo Média com Tratamento Estatístico\nSessão Base: {nome_base_sessao}", fontsize=16)
-    # --- CORREÇÃO DE SINTAXE (SyntaxWarning) ---
-    ax.set_xlabel(r"Taxa de Cisalhamento Real Média ($\mu_{\dot{\gamma}_w}$, s⁻¹)", fontsize=12)
-    ax.set_ylabel(r"Tensão de Cisalhamento Média ($\mu_{\tau_w}$, Pa)", fontsize=12)
+    ax.set_xlabel("Taxa de Cisalhamento Real Média ($\mu_{\\dot{\\gamma}_w}$, s⁻¹)", fontsize=12)
+    ax.set_ylabel("Tensão de Cisalhamento Média ($\mu_{\\tau_w}$, Pa)", fontsize=12)
     ax.legend(loc='best', fontsize=10)
     ax.grid(True, which="both", ls="--", alpha=0.7)
     ax.set_xscale('log')
