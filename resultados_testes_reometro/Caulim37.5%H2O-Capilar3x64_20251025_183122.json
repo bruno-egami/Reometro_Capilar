@@ -1,0 +1,190 @@
+{
+    "id_amostra": "Caulim37.5H2O-Capilar3x64",
+    "descricao": "Caulim com adição de 37.5% de água utilizando Capilar3x64",
+    "data_hora_inicio": "2025-10-25 18:05:40",
+    "diametro_capilar_mm": 3.0,
+    "comprimento_capilar_mm": 64.0,
+    "densidade_pasta_g_cm3": 1.63,
+    "calibracao_aplicada": {
+        "slope": 1.9423761735189375,
+        "intercept": -0.005710585950145676
+    },
+    "testes": [
+        {
+            "ponto_n": 5,
+            "massa_g_registrada": 5.62,
+            "duracao_real_s": 20.205708980560303,
+            "media_tensao_final_ponto_V": 0.3240132596685083,
+            "media_pressao_final_ponto_bar": 0.6236450495341693
+        },
+        {
+            "ponto_n": 4,
+            "massa_g_registrada": 5.68,
+            "duracao_real_s": 20.192514181137085,
+            "media_tensao_final_ponto_V": 0.33116685082872926,
+            "media_pressao_final_ponto_bar": 0.6375400145588783
+        },
+        {
+            "ponto_n": 3,
+            "massa_g_registrada": 5.72,
+            "duracao_real_s": 20.31527328491211,
+            "media_tensao_final_ponto_V": 0.34111208791208797,
+            "media_pressao_final_ponto_bar": 0.656857406109591
+        },
+        {
+            "ponto_n": 2,
+            "massa_g_registrada": 5.93,
+            "duracao_real_s": 20.32511854171753,
+            "media_tensao_final_ponto_V": 0.3509395604395604,
+            "media_pressao_final_ponto_bar": 0.6759460545928656
+        },
+        {
+            "ponto_n": 1,
+            "massa_g_registrada": 6.49,
+            "duracao_real_s": 20.37258529663086,
+            "media_tensao_final_ponto_V": 0.3546284153005464,
+            "media_pressao_final_ponto_bar": 0.6831111983824143
+        },
+        {
+            "ponto_n": 9,
+            "massa_g_registrada": 6.13,
+            "duracao_real_s": 20.10005831718445,
+            "media_tensao_final_ponto_V": 0.3572016666666667,
+            "media_pressao_final_ponto_bar": 0.6881094205244414
+        },
+        {
+            "ponto_n": 10,
+            "massa_g_registrada": 6.47,
+            "duracao_real_s": 20.317702531814575,
+            "media_tensao_final_ponto_V": 0.36119890109890107,
+            "media_pressao_final_ponto_bar": 0.695873553445583
+        },
+        {
+            "ponto_n": 8,
+            "massa_g_registrada": 6.53,
+            "duracao_real_s": 20.31950545310974,
+            "media_tensao_final_ponto_V": 0.36718461538461533,
+            "media_pressao_final_ponto_bar": 0.7075000622556462
+        },
+        {
+            "ponto_n": 7,
+            "massa_g_registrada": 6.35,
+            "duracao_real_s": 20.18844985961914,
+            "media_tensao_final_ponto_V": 0.3698602209944752,
+            "media_pressao_final_ponto_bar": 0.7126970948419715
+        },
+        {
+            "ponto_n": 6,
+            "massa_g_registrada": 6.77,
+            "duracao_real_s": 20.305768251419067,
+            "media_tensao_final_ponto_V": 0.3782747252747253,
+            "media_pressao_final_ponto_bar": 0.7290412274679023
+        },
+        {
+            "ponto_n": 15,
+            "massa_g_registrada": 6.68,
+            "duracao_real_s": 10.214484453201294,
+            "media_tensao_final_ponto_V": 0.5225445652173912,
+            "media_pressao_final_ponto_bar": 1.0092675271299276
+        },
+        {
+            "ponto_n": 14,
+            "massa_g_registrada": 6.75,
+            "duracao_real_s": 10.214175701141357,
+            "media_tensao_final_ponto_V": 0.5276445652173912,
+            "media_pressao_final_ponto_bar": 1.0191736456148743
+        },
+        {
+            "ponto_n": 12,
+            "massa_g_registrada": 7.01,
+            "duracao_real_s": 10.333462953567505,
+            "media_tensao_final_ponto_V": 0.5372655913978495,
+            "media_pressao_final_ponto_bar": 1.0378612976325983
+        },
+        {
+            "ponto_n": 13,
+            "massa_g_registrada": 6.8,
+            "duracao_real_s": 10.2193021774292,
+            "media_tensao_final_ponto_V": 0.5375260869565216,
+            "media_pressao_final_ponto_bar": 1.0383672779990707
+        },
+        {
+            "ponto_n": 11,
+            "massa_g_registrada": 7.75,
+            "duracao_real_s": 10.411049127578735,
+            "media_tensao_final_ponto_V": 0.553440425531915,
+            "media_pressao_final_ponto_bar": 1.069278910065228
+        },
+        {
+            "ponto_n": 18,
+            "massa_g_registrada": 18.46,
+            "duracao_real_s": 10.398536682128906,
+            "media_tensao_final_ponto_V": 0.8967191489361699,
+            "media_pressao_final_ponto_bar": 1.7360553232816507
+        },
+        {
+            "ponto_n": 19,
+            "massa_g_registrada": 18.69,
+            "duracao_real_s": 10.441775798797607,
+            "media_tensao_final_ponto_V": 0.9001510638297872,
+            "media_pressao_final_ponto_bar": 1.7427213930005572
+        },
+        {
+            "ponto_n": 20,
+            "massa_g_registrada": 20.74,
+            "duracao_real_s": 10.784136056900024,
+            "media_tensao_final_ponto_V": 0.9072298969072164,
+            "media_pressao_final_ponto_bar": 1.756471149706474
+        },
+        {
+            "ponto_n": 16,
+            "massa_g_registrada": 20.33,
+            "duracao_real_s": 10.331373691558838,
+            "media_tensao_final_ponto_V": 0.9152935483870965,
+            "media_pressao_final_ponto_bar": 1.7721337942125535
+        },
+        {
+            "ponto_n": 17,
+            "massa_g_registrada": 19.15,
+            "duracao_real_s": 10.330192565917969,
+            "media_tensao_final_ponto_V": 0.9166612903225806,
+            "media_pressao_final_ponto_bar": 1.7747904635595608
+        },
+        {
+            "ponto_n": 23,
+            "massa_g_registrada": 62.57,
+            "duracao_real_s": 9.772417068481445,
+            "media_tensao_final_ponto_V": 1.2573795454545456,
+            "media_pressao_final_ponto_bar": 2.436593484210835
+        },
+        {
+            "ponto_n": 25,
+            "massa_g_registrada": 73.46,
+            "duracao_real_s": 10.668303728103638,
+            "media_tensao_final_ponto_V": 1.2705083333333331,
+            "media_pressao_final_ponto_bar": 2.4620945289737772
+        },
+        {
+            "ponto_n": 24,
+            "massa_g_registrada": 66.24,
+            "duracao_real_s": 10.648625373840332,
+            "media_tensao_final_ponto_V": 1.2761645833333335,
+            "media_pressao_final_ponto_bar": 2.4730810942052437
+        },
+        {
+            "ponto_n": 22,
+            "massa_g_registrada": 66.21,
+            "duracao_real_s": 10.219616889953613,
+            "media_tensao_final_ponto_V": 1.2965891304347827,
+            "media_pressao_final_ponto_bar": 2.512753247850014
+        },
+        {
+            "ponto_n": 21,
+            "massa_g_registrada": 56.59,
+            "duracao_real_s": 10.105141401290894,
+            "media_tensao_final_ponto_V": 1.3027802197802199,
+            "media_pressao_final_ponto_bar": 2.5247786722827184
+        }
+    ],
+    "data_hora_ultima_coleta": "2025-10-25 18:31:22"
+}

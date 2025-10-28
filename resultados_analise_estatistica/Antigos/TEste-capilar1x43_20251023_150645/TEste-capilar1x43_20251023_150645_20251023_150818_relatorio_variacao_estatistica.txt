@@ -1,0 +1,48 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA APROFUNDADA
+Sessão Base: TEste-capilar1x43_20251023_150645
+Data de Análise: 2025-10-23 15:08:18
+================================================================================
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+τw_MEDIA(Pa) CV_τw(%) γ̇w_MEDIA(s⁻¹) CV_γ̇w(%) CV_η_PROPAGADO(%)
+      192.54     0.64        1075.12      4.46              4.50
+      243.09     1.19        1557.96      2.72              2.97
+      328.13     0.87        2717.85      2.36              2.51
+      402.81     0.95        4620.04      4.84              4.94
+      412.89     0.96        4955.26      8.04              8.10
+      451.19     0.96        4791.15     15.85             15.88
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 0.94 %
+CV Médio Ponderado de γ̇w: 7.25 %
+CV Médio Ponderado de η:  7.34 %
+CV Máximo de τw (Pior Ponto): 1.19 %
+Pontos Analisados: 6
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 6 níveis de Pressão Nominal (P_ext) distintos.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Excelente (0.94%). Indica uma alta reprodutibilidade da pressão aplicada e, consequentemente, da tensão de cisalhamento (τw).
+  * CONCLUSÃO QUALITATIVA: O equipamento e o procedimento de ensaio demonstram ser altamente estáveis e controláveis.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Aceitável (7.25%). Variação esperada, já que γ̇w depende da vazão e da geometria do capilar.
+  * CONCLUSÃO QUALITATIVA: O volume/massa extrudado(a) no tempo de ensaio se manteve relativamente constante para os diferentes testes.
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Alta (7.34%).
+  * CONCLUSÃO QUALITATIVA: A variabilidade nos parâmetros fundamentais (τw e γ̇w) não resulta em uma incerteza excessiva no resultado final da viscosidade, reforçando a validade dos dados reológicos.
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: Os dados são estatisticamente robustos. Prossiga com a modelagem e comparação com outras amostras (Scripts 3 e 4).
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

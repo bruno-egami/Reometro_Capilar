@@ -1,0 +1,85 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA APROFUNDADA
+Sessão Base: ultimo_capilar_1.5_20251022_170703
+Data de Análise: 2025-10-22 17:08:08
+================================================================================
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+τw_MEDIA(Pa) CV_τw(%) γ̇w_MEDIA(s⁻¹) CV_γ̇w(%) CV_η_PROPAGADO(%)
+      683.40      N/A         345.13       N/A               N/A
+      716.73     0.19         353.96      4.43              4.44
+      722.54     0.22         317.42      1.71              1.73
+      811.79     0.05         386.85      0.85              0.86
+      820.17     0.16         394.31      1.25              1.26
+      825.64      N/A         372.46       N/A               N/A
+      873.69     0.02         457.85      6.33              6.33
+      880.38      N/A         505.60       N/A               N/A
+      888.15     0.10         472.79      0.92              0.93
+      900.09      N/A         490.12       N/A               N/A
+      908.25      N/A         512.04       N/A               N/A
+     1053.52      N/A         657.09       N/A               N/A
+     1072.55     0.47         667.49      7.52              7.54
+     1083.87      N/A         674.94       N/A               N/A
+     1097.42      N/A         683.19       N/A               N/A
+     1111.73      N/A         708.22       N/A               N/A
+     1224.90      N/A        1018.56       N/A               N/A
+     1304.79      N/A        1101.28       N/A               N/A
+     1322.52      N/A         980.64       N/A               N/A
+     1349.21      N/A        1001.83       N/A               N/A
+     1366.51      N/A        1129.94       N/A               N/A
+     1389.37      N/A        1168.42       N/A               N/A
+     1412.18     0.35        1123.38      2.82              2.84
+     1466.91      N/A        1654.91       N/A               N/A
+     1483.69     0.21        1744.69      1.18              1.20
+     1506.62      N/A        1238.59       N/A               N/A
+     1517.45     0.10        1837.98     18.99             18.99
+     1526.09     0.24        1569.94     11.57             11.57
+     1534.35      N/A        1341.57       N/A               N/A
+     1555.93      N/A        1276.32       N/A               N/A
+     1599.74      N/A        1667.61       N/A               N/A
+     1633.59      N/A        1843.23       N/A               N/A
+     1647.56      N/A        1554.77       N/A               N/A
+     1660.40      N/A        1936.22       N/A               N/A
+     1683.33      N/A        2047.51       N/A               N/A
+     1689.94      N/A        1813.45       N/A               N/A
+     1726.26     0.29        2131.31      2.12              2.14
+     1748.34      N/A        2183.74       N/A               N/A
+     1755.16     0.09        2110.24      0.21              0.23
+     1782.90      N/A        1785.32       N/A               N/A
+     2235.42      N/A        4386.92       N/A               N/A
+     2245.18      N/A        3275.10       N/A               N/A
+     2251.56      N/A        2136.80       N/A               N/A
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 0.05 %
+CV Médio Ponderado de γ̇w: 1.32 %
+CV Médio Ponderado de η:  1.33 %
+CV Máximo de τw (Pior Ponto): 0.47 %
+Pontos Analisados: 43
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 43 níveis de Pressão Nominal (P_ext) distintos.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Excelente (0.05%). Indica uma alta reprodutibilidade da pressão aplicada e, consequentemente, da tensão de cisalhamento (τw).
+  * CONCLUSÃO QUALITATIVA: O equipamento e o procedimento de ensaio demonstram ser altamente estáveis e controláveis.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Aceitável (1.32%). Variação esperada, já que γ̇w depende da vazão e da geometria do capilar.
+  * CONCLUSÃO QUALITATIVA: O volume/massa extrudado(a) no tempo de ensaio se manteve relativamente constante para os diferentes testes.
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Alta (1.33%).
+  * CONCLUSÃO QUALITATIVA: A variabilidade nos parâmetros fundamentais (τw e γ̇w) não resulta em uma incerteza excessiva no resultado final da viscosidade, reforçando a validade dos dados reológicos.
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: Os dados são estatisticamente robustos. Prossiga com a modelagem e comparação com outras amostras (Scripts 3 e 4).
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

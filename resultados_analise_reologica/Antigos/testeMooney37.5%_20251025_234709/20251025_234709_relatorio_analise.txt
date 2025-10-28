@@ -1,0 +1,38 @@
+======================================================================
+RELATÓRIO DE ANÁLISE REOLÓGICA
+======================================================================
+Sessão: 20251025_234709
+Data da Geração: 2025-10-25 23:48:37
+Pasta de Saída: resultados_analise_reologica\testeMooney37.5%_20251025_234709
+
+--- PARÂMETROS GLOBAIS DO ENSAIO ---
+Densidade da Pasta: 1.630 g/cm³
+Tempo de Extrusão Fixo: 19.02 s
+
+--- ORIGEM DOS DADOS EXPERIMENTAIS ---
+Método de Entrada: Arquivo(s) JSON
+  Arquivos JSON Utilizados (da pasta 'resultados_testes_reometro/'):
+    - Caulim37.5%H2O-Capilar1.5x43_20251025_195655.json
+    - Caulim37.5%H2O-Capilar1x43_20251025_210831.json
+    - Caulim37.5%H2O-Capilar2x43_20251025_191559.json
+
+--- CONFIGURAÇÃO DE CORREÇÕES E CALIBRAÇÃO ---
+Correção de Bagley (ao vivo): Não
+Correção de Mooney (ao vivo): Sim
+  Comprimento Comum Capilares Mooney: 43.00 mm
+  Diâmetros Usados (D em mm):
+    - Capilar 1: D = 1.500 mm
+    - Capilar 2: D = 1.000 mm
+    - Capilar 3: D = 2.000 mm
+
+--- RESULTADOS PRINCIPAIS (CURVA DE FLUXO PROCESSADA) ---
+Não foram gerados dados processados para a tabela principal.
+
+Nenhum modelo foi ajustado ou selecionado como o melhor.
+
+--- ARQUIVOS GERADOS NESTA SESSÃO ---
+Nenhum arquivo adicional foi gerado.
+
+======================================================================
+FIM DO RELATÓRIO
+======================================================================
