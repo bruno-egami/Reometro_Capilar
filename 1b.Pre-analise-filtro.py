@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 SCRIPT 2X.PRE_ANALISE_E_LIMPEZA.PY
-(Fusão, Cálculo de CV e Remoção Automática de Outliers para Limpeza de Dados)
+(Fusão de JSONs, Cálculo de CV e Remoção Automática de Outliers para Limpeza de Dados)
 -----------------------------------------------------------------------------
 """
 
@@ -141,16 +141,9 @@ def validar_e_combinar_jsons(caminhos_jsons):
 # -----------------------------------------------------------------------------
 
 def calcular_dados_reologicos_brutos(df_testes, rho_g_cm3, D_mm, L_mm):
-    """Calcula Tau_w, Gamma_aw e Taxa de Fluxo de Massa para cada ponto bruto.
-       Inclui conversão robusta para float das colunas de entrada."""
+    """Calcula Tau_w, Gamma_aw e Taxa de Fluxo de Massa para cada ponto bruto."""
     rho_si = rho_g_cm3 * 1000
     R_cap_si, L_cap_m = (D_mm / 2000), L_mm / 1000
-    
-    # --- MELHORIA DE ROBUSTEZ: Conversão para float (coerce errors to NaN) ---
-    df_testes['media_pressao_final_ponto_bar'] = pd.to_numeric(df_testes['media_pressao_final_ponto_bar'], errors='coerce')
-    df_testes['massa_g_registrada'] = pd.to_numeric(df_testes['massa_g_registrada'], errors='coerce')
-    df_testes['duracao_real_s'] = pd.to_numeric(df_testes['duracao_real_s'], errors='coerce')
-    # --- FIM MELHORIA ---
     
     df_testes['P_Pa'] = df_testes['media_pressao_final_ponto_bar'] * 1e5
     df_testes['M_kg'] = df_testes['massa_g_registrada'] / 1000
@@ -171,13 +164,13 @@ def calcular_dados_reologicos_brutos(df_testes, rho_g_cm3, D_mm, L_mm):
 def calcular_estatisticas_e_cv(df_testes):
     """Agrupa por pressão nominal e calcula estatísticas, incluindo CV."""
     
-    # --- MUDANÇA PARA 2 CASAS DECIMAIS (ALTA RESOLUÇÃO) ---
-    df_testes['P_NOMINAL_AGRUPADA'] = df_testes['media_pressao_final_ponto_bar'].round(1)
+    # Arredonda a pressão para agrupamento (2 casas decimais é razoável para a precisão do transdutor)
+    df_testes['P_NOMINAL_AGRUPADA'] = df_testes['media_pressao_final_ponto_bar'].round(2)
     
     # Colunas para calcular estatísticas (Taxa de Fluxo de Massa como proxy de Vazão)
     cols_to_group = ['τw (Pa)', 'γ̇aw (s⁻¹)', 'mass_flow_rate_g_s']
 
-    # Calcula Média e Desvio Padrão
+    # Calcular Média e Desvio Padrão
     df_mean = df_testes.groupby('P_NOMINAL_AGRUPADA')[cols_to_group].mean().reset_index()
     df_std = df_testes.groupby('P_NOMINAL_AGRUPADA')[cols_to_group].std().reset_index()
     df_count = df_testes.groupby('P_NOMINAL_AGRUPADA').size().reset_index(name='N')
@@ -268,28 +261,12 @@ def executar_pre_analise_e_limpeza():
     df_testes = pd.DataFrame(dados_combinados['testes'])
     df_testes = calcular_dados_reologicos_brutos(df_testes, rho_g_cm3, D_mm, L_mm)
     
-    # --- NOVO FILTRO: REMOÇÃO DE MASSA ZERO ---
-    total_pontos_orig = len(df_testes)
-    
-    # A remoção de Massa Zero é essencial e é o primeiro filtro.
-    # Usamos 1e-9 como limite para capturar 0.0, mas não números muito pequenos devido a precisão do float.
-    df_testes = df_testes[df_testes['massa_g_registrada'] > 1e-9].copy()
-    pontos_removidos_massa_zero = total_pontos_orig - len(df_testes)
-    
-    if pontos_removidos_massa_zero > 0:
-        print(f"\nINFO: Removidos {pontos_removidos_massa_zero} ponto(s) com Massa Registrada zero (Massa = 0.0g).")
-    # --- FIM NOVO FILTRO ---
-    
-    
-    # Re-define o total original para o cálculo final de remoção (inclui a massa zero)
-    total_pontos_orig = len(df_testes) 
-    
     # Limpa valores óbvios (Q ou Tau zero)
     df_testes.dropna(subset=['τw (Pa)', 'γ̇aw (s⁻¹)'], inplace=True)
     df_testes = df_testes[(df_testes['τw (Pa)'] > 1e-9) & (df_testes['γ̇aw (s⁻¹)'] > 1e-9)].copy()
     
     if len(df_testes) < 2:
-        print("\nERRO: Menos de 2 pontos válidos após a limpeza inicial.")
+        print("\nERRO: Menos de 2 pontos válidos após a limpeza inicial (Duração ou Pressão zero).")
         return
 
     # 3. Processamento Iterativo de Outliers
@@ -299,61 +276,57 @@ def executar_pre_analise_e_limpeza():
     # Exibe estatísticas iniciais
     df_stats_inicial = calcular_estatisticas_e_cv(df_limpo)
     if df_stats_inicial.empty:
-        print("\nAVISO: Nenhuma repetição (N >= 2) encontrada para calcular o CV. Pulando filtro de outliers.")
-        df_stats_atual = pd.DataFrame() # Cria um DF vazio para evitar erro na próxima etapa
-    else:
-        df_stats_atual = df_stats_inicial
+        print("\nERRO: Nenhuma repetição (N >= 2) encontrada para calcular o CV. Continue com o Script 2.")
+        return
         
-        print("\n--- VISUALIZAÇÃO ESTATÍSTICA INICIAL (N>=2) ---")
-        df_stats_display = df_stats_inicial[['P_NOMINAL_AGRUPADA', 'N', 'CV_γ̇aw(%)']].copy()
-        df_stats_display.columns = ['P_Nominal', 'N', 'CV Vazão (%)']
-        
-        # CORREÇÃO: Usa 'formatters' em vez de 'floatfmt' (compatibilidade)
-        fmt_display = {'P_Nominal': lambda x: format_float_for_table(x, 2),
-                       'N': lambda x: str(int(x)) if pd.notna(x) else 'N/A',
-                       'CV Vazão (%)': lambda x: format_float_for_table(x, 2)}
-        
-        print(df_stats_display.to_string(index=False, formatters=fmt_display))
-        
-        
-        # Pergunta o limite de CV para a remoção
-        cv_limite = input_float_com_virgula("\nLimite de CV (%) para remoção automática de outliers (Sugestão: 10): ")
-        if cv_limite is None or cv_limite <= 0: cv_limite = 10.0
+    print("\n--- VISUALIZAÇÃO ESTATÍSTICA INICIAL (N>=2) ---")
+    df_stats_display = df_stats_inicial[['P_NOMINAL_AGRUPADA', 'N', 'CV_γ̇aw(%)']].copy()
+    df_stats_display.columns = ['P_Nominal', 'N', 'CV Vazão (%)']
+    
+    # CORREÇÃO: Usa 'formatters' em vez de 'floatfmt' (compatibilidade)
+    fmt_display = {'P_Nominal': lambda x: format_float_for_table(x, 2),
+                   'N': lambda x: str(int(x)) if pd.notna(x) else 'N/A',
+                   'CV Vazão (%)': lambda x: format_float_for_table(x, 2)}
+    
+    print(df_stats_display.to_string(index=False, formatters=fmt_display))
+    
+    
+    # Pergunta o limite de CV para a remoção
+    cv_limite = input_float_com_virgula("\nLimite de CV (%) para remoção automática de outliers (Sugestão: 10): ")
+    if cv_limite is None or cv_limite <= 0: cv_limite = 10.0
 
-        print(f"\n--- INICIANDO LIMPEZA ITERATIVA COM CV={cv_limite:.1f}% ---")
+    print(f"\n--- INICIANDO LIMPEZA ITERATIVA COM CV={cv_limite:.1f}% ---")
+    
+    df_stats_atual = df_stats_inicial
+    total_pontos_orig = len(df_limpo)
+    
+    # Loop de repetição para remover outliers e recalcular as estatísticas
+    while True:
+        pontos_antes = len(df_limpo)
         
-        # Loop de repetição para remover outliers e recalcular as estatísticas
-        while True:
-            pontos_antes = len(df_limpo)
-            
-            # Remove outliers usando o CV e 2*STD
-            df_limpo, df_stats_recalc = remover_outliers_por_cv(df_limpo, df_stats_atual, cv_limite)
-            
-            pontos_depois = len(df_limpo)
-            
-            if pontos_depois == pontos_antes:
-                print("\nSUCESSO: Nenhuma remoção adicional de outliers necessária.")
-                break
-            
-            df_stats_atual = df_stats_recalc
-            print(f"  -> Limpeza resultou em {pontos_antes - pontos_depois} remoções. Novo ciclo de verificação...")
-            
-            if pontos_depois < 4:
-                print("AVISO: Restaram menos de 4 pontos válidos. Abortando limpeza.")
-                break
-
+        # Remove outliers usando o CV e 2*STD
+        df_limpo, df_stats_recalc = remover_outliers_por_cv(df_limpo, df_stats_atual, cv_limite)
+        
+        pontos_depois = len(df_limpo)
+        
+        if pontos_depois == pontos_antes:
+            print("\nSUCESSO: Nenhuma remoção adicional de outliers necessária.")
+            break
+        
+        df_stats_atual = df_stats_recalc
+        print(f"  -> Limpeza resultou em {pontos_antes - pontos_depois} remoções. Novo ciclo de verificação...")
+        
+        if pontos_depois < 4:
+            print("AVISO: Restaram menos de 4 pontos válidos. Abortando limpeza.")
+            break
 
     # 4. Exibe o resultado final da limpeza
     
-    df_stats_final = df_stats_atual
+    df_stats_final = df_stats_recalc
     
     print("\n" + "="*70)
     print("--- RESULTADO FINAL DO TRATAMENTO ESTATÍSTICO (PRONTO PARA O SCRIPT 2) ---")
-    
-    # Cálculo total de pontos removidos (Massa 0 + Outliers)
-    pontos_removidos_total_final = (total_pontos_orig + pontos_removidos_massa_zero) - len(df_limpo)
-    
-    print(f"Pontos Originais (Brutos): {total_pontos_orig + pontos_removidos_massa_zero}. Pontos Finais: {len(df_limpo)}.")
+    print(f"Pontos Originais: {total_pontos_orig}. Pontos Finais: {len(df_limpo)}.")
     
     if not df_stats_final.empty:
         # Formata para exibição
@@ -379,6 +352,10 @@ def executar_pre_analise_e_limpeza():
     # 5.1. Mapeia colunas do df_limpo de volta para a estrutura de lista de dicionários do JSON
     testes_limpos_json = []
     
+    # As colunas `media_pressao_final_ponto_bar`, `massa_g_registrada`, `duracao_real_s`, etc.,
+    # são as colunas originais que o Script 1 espera dentro da lista 'testes'.
+    # O Ponto_n é a numeração sequencial após a ordenação/limpeza.
+    
     for i, row in df_limpo.reset_index(drop=True).iterrows():
         testes_limpos_json.append({
             "ponto_n": i + 1, # Renumeração final após a limpeza
@@ -386,14 +363,13 @@ def executar_pre_analise_e_limpeza():
             "duracao_real_s": row['duracao_real_s'],
             "media_tensao_final_ponto_V": row['media_tensao_final_ponto_V'], # Mantém o valor original lido
             "media_pressao_final_ponto_bar": row['media_pressao_final_ponto_bar']
+            # Omissão de 'leituras_pressao_detalhadas_bar' para simplificar o JSON
         })
 
     # 5.2. Cria o novo objeto JSON
     dados_combinados['testes'] = testes_limpos_json
     dados_combinados['data_hora_limpeza'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Atualiza a observação de limpeza
-    dados_combinados['observacoes_limpeza'] = f"Combinado(s) de {len(caminhos_jsons)} arquivo(s). {pontos_removidos_total_final} ponto(s) removido(s) no total (Massa=0 ou CV alto)."
+    dados_combinados['observacoes_limpeza'] = f"Combinado(s) de {len(caminhos_jsons)} arquivo(s). {total_pontos_orig - len(df_limpo)} ponto(s) removido(s) automaticamente (CV > {cv_limite:.1f}%)."
     
     # 5.3. Salva o JSON na pasta de testes
     json_limpo_filename = f"limpo_{nome_sessao_base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -425,7 +401,6 @@ def executar_pre_analise_e_limpeza():
     colunas_finais = ['P_ext(bar)', 'M_ext(g)', 't_ext(s)', 'D_cap(mm)', 'L_cap(mm)', 'rho(g/cm³)', 'τw (Pa)', 'γ̇w (s⁻¹)', 'η (Pa·s)']
     df_saida_individual = df_saida_individual[colunas_finais]
     
-    # Cria uma pasta específica para o novo CSV limpo, para que o Script 2 possa carregá-lo
     nome_pasta_analise = f"{nome_sessao_base}_ANALISE_LIMPA_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     caminho_pasta_individual = os.path.join("resultados_analise_reologica", nome_pasta_analise)
     if not os.path.exists(caminho_pasta_individual):
@@ -438,7 +413,7 @@ def executar_pre_analise_e_limpeza():
         df_saida_individual.to_csv(caminho_csv_individual, index=False, sep=';', decimal=',', float_format='%.4f', encoding='utf-8-sig')
         print(f"\nSUCESSO: CSV de Análise (Limpo) salvo em: {caminho_csv_individual}")
         print(f"\nPRÓXIMO PASSO: Execute o Script 2.Analise_reologica.py.")
-        print(f"Use o modo 'JSON' e selecione o novo JSON ou o modo 'CSV' com o arquivo CSV salvo acima.")
+        print(f"Use o modo 'JSON' e selecione '{json_limpo_filename}' ou o modo 'CSV' com o arquivo CSV salvo acima.")
         
     except Exception as e:
         print(f"ERRO ao salvar CSV de análise: {e}")

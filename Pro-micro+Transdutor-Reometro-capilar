@@ -1,0 +1,105 @@
+/**
+ * @file Pro-micro-Transdutor-Reometro-capilar.ino
+ * @brief Firmware para reômetro capilar com transdutor de pressão analógico (0-5V).
+ * @version 2.0
+ * @author Bruno Egami (Modificado por Gemini)
+ * @date 16/08/2025
+ *
+ * @details
+ * Este código foi adaptado para ler um sinal de tensão de um transdutor de pressão
+ * em um pino analógico do Arduino Pro Micro. Ele substitui a implementação anterior
+ * que utilizava um módulo HX711 com extensômetros.
+ *
+ * O firmware aguarda comandos via porta serial do script Python (`1.Controle_Reometro.py`)
+ * e responde com a leitura da tensão.
+ *
+ * Conexão do Hardware:
+ * - Pino de SINAL do transdutor -> Pino A0 do Arduino Pro Micro
+ * - Pino VCC do transdutor     -> Pino 5V do Arduino
+ * - Pino GND do transdutor     -> Pino GND do Arduino
+ */
+
+// --- CONFIGURAÇÕES ---
+
+// Define o pino analógico onde o sinal de 0-5V do transdutor está conectado.
+#define SENSOR_PIN A0
+
+// Parâmetro para o filtro de Média Móvel Exponencial (EMA - Exponential Moving Average).
+// Este filtro ajuda a suavizar a leitura do sensor, removendo ruídos.
+// - Valor 1.0 desativa o filtro (leitura instantânea).
+// - Valores menores (ex: 0.1 a 0.5) aumentam a suavização. Comece com 0.3.
+#define EMA_ALPHA 1.0
+
+// --- Variáveis Globais ---
+float ema_voltage = 0.0;       // Armazena o último valor suavizado da tensão
+bool ema_initialized = false;  // Flag para controlar a primeira leitura do filtro
+
+/**
+ * @brief Função de configuração inicial. Executada uma vez quando o Arduino liga ou é resetado.
+ */
+void setup() {
+  // Inicia a comunicação serial com a mesma taxa de baud do script Python.
+  Serial.begin(115200);
+
+  // Define o pino do sensor como uma entrada.
+  pinMode(SENSOR_PIN, INPUT);
+
+  // Envia mensagens de confirmação para o monitor serial (e para o Python).
+  Serial.println(F("Arduino: Inicializado com transdutor de pressao 0-5V."));
+  Serial.println(F("Arduino: Pronto para receber comandos do Python."));
+}
+
+/**
+ * @brief Lê a tensão do pino analógico e aplica o filtro EMA.
+ * @return A tensão lida (e suavizada) em Volts.
+ */
+float getSmoothedVoltage() {
+  // O Arduino Pro Micro (ATmega32U4) possui um conversor Analógico-Digital (ADC) de 10 bits.
+  // Isso significa que ele mapeia a tensão de entrada (0-5V) para um valor inteiro entre 0 e 1023.
+  int sensor_raw_value = analogRead(SENSOR_PIN);
+
+  // Converte o valor lido (0-1023) de volta para uma tensão (0.0-5.0V).
+  float voltage = sensor_raw_value * (5.0 / 1023.0);
+
+  // Lógica do filtro EMA.
+  if (!ema_initialized) {
+    // Na primeira execução, o valor suavizado é simplesmente a primeira leitura.
+    ema_voltage = voltage;
+    ema_initialized = true;
+  } else {
+    // Nas leituras seguintes, aplica a fórmula do EMA.
+    ema_voltage = (voltage * EMA_ALPHA) + (ema_voltage * (1.0 - EMA_ALPHA));
+  }
+
+  return ema_voltage;
+}
+
+/**
+ * @brief Loop principal. O Arduino fica aqui aguardando e processando comandos.
+ */
+void loop() {
+  // Verifica se há algum dado chegando pela porta serial.
+  if (Serial.available() > 0) {
+    // Lê a string de comando até encontrar uma quebra de linha ('\n').
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Remove espaços em branco ou caracteres invisíveis.
+
+    // --- Processamento de Comandos ---
+
+    // Se o comando for "READ_VOLTAGE", lê o sensor e envia o valor.
+    if (command == "READ_VOLTAGE") {
+      float voltageValue = getSmoothedVoltage();
+      // Imprime o valor da tensão com 4 casas decimais para o Python.
+      Serial.println(voltageValue, 4);
+    }
+    // Se o comando for "PING", responde com um "ACK" para confirmar a comunicação.
+    else if (command == "PING") {
+      Serial.println(F("ACK_PING_OK"));
+    }
+    // Se receber um comando que não reconhece.
+    else {
+      Serial.print(F("Arduino: Comando desconhecido - "));
+      Serial.println(command);
+    }
+  }
+}
