@@ -1,0 +1,99 @@
+{
+    "id_amostra": "Caulim40%TesteCapilar2x43",
+    "descricao": "Reometro com transdutor, caulim com 40% de massa em água, capilar 2x43 LuerLocker",
+    "data_hora_inicio": "2025-10-20 15:56:52",
+    "diametro_capilar_mm": 2.0,
+    "comprimento_capilar_mm": 43.0,
+    "densidade_pasta_g_cm3": 1.63,
+    "calibracao_aplicada": {
+        "slope": 1.9423761735189375,
+        "intercept": -0.005710585950145676
+    },
+    "testes": [
+        {
+            "ponto_n": 1,
+            "massa_g_registrada": 1.12,
+            "duracao_real_s": 10.333850860595703,
+            "media_tensao_final_ponto_V": 0.18609462365591392,
+            "media_pressao_final_ponto_bar": 0.3557551770590753
+        },
+        {
+            "ponto_n": 2,
+            "massa_g_registrada": 1.65,
+            "duracao_real_s": 10.225976943969727,
+            "media_tensao_final_ponto_V": 0.2219108695652174,
+            "media_pressao_final_ponto_bar": 0.4253237997382014
+        },
+        {
+            "ponto_n": 3,
+            "massa_g_registrada": 1.73,
+            "duracao_real_s": 10.227004766464233,
+            "media_tensao_final_ponto_V": 0.23202282608695649,
+            "media_pressao_final_ponto_bar": 0.44496502315368675
+        },
+        {
+            "ponto_n": 4,
+            "massa_g_registrada": 2.18,
+            "duracao_real_s": 10.326143026351929,
+            "media_tensao_final_ponto_V": 0.2397935483870968,
+            "media_pressao_final_ponto_bar": 0.4600586890005116
+        },
+        {
+            "ponto_n": 5,
+            "massa_g_registrada": 2.03,
+            "duracao_real_s": 10.33773398399353,
+            "media_tensao_final_ponto_V": 0.24327956989247315,
+            "media_pressao_final_ponto_bar": 0.46682985411292927
+        },
+        {
+            "ponto_n": 6,
+            "massa_g_registrada": 2.52,
+            "duracao_real_s": 11.224079132080078,
+            "media_tensao_final_ponto_V": 0.2642415841584158,
+            "media_pressao_final_ponto_bar": 0.5075459711720604
+        },
+        {
+            "ponto_n": 7,
+            "massa_g_registrada": 2.97,
+            "duracao_real_s": 10.448960304260254,
+            "media_tensao_final_ponto_V": 0.29715531914893617,
+            "media_pressao_final_ponto_bar": 0.5714768257991635
+        },
+        {
+            "ponto_n": 8,
+            "massa_g_registrada": 7.72,
+            "duracao_real_s": 10.110100984573364,
+            "media_tensao_final_ponto_V": 0.42993736263736254,
+            "media_pressao_final_ponto_bar": 0.8293895033422385
+        },
+        {
+            "ponto_n": 9,
+            "massa_g_registrada": 7.84,
+            "duracao_real_s": 10.085038185119629,
+            "media_tensao_final_ponto_V": 0.4333241758241757,
+            "media_pressao_final_ponto_bar": 0.8359679685804641
+        },
+        {
+            "ponto_n": 10,
+            "massa_g_registrada": 11.24,
+            "duracao_real_s": 10.22470760345459,
+            "media_tensao_final_ponto_V": 0.4466467391304349,
+            "media_pressao_final_ponto_bar": 0.8618453981167395
+        },
+        {
+            "ponto_n": 11,
+            "massa_g_registrada": 13.06,
+            "duracao_real_s": 10.561078548431396,
+            "media_tensao_final_ponto_V": 0.44911578947368425,
+            "media_pressao_final_ponto_bar": 0.8666412226746857
+        },
+        {
+            "ponto_n": 12,
+            "massa_g_registrada": 17.13,
+            "duracao_real_s": 10.299983739852905,
+            "media_tensao_final_ponto_V": 0.45856559139784925,
+            "media_pressao_final_ponto_bar": 0.8849962927766576
+        }
+    ],
+    "data_hora_ultima_coleta": "2025-10-20 16:08:52"
+}

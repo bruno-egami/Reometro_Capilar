@@ -1,0 +1,55 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA APROFUNDADA
+Sessão Base: teste-std1-round1-capilar1.5_20251022_174358
+Data de Análise: 2025-10-22 17:45:43
+================================================================================
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+τw_MEDIA(Pa) CV_τw(%) γ̇w_MEDIA(s⁻¹) CV_γ̇w(%) CV_η_PROPAGADO(%)
+      712.32     2.31         339.44      5.66              6.12
+      818.56     0.63         390.01      2.30              2.38
+      887.49     1.47         482.47      5.17              5.38
+     1070.62     1.21         668.38      4.49              4.65
+     1104.57     0.92         697.40      2.54              2.70
+     1224.90      N/A        1021.05       N/A               N/A
+     1325.51     1.69        1030.43      6.27              6.49
+     1395.06     1.58        1139.06      2.49              2.95
+     1507.94     1.08        1616.42     21.64             21.67
+     1528.63      N/A        1702.52       N/A               N/A
+     1647.18     0.81        1782.42     11.19             11.22
+     1751.18     0.23        2150.70      2.52              2.53
+     2240.30     0.31        3840.39     20.52             20.52
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 0.83 %
+CV Médio Ponderado de γ̇w: 7.63 %
+CV Médio Ponderado de η:  7.75 %
+CV Máximo de τw (Pior Ponto): 2.31 %
+Pontos Analisados: 13
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 13 níveis de Pressão Nominal (P_ext) distintos.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Excelente (0.83%). Indica uma alta reprodutibilidade da pressão aplicada e, consequentemente, da tensão de cisalhamento (τw).
+  * CONCLUSÃO QUALITATIVA: O equipamento e o procedimento de ensaio demonstram ser altamente estáveis e controláveis.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Aceitável (7.63%). Variação esperada, já que γ̇w depende da vazão e da geometria do capilar.
+  * CONCLUSÃO QUALITATIVA: O volume/massa extrudado(a) no tempo de ensaio se manteve relativamente constante para os diferentes testes.
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Alta (7.75%).
+  * CONCLUSÃO QUALITATIVA: A variabilidade nos parâmetros fundamentais (τw e γ̇w) não resulta em uma incerteza excessiva no resultado final da viscosidade, reforçando a validade dos dados reológicos.
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: Os dados são estatisticamente robustos. Prossiga com a modelagem e comparação com outras amostras (Scripts 3 e 4).
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

@@ -1,0 +1,19 @@
+Point No.	Shear Rate	Shear Stress	Viscosity	1st Normal Stress Difference	1st Normal Stress Coefficient	1st Normal Stress Difference (Lodge-Meissner)	Torque	Status
+				Non-oscillating part	Non-oscillating part	Non-oscillating part		
+	[1/s]	[Pa]	[mPa·s]	[Pa]	[Pa·s²]	[Pa]	[mN·m]	
+1	10	246,19	24619	---	---	2,3384E+05	1,1311	Dy_fast
+2	11,7	255,94	21952	---	---	4,9534E+05	1,1759	Dy_fast
+3	13,6	279,59	20568	---	---	8,1242E+05	1,2846	Dy_fast
+4	15,8	317,53	20035	---	---	1,2261E+06	1,4589	Dy_fast
+5	18,5	349,9	18935	---	---	1,6803E+06	1,6076	Dy_fast
+6	21,5	398,44	18494	---	---	2,2826E+06	1,8306	Dy_fast
+7	25,1	424,15	16886	---	---	2,8169E+06	1,9488	Dy_fast
+8	29,3	460,76	15733	---	---	3,474E+06	2,117	Dy_fast
+9	34,1	525,03	15376	---	---	4,423E+06	2,4123	Dy_fast
+10	39,8	604,52	15185	---	---	5,6194E+06	2,7775	Dy_fast
+11	46,4	623,79	13439	---	---	6,3335E+06	2,866	Dy_fast
+12	54,1	578,68	10693	---	---	6,3644E+06	2,6588	Dy_fast
+13	63,1	699,35	11084	---	---	8,2732E+06	3,2132	Dy_fast
+14	73,6	495,79	6739,6	---	---	6,2712E+06	2,2779	Dy_fast
+15	85,8	559,6	6524,4	---	---	7,5296E+06	2,5711	Dy_fast
+

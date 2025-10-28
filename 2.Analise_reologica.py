@@ -91,8 +91,8 @@ def ler_dados_json(json_filepath):
             print(f"ERRO JSON: Faltam dados essenciais (diametro_capilar_mm, comprimento_capilar_mm, densidade_pasta_g_cm3) em '{os.path.basename(json_filepath)}'")
             return None
 
-        # Parâmetro de tempo (opcional global)
-        json_t_ext_s = data.get('duracao_por_teste_s')
+        # Parâmetro de tempo (opcional global - usado para preencher se 'duracao_real_s' não existe)
+        json_t_ext_s_fixo = data.get('duracao_por_teste_s')
 
         # Extrai listas de pressão, massa e duração (se variável)
         pressoes_bar_list, massas_g_list, duracoes_s_list = [], [], []
@@ -101,34 +101,38 @@ def ler_dados_json(json_filepath):
             for i, teste in enumerate(data['testes']):
                 p = teste.get('media_pressao_final_ponto_bar')
                 m = teste.get('massa_g_registrada')
-                t_real = teste.get('duracao_real_s')
-
+                t_real = teste.get('duracao_real_s') # Novo campo de tempo variável
+                
                 if p is None or m is None:
                     print(f"ALERTA JSON: Teste {i+1} em '{os.path.basename(json_filepath)}' sem 'media_pressao_final_ponto_bar' ou 'massa_g_registrada'. Pulando.")
                     continue
                 
-                # Se não há tempo global, o tempo individual é obrigatório
-                if json_t_ext_s is None and t_real is None:
-                    print(f"ERRO JSON: Duração não encontrada para o Teste {i+1}. Forneça 'duracao_por_teste_s' (global) ou 'duracao_real_s' (em cada teste).")
-                    return None
-                
                 pressoes_bar_list.append(float(p))
                 massas_g_list.append(float(m))
+                
+                # Prioriza t_real. Se não houver, usa o tempo fixo global.
                 if t_real is not None:
                     duracoes_s_list.append(float(t_real))
-        
-        # Se não há tempo global e a lista de tempos individuais não foi preenchida (mas deveria ter sido), é um erro.
-        if json_t_ext_s is None and len(duracoes_s_list) != len(pressoes_bar_list):
-             print(f"ERRO JSON: Inconsistência nos dados de duração variável em '{os.path.basename(json_filepath)}'")
+                elif json_t_ext_s_fixo is not None:
+                    duracoes_s_list.append(float(json_t_ext_s_fixo))
+
+        # Verifica se o número de tempos corresponde ao número de pontos
+        if len(duracoes_s_list) != len(pressoes_bar_list):
+             print(f"ERRO JSON: Inconsistência nos dados de duração variável/fixa em '{os.path.basename(json_filepath)}'")
              return None
 
+        # Define o modo de tempo para o relatório (se todos são iguais, é fixo)
+        is_fixed_time = len(set(duracoes_s_list)) <= 1
+        tempo_extrusao_info = duracoes_s_list[0] if is_fixed_time and duracoes_s_list else None
+        
         return {
             'D_mm': float(D_mm), 'L_mm': float(L_mm),
             'rho_g_cm3_json': float(json_rho_g_cm3),
-            't_ext_s_json': float(json_t_ext_s) if json_t_ext_s is not None else None,
+            # MODIFICADO: Retorna o array de durações e o valor fixo (se aplicável)
+            't_ext_s_fixo': tempo_extrusao_info, 
+            'duracoes_s_list': duracoes_s_list, 
             'pressoes_bar_list': pressoes_bar_list,
             'massas_g_list': massas_g_list,
-            'duracoes_s_list': duracoes_s_list
         }
     except FileNotFoundError: print(f"ERRO: Arquivo JSON não encontrado '{json_filepath}'."); return None
     except json.JSONDecodeError: print(f"ERRO: Falha ao decodificar o arquivo JSON '{json_filepath}'. Verifique o formato."); return None
@@ -321,7 +325,8 @@ def plotar_ajuste_bagley(L_over_R_vals, P_vals, slope, intercept, target_gamma_a
     except Exception as e: print(f"  ERRO ao salvar plot de Bagley: {e}")
     plt.close()
 
-def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si, t_ext_si, output_folder, timestamp, num_bagley_pts_final=15):
+# MODIFICADA: Recebe t_ext_s_array em vez de t_ext_si (tempo fixo)
+def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si, t_ext_s_array_map, output_folder, timestamp, num_bagley_pts_final=15):
     """
     Executa a correção de Bagley completa. Usa dados de capilares de diferentes comprimentos
     para determinar a tensão de cisalhamento na parede corrigida.
@@ -331,9 +336,19 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
 
     for cap_data in lista_cap_data_bagley:
         cap_data['R_m'] = (common_D_mm_bagley / 2000.0)
+        # Associa o array de tempos correspondente ao capilar
+        cap_id = f"{cap_data['D_mm']:.3f}_{cap_data['L_mm']:.2f}"
+        t_s_array = t_ext_s_array_map.get(cap_id, None)
+
+        if t_s_array is None or len(t_s_array) != len(cap_data['massas_kg']):
+            print(f"ERRO (Bagley): Array de tempos inválido ou incompatível para D={cap_data['D_mm']}mm, L={cap_data['L_mm']}mm. Pulando.")
+            continue
+            
+        # MODIFICADO: Cálculo de vazão com array de tempos
         cap_data['volumes_m3'] = cap_data['massas_kg'] / rho_si
-        cap_data['vazoes_Q_m3_s'] = cap_data['volumes_m3'] / t_ext_si
+        cap_data['vazoes_Q_m3_s'] = cap_data['volumes_m3'] / t_s_array # <--- AQUI ESTÁ A MUDANÇA
         cap_data['gamma_dot_aw'] = (4*cap_data['vazoes_Q_m3_s'])/(np.pi*cap_data['R_m']**3) if cap_data['R_m'] > 0 else np.zeros_like(cap_data['vazoes_Q_m3_s'])
+        
         gamma_aw_flow = cap_data['gamma_dot_aw'][cap_data['massas_kg'] > 1e-9]
         if len(gamma_aw_flow) > 0:
             min_gamma_overall = min(min_gamma_overall, np.min(gamma_aw_flow))
@@ -348,11 +363,16 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
     for target_gamma_k_val in targets_gamma_aw:
         P_target_list, L_R_target_list = [], []
         for cap_data in lista_cap_data_bagley:
+            # Devemos ter certeza que o cap_data['gamma_dot_aw'] foi calculado
+            if 'gamma_dot_aw' not in cap_data: continue 
+
             sort_idx = np.argsort(cap_data['gamma_dot_aw'])
             sorted_gamma_cap, sorted_P_cap = cap_data['gamma_dot_aw'][sort_idx], cap_data['pressoes_Pa'][sort_idx]
             unique_gamma, unique_idx_u = np.unique(sorted_gamma_cap, return_index=True)
             unique_P = sorted_P_cap[unique_idx_u]
             if len(unique_gamma) < 2: continue
+            
+            # Interpolação (o resto da lógica de Bagley se mantém inalterada)
             if unique_gamma[0] <= target_gamma_k_val <= unique_gamma[-1]:
                 try:
                     P_interp = np.interp(target_gamma_k_val, unique_gamma, unique_P)
@@ -375,7 +395,8 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
     return np.array(gamma_aw_targets_ok_list), np.array(tau_w_corr_list)
 
 
-def perform_mooney_correction(capilares_data, common_L_mm, rho_si, t_ext_si, output_folder, timestamp, tau_w_targets_ref=None):
+# MODIFICADA: Recebe t_ext_s_array_map em vez de t_ext_si (tempo fixo)
+def perform_mooney_correction(capilares_data, common_L_mm, rho_si, t_ext_s_array_map, output_folder, timestamp, tau_w_targets_ref=None):
     """
     Executa a correção de Mooney completa (versão final com geração de alvos aprimorada).
     """
@@ -395,8 +416,17 @@ def perform_mooney_correction(capilares_data, common_L_mm, rho_si, t_ext_si, out
         massas_kg = np.array(cap['massas_kg'])
         pressoes_Pa = np.array(cap['pressoes_Pa'])
         
+        # Associa o array de tempos correspondente ao capilar
+        cap_id = f"{cap['D_mm']:.3f}_{cap['L_mm']:.2f}"
+        t_s_array = t_ext_s_array_map.get(cap_id, None)
+
+        if t_s_array is None or len(t_s_array) != len(massas_kg):
+            print(f"ERRO (Mooney): Array de tempos inválido ou incompatível para D={cap['D_mm']}mm, L={cap['L_mm']}mm. Pulando.")
+            continue
+
+        # MODIFICADO: Cálculo de vazão com array de tempos
         volumes_m3 = massas_kg / rho_si
-        Q_m3_s = volumes_m3 / t_ext_si
+        Q_m3_s = volumes_m3 / t_s_array # <--- AQUI ESTÁ A MUDANÇA
         
         gamma_dot_aw = (4 * Q_m3_s) / (np.pi * R_m**3)
         tau_w = (pressoes_Pa * R_m) / (2 * common_L_m)
@@ -584,6 +614,9 @@ while not dados_confirmados:
     _D_cap_mm_unico_val_resumo, _L_cap_mm_unico_val_resumo = "N/A", "N/A"
     _csv_path_resumo = "N/A"
     num_pontos_cap_bagley_manual, num_pontos_cap_mooney_manual, num_testes_unico_manual = 0,0,0
+    
+    # NOVO: Dicionário para armazenar o array de tempos por capilar (D_L)
+    t_ext_s_array_by_capilar = {} 
 
     print("\n--- Método de Entrada de Dados Experimentais ---\n1. Manual\n2. CSV\n3. Arquivo JSON")
     metodo_entrada = ""
@@ -614,17 +647,19 @@ while not dados_confirmados:
         D_cap_mm_unico_val = json_data['D_mm']
         L_cap_mm_unico_val = json_data['L_mm']
 
-        # Lógica para carregar tempo fixo ou variável
-        if json_data['t_ext_s_json'] is not None:
-            tempo_extrusao_fixo_s_val = json_data['t_ext_s_json']
-            print(f"  Dados de tempo: Encontrado tempo de extrusão FIXO de {tempo_extrusao_fixo_s_val:.2f} s no JSON.")
-        elif json_data['duracoes_s_list']:
-            tempos_s_display_tab = json_data['duracoes_s_list']
-            # Para fins de relatório e compatibilidade, definimos um valor médio
+        # Lógica para carregar tempo fixo ou variável (duracoes_s_list é o array real)
+        tempos_s_display_tab = json_data['duracoes_s_list']
+        if not tempos_s_display_tab:
+            print(f"ERRO: Não foi possível carregar os dados de tempo do arquivo JSON '{json_filename_unico}'."); continue
+        
+        is_variable_time = len(set(tempos_s_display_tab)) > 1
+        if is_variable_time:
+             # Para fins de relatório e compatibilidade, definimos um valor médio
             tempo_extrusao_fixo_s_val = np.mean(tempos_s_display_tab)
             print(f"  Dados de tempo: Encontrados tempos de extrusão VARIÁVEIS no JSON (média: {tempo_extrusao_fixo_s_val:.2f} s).")
         else:
-            print(f"ERRO: Não foi possível carregar os dados de tempo do arquivo JSON '{json_filename_unico}'."); continue
+            tempo_extrusao_fixo_s_val = tempos_s_display_tab[0]
+            print(f"  Dados de tempo: Encontrado tempo de extrusão FIXO de {tempo_extrusao_fixo_s_val:.2f} s no JSON.")
 
         if rho_pasta_g_cm3_fixo <= 0 or D_cap_mm_unico_val <= 0 or L_cap_mm_unico_val <= 0:
             print(f"ERRO JSON Único: Valores inválidos (rho, D ou L <= 0) em '{json_filename_unico}'."); continue
@@ -634,6 +669,10 @@ while not dados_confirmados:
         _L_cap_mm_unico_val_resumo = f"{L_cap_mm_unico_val:.2f}"
         pressoes_bar_display_tab = json_data['pressoes_bar_list']
         massas_g_display_tab = json_data['massas_g_list']
+        
+        # Adiciona o array de tempos ao mapa, para o caso de Correção W-R ou Plotagem
+        cap_id_unico = f"{D_cap_mm_unico_val:.3f}_{L_cap_mm_unico_val:.2f}"
+        t_ext_s_array_by_capilar[cap_id_unico] = np.array(tempos_s_display_tab)
 
         if not pressoes_bar_display_tab or not massas_g_display_tab or \
            len(pressoes_bar_display_tab) != len(massas_g_display_tab) or \
@@ -641,17 +680,12 @@ while not dados_confirmados:
              print(f"ERRO JSON Único: Dados de P/M inválidos, vazios ou com tamanhos diferentes em '{json_filename_unico}'."); continue
 
         num_testes_para_analise = len(pressoes_bar_display_tab)
-        # Se os tempos não foram preenchidos (caso de tempo fixo), preenche agora
-        if not tempos_s_display_tab:
-            tempos_s_display_tab = [tempo_extrusao_fixo_s_val] * num_testes_para_analise
 
-        print(f"Dados de '{json_filename_unico}' carregados e definidos como globais:\n"
-              f"  Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Diâmetro: {D_cap_mm_unico_val:.3f} mm, Comprimento: {L_cap_mm_unico_val:.2f} mm")
 
-    # CASO B: JSON com Correções de Bagley e/ou Mooney (ainda usa tempo fixo)
+    # CASO B: JSON com Correções de Bagley e/ou Mooney (AGORA SUPORTA TEMPO VARIÁVEL)
     elif metodo_entrada == "3" and (realizar_bagley or realizar_mooney):
         print("\n--- Entrada JSON com Correções (Bagley/Mooney) ---")
-        print("AVISO: Esta modalidade ainda requer um tempo de extrusão fixo ('duracao_por_teste_s') nos arquivos JSON.")
+        print("INFO: Esta modalidade AGORA suporta tempo de extrusão variável ('duracao_real_s') nos arquivos JSON.")
         if not os.path.exists(json_base_path):
             print(f"ERRO: Pasta '{json_base_path}' não encontrada."); continue
 
@@ -670,14 +704,20 @@ while not dados_confirmados:
                 json_filename = selecionar_arquivo_json(json_base_path, f"Escolha o JSON para capilar Bagley {i+1}")
                 if not json_filename: erro_na_leitura = True; break
                 json_data = ler_dados_json(os.path.join(json_base_path, json_filename))
-                if not json_data or json_data.get('t_ext_s_json') is None: 
-                    print(f"ERRO: O arquivo '{json_filename}' não contém a chave 'duracao_por_teste_s' necessária para esta análise.")
+                if not json_data: erro_na_leitura = True; break
+                
+                # O tempo agora vem do array de durações, seja fixo ou variável
+                duracoes_array = json_data.get('duracoes_s_list', [])
+                if not duracoes_array:
+                    print(f"ERRO: O arquivo '{json_filename}' não contém dados de duração válidos ('duracao_real_s' ou 'duracao_por_teste_s').")
                     erro_na_leitura = True; break
+                
                 _json_files_resumo.append(json_filename)
 
                 if not params_globais_definidos:
                     rho_pasta_g_cm3_fixo = json_data['rho_g_cm3_json']
-                    tempo_extrusao_fixo_s_val = json_data['t_ext_s_json']
+                    # Define tempo_extrusao_fixo_s_val como o tempo médio/único, para fins de relatório
+                    tempo_extrusao_fixo_s_val = np.mean(duracoes_array) if len(duracoes_array) > 0 else 0.0
                     D_cap_mm_bagley_comum_val = json_data['D_mm']
                     if any(p <= 0 for p in [rho_pasta_g_cm3_fixo, tempo_extrusao_fixo_s_val, D_cap_mm_bagley_comum_val]):
                         print(f"ERRO: Parâmetros de referência (rho, t, D) inválidos em '{json_filename}'."); erro_na_leitura = True; break
@@ -685,7 +725,7 @@ while not dados_confirmados:
                     _D_cap_mm_bagley_comum_val_resumo = f"{D_cap_mm_bagley_comum_val:.3f}"
                     params_globais_definidos = True
                     print(f"  Parâmetros de Referência definidos por '{json_filename}':\n"
-                          f"    Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Tempo: {tempo_extrusao_fixo_s_val:.2f} s, D Comum: {D_cap_mm_bagley_comum_val:.3f} mm")
+                          f"    Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Tempo Médio: {tempo_extrusao_fixo_s_val:.2f} s, D Comum: {D_cap_mm_bagley_comum_val:.3f} mm")
                 else:
                     if not np.isclose(json_data['D_mm'], D_cap_mm_bagley_comum_val):
                         print(f"ERRO: D={json_data['D_mm']:.3f}mm ('{json_filename}') difere do D comum de ref. {D_cap_mm_bagley_comum_val:.3f}mm."); erro_na_leitura = True; break
@@ -693,6 +733,11 @@ while not dados_confirmados:
                 L_i_mm = json_data['L_mm']
                 p_bar_cap_i, m_g_cap_i = json_data['pressoes_bar_list'], json_data['massas_g_list']
                 bagley_capilares_L_mm_info.append(L_i_mm)
+                
+                # ADICIONADO: Popula o mapa de arrays de tempo
+                cap_id_bagley = f"{D_cap_mm_bagley_comum_val:.3f}_{L_i_mm:.2f}"
+                t_ext_s_array_by_capilar[cap_id_bagley] = np.array(duracoes_array)
+
                 capilares_bagley_data_input.append({'L_mm': L_i_mm, 'L_m': L_i_mm/1000.0, 'D_mm': D_cap_mm_bagley_comum_val,
                                                   'pressoes_Pa': np.array(p_bar_cap_i)*1e5, 'massas_kg': np.array(m_g_cap_i)/1000.0})
         
@@ -710,20 +755,25 @@ while not dados_confirmados:
                 json_filename = selecionar_arquivo_json(json_base_path, f"Escolha o JSON para capilar Mooney {i+1}")
                 if not json_filename: erro_na_leitura = True; break
                 json_data = ler_dados_json(os.path.join(json_base_path, json_filename))
-                if not json_data or json_data.get('t_ext_s_json') is None: 
-                    print(f"ERRO: O arquivo '{json_filename}' não contém a chave 'duracao_por_teste_s' necessária para esta análise.")
+                if not json_data: erro_na_leitura = True; break
+                
+                duracoes_array = json_data.get('duracoes_s_list', [])
+                if not duracoes_array:
+                    print(f"ERRO: O arquivo '{json_filename}' não contém dados de duração válidos ('duracao_real_s' ou 'duracao_por_teste_s').")
                     erro_na_leitura = True; break
+                    
                 _json_files_resumo.append(json_filename)
 
                 if not params_globais_definidos:
                     rho_pasta_g_cm3_fixo = json_data['rho_g_cm3_json']
-                    tempo_extrusao_fixo_s_val = json_data['t_ext_s_json']
+                    # Define tempo_extrusao_fixo_s_val como o tempo médio/único, para fins de relatório
+                    tempo_extrusao_fixo_s_val = np.mean(duracoes_array) if len(duracoes_array) > 0 else 0.0
                     if rho_pasta_g_cm3_fixo <= 0 or tempo_extrusao_fixo_s_val <= 0:
                         print(f"ERRO: Parâmetros de referência (rho, t) inválidos em '{json_filename}'."); erro_na_leitura = True; break
                     rho_pasta_si = rho_pasta_g_cm3_fixo * 1000
                     params_globais_definidos = True
                     print(f"  Parâmetros Globais de Referência definidos por '{json_filename}':\n"
-                          f"    Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Tempo: {tempo_extrusao_fixo_s_val:.2f} s")
+                          f"    Densidade: {rho_pasta_g_cm3_fixo:.3f} g/cm³, Tempo Médio: {tempo_extrusao_fixo_s_val:.2f} s")
 
                 if L_cap_mm_mooney_comum_val == 0.0:
                     L_cap_mm_mooney_comum_val = json_data['L_mm']
@@ -738,20 +788,40 @@ while not dados_confirmados:
                 D_i_mm = json_data['D_mm']
                 p_bar_cap_i, m_g_cap_i = json_data['pressoes_bar_list'], json_data['massas_g_list']
                 mooney_capilares_D_mm_info.append(D_i_mm)
+                
+                # ADICIONADO: Popula o mapa de arrays de tempo
+                cap_id_mooney = f"{D_i_mm:.3f}_{L_cap_mm_mooney_comum_val:.2f}"
+                t_ext_s_array_by_capilar[cap_id_mooney] = np.array(duracoes_array)
+
                 capilares_mooney_data_input.append({'D_mm': D_i_mm, 'L_mm': L_cap_mm_mooney_comum_val, 'L_m': L_cap_mm_mooney_comum_val/1000.0,
                                                    'pressoes_Pa': np.array(p_bar_cap_i)*1e5, 'massas_kg': np.array(m_g_cap_i)/1000.0})
         
         if erro_na_leitura: continue
+        
+        # Se as correções não usam tempo fixo, define o tempo fixo para NaN ou média para relatório
+        if not realizar_bagley and not realizar_mooney: 
+             print("AVISO: JSONs com correções selecionadas, mas ambas desativadas. Analisando como Capilar Único...")
+             # Retorna para a lógica de Capilar Único, mas isso não deve acontecer
+             # se o usuário seguiu a lógica do menu. (Mantendo o comportamento de erro, se for o caso)
+             continue 
 
-    # CASO C: Manual ou CSV (tempo sempre fixo)
+    # CASO C: Manual ou CSV (requer tempo fixo, pois não há array de tempos)
     else:
         print("\n--- Dados Fixos Globais da Pasta e Ensaio ---")
         rho_pasta_g_cm3_fixo = input_float_com_virgula("Densidade da pasta (rho) em [g/cm³]: ")
+        # Se for CSV/Manual, é assumido que o tempo é fixo (limitante do método)
         tempo_extrusao_fixo_s_val = input_float_com_virgula("Tempo de extrusão fixo para todos os testes [s]: ")
         if rho_pasta_g_cm3_fixo <= 0 or tempo_extrusao_fixo_s_val <= 0:
             print("ERRO: Densidade e tempo devem ser >0. Tente novamente."); continue
         rho_pasta_si = rho_pasta_g_cm3_fixo * 1000
 
+        # ... (O resto da lógica Manual/CSV para Bagley, Mooney e Capilar Único
+        # é mantida, usando tempo_extrusao_fixo_s_val como o valor do tempo)
+
+        # --------------------------------------------------------------------------------------------------
+        # --- AVISO: A lógica de entrada Manual/CSV abaixo forçará o uso de tempo FIXO para as correções. ---
+        # --------------------------------------------------------------------------------------------------
+        
         if metodo_entrada == "1": # Manual
             if realizar_bagley:
                 print("\n--- Entrada Manual: Bagley ---")
@@ -780,6 +850,11 @@ while not dados_confirmados:
                         if p <= 0 or m < 0: print("ERRO: P>0, M>=0."); all_bagley_manual_ok=False; break
                         p_bar_cap_i.append(p); m_g_cap_i.append(m)
                     if not all_bagley_manual_ok: break
+                    
+                    # Manual: Popula o mapa com array de tempos fixos
+                    cap_id_bagley = f"{D_cap_mm_bagley_comum_val:.3f}_{L_i_mm:.2f}"
+                    t_ext_s_array_by_capilar[cap_id_bagley] = np.full(num_pontos_cap_bagley_manual, tempo_extrusao_fixo_s_val)
+
                     temp_capilares_bagley_data.append({'L_mm':L_i_mm, 'L_m':L_i_mm/1000, 'D_mm': D_cap_mm_bagley_comum_val,
                                                   'pressoes_Pa':np.array(p_bar_cap_i)*1e5,
                                                   'massas_kg':np.array(m_g_cap_i)/1000})
@@ -813,6 +888,11 @@ while not dados_confirmados:
                         if p <= 0 or m < 0: print("ERRO: P>0, M>=0."); all_mooney_manual_ok=False; break
                         p_bar_cap_i.append(p); m_g_cap_i.append(m)
                     if not all_mooney_manual_ok: break
+                    
+                    # Manual: Popula o mapa com array de tempos fixos
+                    cap_id_mooney = f"{D_i_mm:.3f}_{L_cap_mm_mooney_comum_val:.2f}"
+                    t_ext_s_array_by_capilar[cap_id_mooney] = np.full(num_pontos_cap_mooney_manual, tempo_extrusao_fixo_s_val)
+                    
                     temp_capilares_mooney_data.append({'D_mm':D_i_mm, 'L_mm': L_cap_mm_mooney_comum_val,
                                                         'L_m':L_cap_mm_mooney_comum_val/1000,
                                                         'pressoes_Pa':np.array(p_bar_cap_i)*1e5,
@@ -839,17 +919,27 @@ while not dados_confirmados:
                 if not all_unico_manual_ok : continue
                 pressoes_bar_display_tab, massas_g_display_tab = temp_pressoes_bar, temp_massas_g
                 tempos_s_display_tab = [tempo_extrusao_fixo_s_val] * num_testes_para_analise
+                # Manual: Popula o mapa com array de tempos fixos para o capilar único
+                cap_id_unico = f"{D_cap_mm_unico_val:.3f}_{L_cap_mm_unico_val:.2f}"
+                t_ext_s_array_by_capilar[cap_id_unico] = np.array(tempos_s_display_tab)
 
-        elif metodo_entrada == "2": # CSV
+
+        elif metodo_entrada == "2": # CSV (Assume tempo fixo)
             print("\n--- Carregando Dados de Arquivo CSV ---")
             csv_path = input("Caminho para o arquivo CSV: ").strip().replace("\"", "")
             _csv_path_resumo = csv_path
             try:
+                # Modificado: Adicionado 't_ext_s' para compatibilidade de colunas internas, mesmo sendo fixo
                 df_csv = pd.read_csv(csv_path, sep=None, decimal=',', engine='python', na_filter=False)
                 cols_esperadas = ['diametro_mm', 'comprimento_mm', 'pressao_bar', 'massa_g']
                 df_csv.columns = df_csv.columns.str.lower().str.replace(' ', '_').str.replace('[^a-z0-9_]', '', regex=True)
+                
+                # ADIÇÃO: Simula coluna de tempo no CSV para compatibilidade interna
+                df_csv['t_ext_s'] = tempo_extrusao_fixo_s_val 
+
                 if not all(col in df_csv.columns for col in cols_esperadas):
                     print(f"ERRO: Colunas faltando! Esperado: {cols_esperadas}. Encontradas: {df_csv.columns.tolist()}"); continue
+                
                 if realizar_bagley:
                     diam_csv_bagley = df_csv['diametro_mm'].astype(float).unique()
                     if len(diam_csv_bagley) > 1: D_cap_mm_bagley_comum_val = input_float_com_virgula(f"Múltiplos D ({diam_csv_bagley}). D COMUM Bagley [mm]: ")
@@ -866,7 +956,13 @@ while not dados_confirmados:
                         df_cap_csv = df_b_sub[df_b_sub['comprimento_mm'].astype(float) == L_mm_csv]
                         if df_cap_csv.empty: continue
                         p_bar, m_g = df_cap_csv['pressao_bar'].astype(float).tolist(), df_cap_csv['massa_g'].astype(float).tolist()
+                        t_ext_s_list = df_cap_csv['t_ext_s'].astype(float).tolist()
                         if not p_bar: continue
+                        
+                        # CSV: Popula o mapa com array de tempos fixos
+                        cap_id_bagley = f"{D_cap_mm_bagley_comum_val:.3f}_{L_mm_csv:.2f}"
+                        t_ext_s_array_by_capilar[cap_id_bagley] = np.array(t_ext_s_list)
+                        
                         capilares_bagley_data_input.append({'L_mm': L_mm_csv, 'L_m': L_mm_csv/1000.0, 'D_mm': D_cap_mm_bagley_comum_val,
                                                           'pressoes_Pa': np.array(p_bar)*1e5, 'massas_kg': np.array(m_g)/1000.0})
                     print(f"Dados CSV Bagley: {len(capilares_bagley_data_input)} capilares (D={D_cap_mm_bagley_comum_val}mm).")
@@ -886,7 +982,13 @@ while not dados_confirmados:
                         df_cap_csv = df_m_sub[df_m_sub['diametro_mm'].astype(float) == D_mm_csv]
                         if df_cap_csv.empty: continue
                         p_bar, m_g = df_cap_csv['pressao_bar'].astype(float).tolist(), df_cap_csv['massa_g'].astype(float).tolist()
+                        t_ext_s_list = df_cap_csv['t_ext_s'].astype(float).tolist()
                         if not p_bar: continue
+                        
+                        # CSV: Popula o mapa com array de tempos fixos
+                        cap_id_mooney = f"{D_mm_csv:.3f}_{L_cap_mm_mooney_comum_val:.2f}"
+                        t_ext_s_array_by_capilar[cap_id_mooney] = np.array(t_ext_s_list)
+                        
                         capilares_mooney_data_input.append({'D_mm': D_mm_csv, 'L_mm': L_cap_mm_mooney_comum_val, 'L_m': L_cap_mm_mooney_comum_val/1000.0,
                                                            'pressoes_Pa': np.array(p_bar)*1e5, 'massas_kg': np.array(m_g)/1000.0})
                     print(f"Dados CSV Mooney: {len(capilares_mooney_data_input)} capilares (L={L_cap_mm_mooney_comum_val}mm).")
@@ -899,9 +1001,14 @@ while not dados_confirmados:
                     _D_cap_mm_unico_val_resumo = f"{D_cap_mm_unico_val:.3f}"; _L_cap_mm_unico_val_resumo = f"{L_cap_mm_unico_val:.2f}"
                     pressoes_bar_display_tab = df_csv['pressao_bar'].astype(float).tolist()
                     massas_g_display_tab = df_csv['massa_g'].astype(float).tolist()
+                    tempos_s_display_tab = df_csv['t_ext_s'].astype(float).tolist()
                     num_testes_para_analise = len(pressoes_bar_display_tab)
-                    tempos_s_display_tab = [tempo_extrusao_fixo_s_val] * num_testes_para_analise
                     if num_testes_para_analise == 0: print("ERRO CSV: Capilar único sem dados P/m."); continue
+                    # CSV Único: Popula o mapa com array de tempos fixos
+                    cap_id_unico = f"{D_cap_mm_unico_val:.3f}_{L_cap_mm_unico_val:.2f}"
+                    t_ext_s_array_by_capilar[cap_id_unico] = np.array(tempos_s_display_tab)
+
+
                 print("Dados carregados do CSV com sucesso.")
             except FileNotFoundError: print(f"ERRO: CSV não encontrado '{csv_path}'. Tente novamente."); continue
             except Exception as e_csv: print(f"ERRO ao processar CSV: {e_csv}. Tente novamente."); continue
@@ -915,12 +1022,27 @@ while not dados_confirmados:
 
     print(f"Densidade da Pasta: {rho_pasta_g_cm3_fixo:.3f} g/cm³")
     
-    # MODIFICADO: Lógica para exibir tempo fixo ou variável
-    is_variable_time = len(tempos_s_display_tab) > 1 and len(set(tempos_s_display_tab)) > 1
-    if is_variable_time:
-        print(f"Tempo de Extrusão: Variável (média: {np.mean(tempos_s_display_tab):.2f} s)")
+    # MODIFICADO: Lógica para exibir tempo fixo ou variável (baseado no array de capilar único/primeiro capilar)
+    if (not realizar_bagley and not realizar_mooney) or (realizar_bagley and len(capilares_bagley_data_input) > 0) or (realizar_mooney and len(capilares_mooney_data_input) > 0):
+        # Tenta pegar o primeiro array de tempo (ou do capilar único) para checar se é variável
+        if tempos_s_display_tab:
+            is_variable_time = len(set(tempos_s_display_tab)) > 1
+        elif realizar_bagley and capilares_bagley_data_input:
+            first_cap_id = f"{capilares_bagley_data_input[0]['D_mm']:.3f}_{capilares_bagley_data_input[0]['L_mm']:.2f}"
+            is_variable_time = len(set(t_ext_s_array_by_capilar.get(first_cap_id, []))) > 1
+        elif realizar_mooney and capilares_mooney_data_input:
+            first_cap_id = f"{capilares_mooney_data_input[0]['D_mm']:.3f}_{capilares_mooney_data_input[0]['L_mm']:.2f}"
+            is_variable_time = len(set(t_ext_s_array_by_capilar.get(first_cap_id, []))) > 1
+        else:
+            is_variable_time = False
+
+        if is_variable_time:
+            print(f"Tempo de Extrusão: Variável (média: {tempo_extrusao_fixo_s_val:.2f} s)")
+        else:
+            print(f"Tempo de Extrusão Fixo: {tempo_extrusao_fixo_s_val:.2f} s")
     else:
-        print(f"Tempo de Extrusão Fixo: {tempo_extrusao_fixo_s_val:.2f} s")
+        print(f"Tempo de Extrusão: {tempo_extrusao_fixo_s_val:.2f} s (Tempo Fixo assumido)")
+
 
     if fator_calibracao_empirico != 1.0:
         print(f"Fator de Calibração Empírico a ser aplicado: {fator_calibracao_empirico:.4f}")
@@ -946,8 +1068,10 @@ while not dados_confirmados:
                 print(f"    Capilar Bagley {i+1} (L = {cap_data['L_mm']:.2f} mm):")
                 pressoes_bar_cap = cap_data['pressoes_Pa'] / 1e5
                 massas_g_cap = cap_data['massas_kg'] * 1000
+                cap_id = f"{cap_data['D_mm']:.3f}_{cap_data['L_mm']:.2f}"
+                tempos_cap = t_ext_s_array_by_capilar.get(cap_id, np.full_like(pressoes_bar_cap, tempo_extrusao_fixo_s_val))
                 for j in range(len(pressoes_bar_cap)):
-                    print(f"      - Teste {j+1}: {pressoes_bar_cap[j]:.2f} bar | {massas_g_cap[j]:.2f} g")
+                    print(f"      - Teste {j+1}: P={pressoes_bar_cap[j]:.2f} bar | M={massas_g_cap[j]:.2f} g | T={tempos_cap[j]:.2f} s")
 
     print(f"\nCorreção de Mooney: {'Sim' if realizar_mooney else 'Não'}")
     if realizar_mooney:
@@ -958,8 +1082,10 @@ while not dados_confirmados:
                 print(f"    Capilar Mooney {i+1} (D = {cap_data['D_mm']:.3f} mm):")
                 pressoes_bar_cap = cap_data['pressoes_Pa'] / 1e5
                 massas_g_cap = cap_data['massas_kg'] * 1000
+                cap_id = f"{cap_data['D_mm']:.3f}_{cap_data['L_mm']:.2f}"
+                tempos_cap = t_ext_s_array_by_capilar.get(cap_id, np.full_like(pressoes_bar_cap, tempo_extrusao_fixo_s_val))
                 for j in range(len(pressoes_bar_cap)):
-                    print(f"      - Teste {j+1}: {pressoes_bar_cap[j]:.2f} bar | {massas_g_cap[j]:.2f} g")
+                    print(f"      - Teste {j+1}: P={pressoes_bar_cap[j]:.2f} bar | M={massas_g_cap[j]:.2f} g | T={tempos_cap[j]:.2f} s")
 
     if not realizar_bagley and not realizar_mooney:
         print("\nAnálise com Capilar Único:")
@@ -1031,10 +1157,16 @@ if not realizar_bagley and not realizar_mooney:
 
 # --- CAMINHO 2: CORREÇÕES AO VIVO (BAGLEY E/OU MOONEY) ---
 tau_w_for_mooney = np.array([]) 
+
+# AVISO: Se a entrada foi CSV/Manual, t_ext_s_array_by_capilar contém apenas tempos FIXOS.
+# Se a entrada foi JSON, contém os arrays de tempos, sejam fixos ou variáveis.
+
 if realizar_bagley:
+    # MODIFICADO: Passa o mapa de arrays de tempo
     gamma_dot_aw_bagley_targets, tau_w_bagley_corrected = perform_bagley_correction(
         capilares_bagley_data_input, D_cap_mm_bagley_comum_val, 
-        rho_pasta_si, tempo_extrusao_fixo_s_val, output_folder, timestamp_str)
+        rho_pasta_si, t_ext_s_array_by_capilar, output_folder, timestamp_str)
+    
     if len(tau_w_bagley_corrected) > 0:
         tau_w_an, gamma_dot_aw_an = tau_w_bagley_corrected, gamma_dot_aw_bagley_targets
         num_testes_para_analise = len(tau_w_an)
@@ -1046,9 +1178,11 @@ if realizar_bagley:
         print("ALERTA: Bagley não resultou em pontos válidos."); realizar_bagley = False
 
 if realizar_mooney:
+    # MODIFICADO: Passa o mapa de arrays de tempo
     gamma_dot_aw_slip_corrected, tau_w_mooney_corrected = perform_mooney_correction(
         capilares_mooney_data_input, L_cap_mm_mooney_comum_val, rho_pasta_si, 
-        tempo_extrusao_fixo_s_val, output_folder, timestamp_str, tau_w_targets_ref=tau_w_for_mooney) 
+        t_ext_s_array_by_capilar, output_folder, timestamp_str, tau_w_targets_ref=tau_w_for_mooney) 
+    
     if len(tau_w_mooney_corrected) > 0 and len(gamma_dot_aw_slip_corrected) > 0 : 
         tau_w_an, gamma_dot_aw_an = tau_w_mooney_corrected, gamma_dot_aw_slip_corrected
         num_testes_para_analise = len(tau_w_an)
@@ -1086,6 +1220,7 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0:
     tau_w_an, gamma_dot_aw_an, eta_a_an = tau_w_an[sort_indices], gamma_dot_aw_an[sort_indices], eta_a_an[sort_indices]
     
     # Reordena os dados brutos para manter a consistência na tabela final
+    # (Apenas para o caso de Capilar Único/Manual/CSV - correções ao vivo já estão ordenadas por gamma_aw)
     if not (realizar_bagley or realizar_mooney):
         pressoes_bar_display_tab = np.array(pressoes_bar_display_tab)[sort_indices].tolist()
         massas_g_display_tab = np.array(massas_g_display_tab)[sort_indices].tolist()
@@ -1289,6 +1424,8 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_
     print("\n\n"+"="*70+"\n--- TABELAS DE RESULTADOS --- \n"+"="*70)
     q_calc_mm3_s = np.full_like(gamma_dot_aw_an, np.nan)
     R_eff_q = np.nan
+    
+    # Determina o D efetivo para calcular Q_calc (mm³/s)
     if not realizar_bagley and not realizar_mooney and D_cap_mm_unico_val > 0:
         R_eff_q = D_cap_mm_unico_val/2000.0
     elif realizar_bagley and D_cap_mm_bagley_comum_val > 0 :
@@ -1296,7 +1433,8 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_
 
     if not np.isnan(R_eff_q) and R_eff_q > 0:
          q_calc_mm3_s = (gamma_dot_aw_an * np.pi * R_eff_q**3 / 4) * 1e9
-    elif realizar_mooney:
+    elif realizar_mooney and D_cap_mm_bagley_comum_val == 0.0:
+        # Mooney usa D diferentes, o Q_calc não pode ser calculado de forma única a partir de gamma_dot_aw_an
         print("  INFO (Tabela): Q_calc(mm³/s) não recalculado para correção de Mooney, pois D varia.")
 
     # Garante que as colunas de dados brutos tenham o tamanho correto
@@ -1305,6 +1443,8 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_
     if len(massas_g_display_tab) != num_testes_para_analise:
         massas_g_display_tab = [np.nan] * num_testes_para_analise
     if len(tempos_s_display_tab) != num_testes_para_analise:
+        # Se as correções foram feitas (Bagley/Mooney), tempos_s_display_tab não tem dados brutos.
+        # Mas para capilar único, ele deve ter sido preenchido
         tempos_s_display_tab = [np.nan] * num_testes_para_analise
 
     D_cap_mm_display = f"{D_cap_mm_unico_val:.3f}" if not (realizar_bagley or realizar_mooney) else "Vários"
@@ -1471,7 +1611,12 @@ if metodo_entrada == "2": metodo_entrada_str_relatorio = "Arquivo CSV"
 elif metodo_entrada == "3": metodo_entrada_str_relatorio = "Arquivo(s) JSON"
 
 # MODIFICADO: Passa a informação correta sobre o tempo para o relatório
-tempo_info_relatorio = "Variável (ver tabela)" if (len(tempos_s_display_tab) > 1 and len(set(tempos_s_display_tab)) > 1) else (tempo_extrusao_fixo_s_val if 'tempo_extrusao_fixo_s_val' in locals() and tempo_extrusao_fixo_s_val is not None else 0.0)
+if (len(tempos_s_display_tab) > 1 and len(set(tempos_s_display_tab)) > 1):
+    tempo_info_relatorio = "Variável (ver tabela)" 
+elif 'tempo_extrusao_fixo_s_val' in locals() and tempo_extrusao_fixo_s_val is not None:
+    tempo_info_relatorio = tempo_extrusao_fixo_s_val
+else:
+    tempo_info_relatorio = 0.0
 
 gerar_relatorio_texto(
     timestamp_str,

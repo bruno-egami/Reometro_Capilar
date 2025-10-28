@@ -469,7 +469,8 @@ def realizar_coleta_de_teste_py(ser, data_bateria=None, json_filename=None):
         ponto_atual = {
             # O número do ponto é sequencial para esta coleta
             "ponto_n": num_ponto,
-            "massa_g_registrada": massa_g,
+            # Se a massa for 0, ela será filtrada na função de salvamento.
+            "massa_g_registrada": massa_g, 
             "duracao_real_s": duracao_s,
             "media_tensao_final_ponto_V": tensao_media_ensaio,
             "media_pressao_final_ponto_bar": pressao_media_ensaio
