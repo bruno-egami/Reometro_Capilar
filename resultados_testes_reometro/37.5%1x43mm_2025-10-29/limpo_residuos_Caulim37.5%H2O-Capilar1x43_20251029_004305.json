@@ -1,0 +1,16 @@
+{
+    "id_amostra": "Caulim37.5H2O-Capilar1x43",
+    "descricao": "Caulim com adição de 37.5% de água utilizando Capilar1x43",
+    "data_hora_inicio": "2025-10-25 19:57:57",
+    "diametro_capilar_mm": 1.0,
+    "comprimento_capilar_mm": 43.0,
+    "densidade_pasta_g_cm3": 1.63,
+    "calibracao_aplicada": {
+        "slope": 1.9423761735189375,
+        "intercept": -0.005710585950145676
+    },
+    "testes": [],
+    "data_hora_ultima_coleta": "2025-10-25 21:08:31",
+    "data_hora_filtragem_residuos": "2025-10-29 00:43:05",
+    "observacoes_filtragem": "Filtro por Resíduos (2.0 * STD). 0 ponto(s) removido(s) do total (40 pontos)."
+}

@@ -1,0 +1,269 @@
+{
+    "id_amostra": "Caulim40%H2OCap3x64",
+    "descricao": "Reometro com transdutor, caulim com 40% de massa em água, capilar 3x64 LuerLocker",
+    "data_hora_inicio": "2025-10-19 17:06:22",
+    "diametro_capilar_mm": 3.0,
+    "comprimento_capilar_mm": 64.0,
+    "densidade_pasta_g_cm3": 1.63,
+    "calibracao_aplicada": {
+        "slope": 1.9423761735189375,
+        "intercept": -0.005710585950145676
+    },
+    "testes": [
+        {
+            "ponto_n": 1,
+            "massa_g_registrada": 1.21,
+            "duracao_real_s": 6.964610576629639,
+            "media_tensao_final_ponto_V": 0.21342698412698416,
+            "media_pressao_final_ponto_bar": 0.40884490280411284
+        },
+        {
+            "ponto_n": 2,
+            "massa_g_registrada": 4.88,
+            "duracao_real_s": 18.29690408706665,
+            "media_tensao_final_ponto_V": 0.26726951219512196,
+            "media_pressao_final_ponto_bar": 0.5134273464456882
+        },
+        {
+            "ponto_n": 3,
+            "massa_g_registrada": 5.0,
+            "duracao_real_s": 18.305205821990967,
+            "media_tensao_final_ponto_V": 0.26989573170731707,
+            "media_pressao_final_ponto_bar": 0.5185284526526067
+        },
+        {
+            "ponto_n": 4,
+            "massa_g_registrada": 4.73,
+            "duracao_real_s": 18.301220655441284,
+            "media_tensao_final_ponto_V": 0.2703432926829269,
+            "media_pressao_final_ponto_bar": 0.519397784427828
+        },
+        {
+            "ponto_n": 5,
+            "massa_g_registrada": 5.23,
+            "duracao_real_s": 18.41369652748108,
+            "media_tensao_final_ponto_V": 0.2726454545454546,
+            "media_pressao_final_ponto_bar": 0.5238694487771858
+        },
+        {
+            "ponto_n": 6,
+            "massa_g_registrada": 4.76,
+            "duracao_real_s": 18.297607421875,
+            "media_tensao_final_ponto_V": 0.2745189024390243,
+            "media_pressao_final_ponto_bar": 0.527508389327985
+        },
+        {
+            "ponto_n": 7,
+            "massa_g_registrada": 5.07,
+            "duracao_real_s": 18.6362886428833,
+            "media_tensao_final_ponto_V": 0.27529640718562876,
+            "media_pressao_final_ponto_bar": 0.5290185960225872
+        },
+        {
+            "ponto_n": 8,
+            "massa_g_registrada": 5.14,
+            "duracao_real_s": 18.413140058517456,
+            "media_tensao_final_ponto_V": 0.27741878787878793,
+            "media_pressao_final_ponto_bar": 0.5331410577121161
+        },
+        {
+            "ponto_n": 9,
+            "massa_g_registrada": 4.86,
+            "duracao_real_s": 18.64308738708496,
+            "media_tensao_final_ponto_V": 0.27915089820359285,
+            "media_pressao_final_ponto_bar": 0.5365054675369234
+        },
+        {
+            "ponto_n": 10,
+            "massa_g_registrada": 5.23,
+            "duracao_real_s": 18.297555923461914,
+            "media_tensao_final_ponto_V": 0.2811859756097561,
+            "media_pressao_final_ponto_bar": 0.5404583534019216
+        },
+        {
+            "ponto_n": 11,
+            "massa_g_registrada": 4.81,
+            "duracao_real_s": 17.06592893600464,
+            "media_tensao_final_ponto_V": 0.2823921568627451,
+            "media_pressao_final_ponto_bar": 0.5428012111286726
+        },
+        {
+            "ponto_n": 12,
+            "massa_g_registrada": 5.75,
+            "duracao_real_s": 18.40822196006775,
+            "media_tensao_final_ponto_V": 0.28327272727272723,
+            "media_pressao_final_ponto_bar": 0.5445116101121278
+        },
+        {
+            "ponto_n": 13,
+            "massa_g_registrada": 5.94,
+            "duracao_real_s": 18.420670747756958,
+            "media_tensao_final_ponto_V": 0.2885424242424242,
+            "media_pressao_final_ponto_bar": 0.5547473439477322
+        },
+        {
+            "ponto_n": 14,
+            "massa_g_registrada": 6.0,
+            "duracao_real_s": 18.311195373535156,
+            "media_tensao_final_ponto_V": 0.2929847560975609,
+            "media_pressao_final_ponto_bar": 0.563376023498014
+        },
+        {
+            "ponto_n": 15,
+            "massa_g_registrada": 5.77,
+            "duracao_real_s": 18.295780658721924,
+            "media_tensao_final_ponto_V": 0.29659146341463416,
+            "media_pressao_final_ponto_bar": 0.5703816058555533
+        },
+        {
+            "ponto_n": 16,
+            "massa_g_registrada": 6.23,
+            "duracao_real_s": 18.404906034469604,
+            "media_tensao_final_ponto_V": 0.30018666666666666,
+            "media_pressao_final_ponto_bar": 0.5773648429912591
+        },
+        {
+            "ponto_n": 17,
+            "massa_g_registrada": 7.8,
+            "duracao_real_s": 18.29948091506958,
+            "media_tensao_final_ponto_V": 0.3357542682926829,
+            "media_pressao_final_ponto_bar": 0.6464505049388465
+        },
+        {
+            "ponto_n": 18,
+            "massa_g_registrada": 8.19,
+            "duracao_real_s": 18.249316930770874,
+            "media_tensao_final_ponto_V": 0.34469085365853663,
+            "media_pressao_final_ponto_bar": 0.6638087154260986
+        },
+        {
+            "ponto_n": 19,
+            "massa_g_registrada": 8.6,
+            "duracao_real_s": 18.29696822166443,
+            "media_tensao_final_ponto_V": 0.3469579268292683,
+            "media_pressao_final_ponto_bar": 0.668212224336552
+        },
+        {
+            "ponto_n": 20,
+            "massa_g_registrada": 8.67,
+            "duracao_real_s": 18.182865142822266,
+            "media_tensao_final_ponto_V": 0.34965828220858897,
+            "media_pressao_final_ponto_bar": 0.673457330285378
+        },
+        {
+            "ponto_n": 21,
+            "massa_g_registrada": 8.44,
+            "duracao_real_s": 18.30587887763977,
+            "media_tensao_final_ponto_V": 0.3556018292682927,
+            "media_pressao_final_ponto_bar": 0.6850019344803351
+        },
+        {
+            "ponto_n": 23,
+            "massa_g_registrada": 29.38,
+            "duracao_real_s": 10.446320533752441,
+            "media_tensao_final_ponto_V": 0.638758510638298,
+            "media_pressao_final_ponto_bar": 1.2349987257461263
+        },
+        {
+            "ponto_n": 26,
+            "massa_g_registrada": 26.54,
+            "duracao_real_s": 10.442474842071533,
+            "media_tensao_final_ponto_V": 0.6942329787234043,
+            "media_pressao_final_ponto_bar": 1.342751010793274
+        },
+        {
+            "ponto_n": 27,
+            "massa_g_registrada": 28.49,
+            "duracao_real_s": 10.441892147064209,
+            "media_tensao_final_ponto_V": 0.6946436170212764,
+            "media_pressao_final_ponto_bar": 1.3435486248389956
+        },
+        {
+            "ponto_n": 28,
+            "massa_g_registrada": 29.07,
+            "duracao_real_s": 10.77748990058899,
+            "media_tensao_final_ponto_V": 0.6993113402061854,
+            "media_pressao_final_ponto_bar": 1.3526150991379446
+        },
+        {
+            "ponto_n": 29,
+            "massa_g_registrada": 35.52,
+            "duracao_real_s": 10.429774045944214,
+            "media_tensao_final_ponto_V": 0.713245744680851,
+            "media_pressao_final_ponto_bar": 1.3796809543817112
+        },
+        {
+            "ponto_n": 30,
+            "massa_g_registrada": 29.43,
+            "duracao_real_s": 4.72951078414917,
+            "media_tensao_final_ponto_V": 0.7526883720930233,
+            "media_pressao_final_ponto_bar": 1.456293374088099
+        },
+        {
+            "ponto_n": 31,
+            "massa_g_registrada": 41.42,
+            "duracao_real_s": 5.285006999969482,
+            "media_tensao_final_ponto_V": 0.7539187500000001,
+            "media_pressao_final_ponto_bar": 1.458683230819035
+        },
+        {
+            "ponto_n": 32,
+            "massa_g_registrada": 39.12,
+            "duracao_real_s": 5.289888143539429,
+            "media_tensao_final_ponto_V": 0.7584958333333334,
+            "media_pressao_final_ponto_bar": 1.4675736484299122
+        },
+        {
+            "ponto_n": 33,
+            "massa_g_registrada": 31.83,
+            "duracao_real_s": 4.611050367355347,
+            "media_tensao_final_ponto_V": 0.761295238095238,
+            "media_pressao_final_ponto_bar": 1.4730111455394714
+        },
+        {
+            "ponto_n": 34,
+            "massa_g_registrada": 38.64,
+            "duracao_real_s": 5.400228023529053,
+            "media_tensao_final_ponto_V": 0.7702428571428571,
+            "media_pressao_final_ponto_bar": 1.4903907875872906
+        },
+        {
+            "ponto_n": 35,
+            "massa_g_registrada": 58.87,
+            "duracao_real_s": 5.172112226486206,
+            "media_tensao_final_ponto_V": 0.7748425531914893,
+            "media_pressao_final_ponto_bar": 1.4993251275975839
+        },
+        {
+            "ponto_n": 36,
+            "massa_g_registrada": 58.49,
+            "duracao_real_s": 5.402921438217163,
+            "media_tensao_final_ponto_V": 0.7827061224489793,
+            "media_pressao_final_ponto_bar": 1.5145991371621486
+        },
+        {
+            "ponto_n": 37,
+            "massa_g_registrada": 59.04,
+            "duracao_real_s": 5.403717279434204,
+            "media_tensao_final_ponto_V": 0.8040775510204081,
+            "media_pressao_final_ponto_bar": 1.556110490813353
+        },
+        {
+            "ponto_n": 38,
+            "massa_g_registrada": 61.27,
+            "duracao_real_s": 5.513065576553345,
+            "media_tensao_final_ponto_V": 0.8329439999999999,
+            "media_pressao_final_ponto_bar": 1.6121799935254126
+        },
+        {
+            "ponto_n": 39,
+            "massa_g_registrada": 123.16,
+            "duracao_real_s": 5.400985956192017,
+            "media_tensao_final_ponto_V": 0.9593510204081633,
+            "media_pressao_final_ponto_bar": 1.8577099781317508
+        }
+    ],
+    "data_hora_ultima_coleta": "2025-10-19 20:42:53",
+    "data_hora_filtragem_residuos": "2025-10-29 01:01:42",
+    "observacoes_filtragem": "Filtro por resíduos (2.0 * STD). 3 ponto(s) removido(s)."
+}

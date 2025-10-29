@@ -3,12 +3,14 @@
 # --- VERSÃO COM AJUSTE AUTOMÁTICO DE MODELOS E SUPORTE A DADOS ESTATÍSTICOS ---
 # --- NOVIDADE: CÁLCULO DE FATOR DE CALIBRAÇÃO EMPÍRICO ENTRE DUAS AMOSTRAS ---
 # --- SUPORTE: PLOTAGEM OTIMIZADA (SEM BARRAS DE ERRO, USO DE CORES TAB10) ---
+# --- ATUALIZAÇÃO: NOMES PERSONALIZADOS E RELATÓRIOS COMPLETOS (DADOS E MODELOS) ---
 # -----------------------------------------------------------------------------
 
 import os
 import glob
 import json
 import re
+import inspect # <--- ADICIONADO
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -61,6 +63,16 @@ MODELS = {
     "Herschel-Bulkley": (model_hb, ([0, 1e-9, 1e-9], [np.inf, np.inf, 5.0])),
     "Casson": (model_casson, ([0, 1e-9], [np.inf, np.inf]))
 }
+
+# (NOVO) Mapeamento de nomes de parâmetros para o relatório de modelos
+PARAM_NAMES_MAP = {
+    "Newtoniano": ["eta (Pa.s)"],
+    "Lei da Potência": ["K (Pa.s^n)", "n (-)"],
+    "Bingham": ["t0 (Pa)", "ep (Pa.s)"],
+    "Herschel-Bulkley": ["t0 (Pa)", "K (Pa.s^n)", "n (-)"],
+    "Casson": ["t0 (Pa)", "eta_cas (Pa.s)"]
+}
+
 
 # -----------------------------------------------------------------------------
 # --- FUNÇÕES DE CARREGAMENTO, SELEÇÃO E AJUSTE ---
@@ -190,7 +202,7 @@ def ajustar_modelos_reologicos(df, col_gamma, col_tau):
 
             modelos_ajustados[name] = {
                 'params': list(params),
-                'param_names': param_names,
+                'param_names': param_names, # Salva os nomes dos parâmetros
                 'R2': r2
             }
 
@@ -207,6 +219,7 @@ def ajustar_modelos_reologicos(df, col_gamma, col_tau):
         "params": modelos_ajustados[best_model_name]['params']
     }
     
+    # Retorna TODOS os modelos ajustados, e a info do MELHOR
     return modelos_ajustados, modelo_info
 
 def carregar_csv_rotacional(caminho_arquivo_csv):
@@ -242,12 +255,14 @@ def carregar_csv_rotacional(caminho_arquivo_csv):
 def carregar_dados_completos(info_analise):
     """
     Carrega dados de uma análise (Capilar ou Rotacional) e padroniza o DataFrame.
+    (MODIFICADO) Retorna: (df, modelo_info_best, modelos_ajustados_all)
     """
     caminho_pasta_ou_arquivo = info_analise['caminho']
     tipo = info_analise['tipo']
     
     df = None
-    modelo_info = None
+    modelo_info_best = None
+    modelos_ajustados_all = None
 
     if tipo == 'Rotacional':
         df = carregar_csv_rotacional(caminho_pasta_ou_arquivo)
@@ -277,20 +292,25 @@ def carregar_dados_completos(info_analise):
 
 
         if not caminho_csv_usado:
-            return None, None
+            return None, None, None
         
         # Carregamento do CSV Capilar
         try:
             df = pd.read_csv(caminho_csv_usado, sep=';', decimal=',', encoding='utf-8-sig')
             df.columns = df.columns.str.strip()
             
-            for col in [col_gamma, col_tau, col_eta]:
+            # (NOVO) Preserva todas as colunas, mas garante as principais
+            colunas_principais = [col_gamma, col_tau, col_eta]
+            
+            for col in colunas_principais:
                 if col not in df.columns:
                     if col == col_tau and col_eta in df.columns and col_gamma in df.columns:
                         df[col_tau] = df[col_eta] * df[col_gamma]
                     else:
                         raise KeyError(f"O CSV capilar deve conter as colunas '{col_gamma}', '{col_tau}' e '{col_eta}'.")
-                        
+            
+            # Converte apenas as colunas principais para numérico
+            for col in colunas_principais:
                 if pd.api.types.is_string_dtype(df[col]):
                     df[col] = df[col].str.replace(',', '.', regex=False).astype(float)
                 else:
@@ -305,14 +325,14 @@ def carregar_dados_completos(info_analise):
                 df['STD_τw (Pa)'] = 0.0
                 df['STD_γ̇w (s⁻¹)'] = 0.0
 
-            # Renomeia para o padrão
+            # Renomeia para o padrão (criando novas colunas)
             df['γ̇w (s⁻¹)'], df['τw (Pa)'], df['η (Pa·s)'] = df[col_gamma], df[col_tau], df[col_eta]
             df.dropna(subset=['γ̇w (s⁻¹)', 'τw (Pa)', 'η (Pa·s)'], inplace=True)
             df = df[df['γ̇w (s⁻¹)'] > 0]
             
         except Exception as e:
             print(f"ERRO ao ler o arquivo CSV capilar '{os.path.basename(caminho_csv_usado)}': {e}")
-            return None, None
+            return None, None, None
     
     # --- Ajuste de Modelo (Comum para todos os tipos de dados) ---
     if df is not None and not df.empty:
@@ -324,17 +344,34 @@ def carregar_dados_completos(info_analise):
                  try:
                     with open(arquivos_json[0], 'r', encoding='utf-8') as f:
                         params_data = json.load(f)
-                    modelos_ajustados = params_data.get("modelos_ajustados", {})
-                    if modelos_ajustados:
-                        best_model_name = max(modelos_ajustados, key=lambda name: modelos_ajustados[name].get('R2', 0))
-                        modelo_info = { "name": best_model_name, "params": modelos_ajustados[best_model_name]['params'] }
-                 except: pass
+                    
+                    # (MODIFICADO) Carrega TODOS os modelos
+                    modelos_ajustados_all = params_data.get("modelos_ajustados", {})
+                    
+                    if modelos_ajustados_all:
+                        # Identifica o melhor modelo
+                        best_model_name = max(modelos_ajustados_all, key=lambda name: modelos_ajustados_all[name].get('R2', 0))
+                        
+                        # (NOVO) Garante 'param_names' se não veio do JSON
+                        for name, details in modelos_ajustados_all.items():
+                            if 'param_names' not in details:
+                                # Inferir nomes de parâmetros (necessário para compatibilidade com JSONs antigos)
+                                sig = list(inspect.signature(MODELS[name][0]).parameters.keys())[1:]
+                                modelos_ajustados_all[name]['param_names'] = sig
 
-        # Se falhou ou se for Rotacional, tenta ajustar ao vivo
-        if modelo_info is None and MODEL_FITTING_ENABLED:
-            modelos_ajustados, modelo_info = ajustar_modelos_reologicos(df, 'γ̇w (s⁻¹)', 'τw (Pa)')
+                        modelo_info_best = { 
+                            "name": best_model_name, 
+                            "params": modelos_ajustados_all[best_model_name]['params'] 
+                        }
+                 except Exception as e:
+                     print(f"Aviso: Não foi possível carregar o JSON de parâmetros: {e}")
+                     pass # Continua para tentar o ajuste ao vivo
+
+        # Se falhou (JSON não existe) ou se for Rotacional, tenta ajustar ao vivo
+        if modelos_ajustados_all is None and MODEL_FITTING_ENABLED:
+            modelos_ajustados_all, modelo_info_best = ajustar_modelos_reologicos(df, 'γ̇w (s⁻¹)', 'τw (Pa)')
             
-    return df, modelo_info
+    return df, modelo_info_best, modelos_ajustados_all
 
 
 def criar_nome_curto(nome_completo_pasta):
@@ -352,25 +389,24 @@ def criar_nome_curto(nome_completo_pasta):
 def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, ylabel, xlabel, usar_escala_log=True, fcal_info=None):
     """
     Cria e retorna uma figura do Matplotlib com a comparação de múltiplas análises.
-    Inclui barras de erro se as colunas STD_τw e STD_γ̇w estiverem presentes no DataFrame.
+    (MODIFICADO) Usa 'modelo_best' do dicionário 'dados_analises'
     """
     fig, ax = plt.subplots(figsize=(12, 8))
     plt.style.use('seaborn-v0_8-whitegrid')
     
-    # --- ALTERAÇÃO 1: MUDAR O MAPA DE CORES PARA TAB10 ---
-    cores = plt.get_cmap('tab10') # Usa o mapa de cores tab10
+    cores = plt.get_cmap('tab10') 
     marcadores = ['o', 's', '^', 'D', 'v', 'P', '*', 'X']
     
     min_x_vis, max_x_vis = [], []
     min_y_vis, max_y_vis = [], []
     all_y_points_linear = []
 
+    # 'dados_analises' agora contém os nomes personalizados como chaves
     for i, (nome_analise, dados) in enumerate(dados_analises.items()):
         df = dados['df']
-        modelo = dados['modelo']
-        cor = cores(i % 10) # Usa a cor do mapa tab10
+        modelo = dados.get('modelo_best') # <-- MUDANÇA AQUI
+        cor = cores(i % 10) 
         
-        # Checa se há colunas de desvio padrão E se não são todas zero
         has_std_tau = 'STD_τw (Pa)' in df.columns and np.any(df['STD_τw (Pa)'] > 1e-9)
         has_std_gamma = 'STD_γ̇w (s⁻¹)' in df.columns and np.any(df['STD_γ̇w (s⁻¹)'] > 1e-9)
         
@@ -379,30 +415,26 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
             
             x_data, y_data = df[coluna_x].values, df[coluna_y].values
             
-            # --- PLOTAGEM DOS DADOS EXPERIMENTAIS (SEM BARRA DE ERRO) ---
-            
-            # Scatter/Plot principal
             ax.scatter(x_data, y_data, marker=marcadores[i % len(marcadores)], color=cor, label=nome_analise, s=50, zorder=10, alpha=0.9)
             ax.plot(x_data, y_data, linestyle='-', color=cor, alpha=0.7, linewidth=2)
 
-            # --- REMOÇÃO DA BANDA DE ERRO (Opção do usuário) ---
             if has_std_tau or has_std_gamma:
-                # Se o usuário desejar ver os erros (STD), plotamos no fundo com alpha baixo para referência
-                # A banda de erro vertical não será plotada, apenas os pontos e a linha.
                 
                 if coluna_y == 'η (Pa·s)':
-                    # Cálculo do erro para fins de visualização opcional (manter apenas para ter a variável x_err)
                     std_tau = df['STD_τw (Pa)'].values
-                    std_gamma = df['STD_γ̇w (s⁻¹)'].values
+                    # --- CORREÇÃO DE BUG (SyntaxError) ---
+                    std_gamma = df['STD_γ̇w (s⁻¹)'].values 
+                    # --- FIM DA CORREÇÃO ---
                     eta = df['η (Pa·s)'].values
                     
                     std_eta = np.zeros_like(eta)
                     valid_calc = (x_data > 1e-9) & (y_data > 1e-9) & (std_tau >= 0) & (std_gamma >= 0)
                     
-                    std_eta[valid_calc] = eta[valid_calc] * np.sqrt(
-                        (std_tau[valid_calc] / y_data[valid_calc])**2 + 
-                        (std_gamma[valid_calc] / x_data[valid_calc])**2
-                    )
+                    if np.any(valid_calc):
+                        std_eta[valid_calc] = eta[valid_calc] * np.sqrt(
+                            (std_tau[valid_calc] / y_data[valid_calc])**2 + 
+                            (std_gamma[valid_calc] / x_data[valid_calc])**2
+                        )
                     y_err = std_eta
                     x_err = std_gamma
                     
@@ -410,23 +442,15 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                     y_err = df['STD_τw (Pa)'].values
                     x_err = df['STD_γ̇w (s⁻¹)'].values
                 
-                # --- PLOTAGEM SEM BARRA DE ERRO (Visualização Limpa) ---
-                # A barra de erro é removida, mas plotamos um ponto central (sem ser redundante com o scatter)
-                # Adicionamos uma legenda vazia para que o rótulo "(\mu \pm \sigma)" seja ignorado
-                pass
+                pass # Plotagem de barras de erro desativada
             
-            # ---------------------------
             # Plota a Curva do Modelo (Linha Pontilhada)
-            # ---------------------------
             if modelo:
                 nome_modelo = modelo['name']
                 params = modelo['params']
                 
-                # Gera pontos para a curva do modelo na faixa dos dados
                 min_gd_data = df[coluna_x].min()
                 max_gd_data = df[coluna_x].max()
-
-                # Geramos um gd_plot que estende um pouco além dos dados
                 gd_plot = np.geomspace(max(1e-9, min_gd_data * 0.5), max_gd_data * 1.5, 100)
 
                 if nome_modelo in MODELS:
@@ -434,20 +458,12 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                     try:
                         y_pred_model = model_func(gd_plot, *params)
                         
-                        
                         if coluna_y == 'η (Pa·s)':
-                            
-                            # Calcula a viscosidade do modelo
                             eta_m = y_pred_model / gd_plot
                             
-                            # CLIPPING: Para modelos viscoplásticos (HB, Bingham, Casson), cortamos a extrapolação
                             if nome_modelo in ["Herschel-Bulkley", "Bingham", "Casson"]:
-                                # Limita o plot de viscosidade a partir do valor mínimo de cisalhamento razoável (1e-4)
                                 clip_start_gamma = max(1e-4, min_gd_data * 0.1) 
-                                
                                 clip_start_index_safe = np.argmin(np.abs(gd_plot - clip_start_gamma))
-                                
-                                # Limita o plot de viscosidade a partir do ponto de cisalhamento seguro
                                 gd_plot_safe = gd_plot[clip_start_index_safe:]
                                 eta_m_safe = eta_m[clip_start_index_safe:]
                                 
@@ -459,7 +475,7 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                                         label=f"Modelo {nome_modelo} ({nome_analise})", 
                                         zorder=5)
                                 
-                            else: # Lei da Potência, Newtoniano - Não tem tau0, pode usar todo o range
+                            else: 
                                 ax.plot(gd_plot, eta_m, 
                                         color=cor, 
                                         linestyle=':', 
@@ -469,7 +485,6 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                                         zorder=5)
                         
                         else: # Se for o gráfico de Curva de Fluxo (Tau vs Gamma)
-                             # Não faz clipping no tau vs gamma, mas limita a taxa de cisalhamento mínima para 1e-4.
                             gd_plot_safe = gd_plot[gd_plot >= 1e-4]
                             y_pred_model_safe = model_func(gd_plot_safe, *params)
 
@@ -482,7 +497,6 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                                     zorder=5)
                         
                     except Exception as e:
-                        # print(f"AVISO: Falha ao plotar modelo {nome_modelo} para {nome_analise}: {e}")
                         pass
 
 
@@ -494,11 +508,9 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                 all_y_points_linear.extend(df[coluna_y].tolist())
 
     if not min_x_vis:
-        # print(f"AVISO: Nenhum dado válido para plotar o gráfico '{titulo}'.")
         plt.close(fig)
         return None
 
-    # Adiciona a informação do Fator de Calibração ao título, se fornecido
     if fcal_info and fcal_info.get('fcal_valor'):
         titulo += f"\n(Fator de Calibração (Fcal) = {fcal_info['fcal_valor']:.4f} aplicado à amostra {fcal_info['amostra_nome']})"
 
@@ -535,6 +547,7 @@ def analisar_fator_calibracao(dados_completos, pasta_salvamento):
     """
     Calcula o fator de calibração empírico (Fcal) entre duas amostras de mesma formulação.
     Fcal = tau_ref / tau_amostra (para a mesma taxa de cisalhamento).
+    'dados_completos' já deve conter os nomes personalizados.
     """
     
     print("\n" + "="*70)
@@ -545,6 +558,7 @@ def analisar_fator_calibracao(dados_completos, pasta_salvamento):
         print("ERRO: O Fator de Calibração Empírico só pode ser calculado com EXATAMENTE 2 amostras.")
         return
 
+    # Os nomes das amostras já são os nomes personalizados
     nomes_amostras = list(dados_completos.keys())
     
     # 1. Seleção da Amostra de Referência
@@ -651,24 +665,24 @@ def analisar_fator_calibracao(dados_completos, pasta_salvamento):
 
 def analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento):
     """
-    Calcula a discrepância (MAPE) entre uma análise de referência e as demais,
-    baseando-se nos modelos ajustados, dentro de uma faixa de cisalhamento comum.
+    (MODIFICADO) Usa 'modelo_best'
     """
     print("\n" + "="*70)
     print("--- ANÁLISE DE DISCREPÂNCIA QUANTITATIVA ---")
     print("="*70)
 
-    if nome_referencia not in dados_completos or 'modelo' not in dados_completos[nome_referencia] or dados_completos[nome_referencia]['modelo'] is None:
+    # (MODIFICADO) Checa 'modelo_best'
+    if nome_referencia not in dados_completos or 'modelo_best' not in dados_completos[nome_referencia] or dados_completos[nome_referencia]['modelo_best'] is None:
         print(f"ERRO: A análise de referência '{nome_referencia}' não possui um modelo ajustado válido.")
         return
 
     ref_data = dados_completos[nome_referencia]
-    ref_model_func = MODELS[ref_data['modelo']['name']][0]
-    ref_params = ref_data['modelo']['params']
+    ref_model_func = MODELS[ref_data['modelo_best']['name']][0]
+    ref_params = ref_data['modelo_best']['params']
 
     faixas_individuais = {}
     for nome, dados in dados_completos.items():
-        if dados.get('df') is not None and not dados['df'].empty and dados.get('modelo') is not None:
+        if dados.get('df') is not None and not dados['df'].empty and dados.get('modelo_best') is not None:
             min_gamma = dados['df']['γ̇w (s⁻¹)'].min()
             max_gamma = dados['df']['γ̇w (s⁻¹)'].max()
             faixas_individuais[nome] = (min_gamma, max_gamma)
@@ -701,8 +715,8 @@ def analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento):
         if nome_analise == nome_referencia or nome_analise not in faixas_individuais:
             continue
             
-        model_func = MODELS[dados_analise['modelo']['name']][0]
-        params = dados_analise['modelo']['params']
+        model_func = MODELS[dados_analise['modelo_best']['name']][0]
+        params = dados_analise['modelo_best']['params']
         tau_comp = model_func(gamma_comum, *params)
         eta_comp = tau_comp / np.maximum(gamma_comum, 1e-9)
 
@@ -712,7 +726,7 @@ def analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento):
         resultados_discrepancia.append({
             "Amostra Comparada": nome_analise,
             "Referência": nome_referencia,
-            "Modelo Comparado": dados_analise['modelo']['name'],
+            "Modelo Comparado": dados_analise['modelo_best']['name'],
             "MAPE τw (%)": f"{mape_tau:.2f}",
             "MAPE η (%)": f"{mape_eta:.2f}"
         })
@@ -723,10 +737,7 @@ def analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento):
 
     df_discrepancia = pd.DataFrame(resultados_discrepancia)
     print("\nResultados da Análise de Discrepância (MAPE %):")
-    # Usa to_string com formatters para garantir o formato do float
-    def format_float_mape(val):
-        return f"{val}".replace('.', ',') if pd.notna(val) else "N/A"
-        
+    
     df_discrepancia_display = df_discrepancia.copy()
     df_discrepancia_display['MAPE τw (%)'] = df_discrepancia_display['MAPE τw (%)'].astype(str).str.replace('.', ',', regex=False)
     df_discrepancia_display['MAPE η (%)'] = df_discrepancia_display['MAPE η (%)'].astype(str).str.replace('.', ',', regex=False)
@@ -735,8 +746,6 @@ def analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento):
 
     nome_arquivo_csv = os.path.join(pasta_salvamento, "Analise_Discrepancia.csv")
     try:
-        # Salva o arquivo com o formato do português (Ponto e Vírgula e Vírgula)
-        # É importante converter o tipo antes de salvar para garantir que as vírgulas sejam escritas
         df_discrepancia['MAPE τw (%)'] = df_discrepancia['MAPE τw (%)'].astype(str).str.replace('.', ',', regex=False)
         df_discrepancia['MAPE η (%)'] = df_discrepancia['MAPE η (%)'].astype(str).str.replace('.', ',', regex=False)
 
@@ -744,6 +753,164 @@ def analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento):
         print(f"\nResultados da discrepância salvos em: {os.path.basename(nome_arquivo_csv)}")
     except Exception as e:
         print(f"ERRO ao salvar o arquivo de discrepância: {e}")
+
+
+# -----------------------------------------------------------------------------
+# --- (FUNÇÃO ATUALIZADA) GERAR RELATÓRIO COMPILADO DE DADOS ---
+# -----------------------------------------------------------------------------
+
+def gerar_relatorio_compilado_dados(dados_renomeados, pasta_salvamento):
+    """
+    (MODIFICADO) Compila os DataFrames de todas as análises (com nomes personalizados)
+    em um único arquivo CSV longo, mantendo TODAS as colunas originais.
+    """
+    print("\n" + "="*70)
+    print("--- GERANDO RELATÓRIO COMPILADO (DADOS COMPLETOS) ---")
+    print("=" * 70)
+
+    lista_dfs_compilados = []
+    todas_colunas = set()
+    dfs_para_compilar = []
+
+    # 1. Coleta todos os DFs e nomes de colunas
+    for nome_amostra, dados in dados_renomeados.items():
+        if 'df' in dados and dados['df'] is not None and not dados['df'].empty:
+            df_copia = dados['df'].copy()
+            df_copia['Amostra'] = nome_amostra
+            dfs_para_compilar.append(df_copia)
+            todas_colunas.update(df_copia.columns.tolist())
+    
+    if not dfs_para_compilar:
+        print("AVISO: Nenhum dado válido encontrado para gerar o relatório compilado de dados.")
+        return
+
+    try:
+        # 2. Define a ordem preferencial das colunas (para ficar mais organizado)
+        colunas_preferenciais = [
+            'Amostra', 
+            'γ̇w (s⁻¹)', 'τw (Pa)', 'η (Pa·s)', 
+            'STD_τw (Pa)', 'STD_γ̇w (s⁻¹)', 
+            'γ̇aw (s⁻¹)', 'ηa (Pa·s)',
+            'P_ext(bar)', 'M_ext(g)', 'Q_calc(mm³/s)', 't_ext(s)',
+            'Ponto', 'D_cap(mm)', 'L_cap(mm)', 'rho(g/cm³)'
+        ]
+        
+        colunas_finais = []
+        # Adiciona colunas preferenciais na ordem correta
+        for col in colunas_preferenciais:
+            if col in todas_colunas:
+                colunas_finais.append(col)
+                if col in todas_colunas:
+                    todas_colunas.remove(col)
+        
+        # Adiciona o restante das colunas (ordenadas alfabeticamente)
+        colunas_finais.extend(sorted(list(todas_colunas)))
+        
+        # 3. Concatena todos os DataFrames (pd.concat lida com colunas desalinhadas)
+        df_final_compilado = pd.concat(dfs_para_compilar, ignore_index=True, sort=False)
+        
+        # 4. Reordena o DataFrame final para a ordem definida
+        df_final_compilado = df_final_compilado[colunas_finais]
+
+        # 5. Ordena os dados por Amostra e Taxa de Cisalhamento
+        df_final_compilado = df_final_compilado.sort_values(by=['Amostra', 'γ̇w (s⁻¹)'])
+        
+        nome_arquivo_csv = os.path.join(pasta_salvamento, "Relatorio_Compilado_Dados.csv")
+        
+        # 6. Salva no formato PT-BR
+        df_final_compilado.to_csv(nome_arquivo_csv, index=False, sep=';', decimal=',', encoding='utf-8-sig', float_format='%.6g')
+        print(f"Relatório compilado de DADOS salvo em: {os.path.basename(nome_arquivo_csv)}")
+
+    except Exception as e:
+        print(f"ERRO ao gerar relatório compilado de dados: {e}")
+
+
+# -----------------------------------------------------------------------------
+# --- (NOVA FUNÇÃO) GERAR RELATÓRIO COMPILADO DE MODELOS ---
+# -----------------------------------------------------------------------------
+
+def gerar_relatorio_modelos(dados_renomeados, pasta_salvamento):
+    """
+    Compila os parâmetros e R2 de TODOS os modelos ajustados para todas
+    as amostras comparadas em um único CSV "longo".
+    """
+    print("\n" + "="*70)
+    print("--- GERANDO RELATÓRIO COMPILADO (PARÂMETROS DE MODELOS) ---")
+    print("=" * 70)
+
+    lista_resultados_modelos = []
+
+    for nome_amostra, dados in dados_renomeados.items():
+        
+        modelos_all = dados.get('modelos_all')
+        
+        # --- CORREÇÃO DE BUG ---
+        # Checa se 'modelo_best' não é None antes de tentar acessar seus dados
+        modelo_best_data = dados.get('modelo_best') 
+        melhor_modelo_nome = None
+        if modelo_best_data: # Checa se não é None
+            melhor_modelo_nome = modelo_best_data.get('name')
+        # --- FIM DA CORREÇÃO ---
+        
+        if not modelos_all:
+            print(f"Aviso: Amostra '{nome_amostra}' não possui dados de modelo para o relatório.")
+            continue
+            
+        # Itera sobre todos os modelos ajustados para esta amostra
+        for modelo_nome, detalhes in modelos_all.items():
+            
+            r2 = detalhes.get('R2')
+            is_best = (modelo_nome == melhor_modelo_nome)
+            param_vals = detalhes.get('params', [])
+            
+            # Busca os nomes dos parâmetros no nosso mapa
+            param_names_map = PARAM_NAMES_MAP.get(modelo_nome, [])
+
+            # Adiciona uma linha para cada parâmetro do modelo
+            for j, val in enumerate(param_vals):
+                try:
+                    param_nome = param_names_map[j]
+                except IndexError:
+                    param_nome = f"parametro_{j+1}" # Fallback
+                
+                lista_resultados_modelos.append({
+                    'Amostra': nome_amostra,
+                    'Modelo': modelo_nome,
+                    'Parametro': param_nome,
+                    'Valor': val,
+                    'R2': r2,
+                    'Melhor_Modelo_Para_Amostra': is_best
+                })
+            
+            # Adiciona também o R2 como uma "métrica" separada para facilitar a filtragem
+            lista_resultados_modelos.append({
+                'Amostra': nome_amostra,
+                'Modelo': modelo_nome,
+                'Parametro': 'R2',
+                'Valor': r2,
+                'R2': r2, # (propositalmente redundante para pivots)
+                'Melhor_Modelo_Para_Amostra': is_best
+            })
+
+    if not lista_resultados_modelos:
+        print("AVISO: Nenhum dado de modelo encontrado para gerar o relatório.")
+        return
+
+    try:
+        df_modelos = pd.DataFrame(lista_resultados_modelos)
+        
+        # Ordena
+        df_modelos = df_modelos.sort_values(by=['Amostra', 'Modelo', 'Parametro'])
+        
+        nome_arquivo_csv = os.path.join(pasta_salvamento, "Relatorio_Compilado_Modelos.csv")
+        
+        # Salva no formato PT-BR
+        df_modelos.to_csv(nome_arquivo_csv, index=False, sep=';', decimal=',', encoding='utf-8-sig', float_format='%.6g')
+        print(f"Relatório compilado de MODELOS salvo em: {os.path.basename(nome_arquivo_csv)}")
+
+    except Exception as e:
+        print(f"ERRO ao gerar relatório compilado de modelos: {e}")
+
 
 # -----------------------------------------------------------------------------
 # --- BLOCO PRINCIPAL DE EXECUÇÃO (Menu Atualizado) ---
@@ -781,11 +948,8 @@ if __name__ == "__main__":
             print("\nEncerrando script.")
             break
         
-        # O modo Fcal (opção 2) requer exatamente 2 amostras. Os outros podem ter mais.
-        
         if escolha == '1' or escolha == '3' or escolha == '2':
             
-            # ATUALIZADO: Chama a função de seleção, que lista Capilar e Rotacional (CSV)
             pastas_selecionadas_info, nomes_selecionados = selecionar_pastas_analise(CAMINHO_BASE_INDIVIDUAL, CAMINHO_BASE_ESTATISTICO, CAMINHO_BASE_ROTACIONAL)
             
             if pastas_selecionadas_info is None:
@@ -796,7 +960,6 @@ if __name__ == "__main__":
                 continue
 
             # --- PREPARAÇÃO PARA SALVAMENTO ---
-            # Cria nomes curtos baseados nos nomes selecionados (que podem incluir o prefixo ROTACIONAL_)
             nomes_curtos_analises = [criar_nome_curto(nome) for nome in nomes_selecionados]
             
             if escolha == '2':
@@ -812,24 +975,27 @@ if __name__ == "__main__":
             
             print(f"\nOs resultados da análise serão salvos em: {os.path.basename(pasta_salvamento)}")
 
+            # --- CARREGAMENTO DOS DADOS ---
+            # (MODIFICADO) 'dados_completos' agora armazena a estrutura completa
             dados_completos = {}
             for i, info_analise in enumerate(pastas_selecionadas_info):
-                # O nome final da amostra é crucial para a referência/plotagem
                 nome_base_sessao = nomes_selecionados[i]
                 sufixo = 1
                 nome_final = nome_base_sessao
                 
-                # Lógica para garantir que nomes duplicados recebam um sufixo (_1, _2...)
                 while nome_final in dados_completos:
                     sufixo += 1
                     nome_final = f"{nome_base_sessao}_{sufixo}"
 
-                # ATUALIZADO: Chama a função que lida com Capilar e Rotacional
-                df_analise, modelo_info = carregar_dados_completos(info_analise)
+                # (MODIFICADO) Carrega df, o melhor modelo, e todos os modelos
+                df_analise, modelo_best, modelos_all = carregar_dados_completos(info_analise)
                 
                 if df_analise is not None:
-                    # O nome final da análise é o nome da chave no dicionário dados_completos
-                    dados_completos[nome_final] = {'df': df_analise, 'modelo': modelo_info}
+                    dados_completos[nome_final] = {
+                        'df': df_analise, 
+                        'modelo_best': modelo_best, 
+                        'modelos_all': modelos_all
+                    }
                 else:
                     print(f"AVISO: A análise '{nome_base_sessao}' foi descartada por falta de dados válidos.")
 
@@ -838,21 +1004,62 @@ if __name__ == "__main__":
                 print("\nERRO: Nenhuma análise válida foi carregada. Retornando ao menu.")
                 continue
 
+            # -----------------------------------------------------------------
+            # --- SOLICITAR NOMES PERSONALIZADOS PARA PLOTAGEM ---
+            # -----------------------------------------------------------------
+            print("\n" + "="*70)
+            print("--- DEFINIR NOMES PARA LEGENDA E RELATÓRIOS ---")
+            print("Forneça nomes curtos para cada análise (pressione Enter para usar a sugestão).")
+            print("=" * 70)
+            
+            dados_completos_renomeados = {}
+            chaves_originais = list(dados_completos.keys())
+            
+            for nome_original in chaves_originais:
+                nome_sugerido = criar_nome_curto(nome_original)
+                
+                while True:
+                    novo_nome_input = input(f"Nome para '{nome_original}' (sugestão: '{nome_sugerido}'): ").strip()
+                    novo_nome = novo_nome_input if novo_nome_input else nome_sugerido
+                    
+                    if novo_nome in dados_completos_renomeados:
+                        print(f"ERRO: O nome '{novo_nome}' já foi usado. Tente novamente.")
+                    elif not novo_nome:
+                         print(f"ERRO: O nome não pode ficar em branco.")
+                    else:
+                        dados_completos_renomeados[novo_nome] = dados_completos[nome_original]
+                        print(f" -> '{nome_original}' será chamado de '{novo_nome}'")
+                        break
+            
+            print("=" * 70)
+            
+            # -----------------------------------------------------------------
+            # --- (NOVOS) GERAR RELATÓRIOS COMPILADOS ---
+            # -----------------------------------------------------------------
+            # 1. Gera o relatório com os dados brutos/calculados de todas as amostras
+            gerar_relatorio_compilado_dados(dados_completos_renomeados, pasta_salvamento)
+            
+            # 2. Gera o relatório com todos os parâmetros de modelo
+            gerar_relatorio_modelos(dados_completos_renomeados, pasta_salvamento)
+            
+            
             # --- EXECUTAR MODO FCAL (Opção 2) ---
             if escolha == '2':
-                fcal_valor, amostra_nome = analisar_fator_calibracao(dados_completos, pasta_salvamento)
+                # Usa o dicionário RENOMEADO para a análise
+                fcal_valor, amostra_nome = analisar_fator_calibracao(dados_completos_renomeados, pasta_salvamento)
                 
                 if fcal_valor is not None:
-                    # Aplica o fator de calibração na amostra ajustada e gera novos gráficos
-                    
-                    # Cria um novo DF com o Fcal aplicado para plotagem
-                    df_ajustado = dados_completos[amostra_nome]['df'].copy()
+                    df_ajustado = dados_completos_renomeados[amostra_nome]['df'].copy()
                     df_ajustado['τw (Pa)'] = df_ajustado['τw (Pa)'] * fcal_valor
                     df_ajustado['η (Pa·s)'] = df_ajustado['η (Pa·s)'] * fcal_valor
                     
-                    dados_plot_fcal = dados_completos.copy()
-                    # Adiciona a curva corrigida (a original ainda está presente com o nome base)
-                    dados_plot_fcal[f"{amostra_nome} (FCAL={fcal_valor:.4f})"] = {'df': df_ajustado, 'modelo': None}
+                    dados_plot_fcal = dados_completos_renomeados.copy()
+                    # (MODIFICADO) Adiciona a curva corrigida com a estrutura de dados completa
+                    dados_plot_fcal[f"{amostra_nome} (FCAL={fcal_valor:.4f})"] = {
+                        'df': df_ajustado, 
+                        'modelo_best': None, 
+                        'modelos_all': None
+                    }
                     
                     fcal_info_plot = {'fcal_valor': fcal_valor, 'amostra_nome': amostra_nome}
 
@@ -864,7 +1071,6 @@ if __name__ == "__main__":
                     
                     figures = []
                     for config in plot_configs:
-                        # O plotar_comparativo usa as colunas padronizadas: 'τw (Pa)', 'γ̇w (s⁻¹)', 'η (Pa·s)'
                         fig = plotar_comparativo_com_modelo(dados_plot_fcal, config['col_y'], config['col_x'], config['title'], config['ylabel'], config['xlabel'], usar_escala_log=config['log'], fcal_info=fcal_info_plot)
                         
                         if fig:
@@ -900,7 +1106,8 @@ if __name__ == "__main__":
 
                 figures = []
                 for config in plot_configs:
-                    fig = plotar_comparativo_com_modelo(dados_completos, config['col_y'], config['col_x'], config['title'], config['ylabel'], config['xlabel'], usar_escala_log=config['log'])
+                    # Passa o dicionário RENOMEADO para a plotagem
+                    fig = plotar_comparativo_com_modelo(dados_completos_renomeados, config['col_y'], config['col_x'], config['title'], config['ylabel'], config['xlabel'], usar_escala_log=config['log'])
                     
                     if fig:
                         try:
@@ -923,9 +1130,10 @@ if __name__ == "__main__":
                     
             # --- EXECUTAR MODO DISCREPÂNCIA (Opção 3) ---
             elif escolha == '3':
-                if len(dados_completos) > 1:
+                if len(dados_completos_renomeados) > 1:
                     print("\nSelecione a análise de REFERÊNCIA para a comparação de discrepância:")
-                    lista_nomes_validos = [nome for nome, dados in dados_completos.items() if 'modelo' in dados and dados['modelo']]
+                    # (MODIFICADO) Usa 'modelo_best'
+                    lista_nomes_validos = [nome for nome, dados in dados_completos_renomeados.items() if 'modelo_best' in dados and dados['modelo_best']]
                     
                     if len(lista_nomes_validos) < 2:
                         print("ERRO: É necessário ter pelo menos duas amostras com modelos ajustados para realizar a comparação.")
@@ -938,7 +1146,7 @@ if __name__ == "__main__":
                             indice_ref = int(escolha_ref_str.strip()) - 1
                             if 0 <= indice_ref < len(lista_nomes_validos):
                                 nome_referencia = lista_nomes_validos[indice_ref]
-                                analisar_discrepancia(dados_completos, nome_referencia, pasta_salvamento)
+                                analisar_discrepancia(dados_completos_renomeados, nome_referencia, pasta_salvamento)
                             else:
                                 print("ERRO: Escolha inválida.")
                         except (ValueError, IndexError):
@@ -950,3 +1158,4 @@ if __name__ == "__main__":
             print("Opção inválida. Tente novamente.")
 
     print("\n--- FIM DA COMPARAÇÃO ---")
+

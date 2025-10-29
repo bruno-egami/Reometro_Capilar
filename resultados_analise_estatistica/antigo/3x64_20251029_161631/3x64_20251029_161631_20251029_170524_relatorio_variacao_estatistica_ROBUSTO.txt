@@ -1,0 +1,61 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA ROBUSTA (COM FILTRO DE OUTLIERS)
+Sessão Base: 3x64_20251029_161631
+Data de Análise: 2025-10-29 17:05:24
+================================================================================
+
+--- DETALHAMENTO DO AGRUPAMENTO E FILTRO DE OUTLIERS ---
+Fator de Agrupamento: 0.5 bar
+Filtro aplicado: > 2.0 desvios padrão da média de γ̇w (s⁻¹) (grupos com N < 3 são ignorados)
+P_Nominal (bar)    | N (Bruto)  | N (Removidos) | N (Final) 
+------------------------------------------------------------
+0.00               | 4          | 0             | 4         
+0.50               | 28         | 0             | 28        
+1.00               | 16         | 0             | 16        
+1.50               | 23         | 0             | 23        
+2.00               | 1          | 0             | 1         
+------------------------------------------------------------
+Total              | 72         | 0             | 72        
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO (PÓS-FILTRO) ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+ P_Nominal (bar)  N (Final)  τw Média (Pa)  CV τw (%)  γ̇w Média (s⁻¹)  CV γ̇w (%)  CV η (Prop.) (%)
+             0.0          4      78.649225   4.546194        37.448825    7.708826          8.949518
+             0.5         28     164.342375  25.557274        99.876036   32.084543         41.019412
+             1.0         16     334.177569  15.428172      1074.565144   52.265729         54.495274
+             1.5         23     467.397139   7.031636      2850.323017   53.752564         54.210534
+             2.0          1     610.431900        N/A      7801.404500         N/A               N/A
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 7.86 %
+CV Médio Ponderado de γ̇w: 29.29 %
+CV Médio Ponderado de η:  30.81 %
+CV Máximo de τw (Pior Ponto): 25.56 %
+Pontos Analisados: 5
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 5 níveis de Pressão Nominal (P_ext) distintos.
+NOTA: Agrupamento por 0.5 bar. Filtro automático de outliers (baseado em >2σ de γ̇w) foi aplicado.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Boa (7.86%). Aceitável para a maioria dos materiais não-ideais (pastas, concretos).
+  * CONCLUSÃO QUALITATIVA: Reprodutibilidade satisfatória. Pequenas variações podem estar ligadas à não-homogeneidade da amostra ou a flutuações no sistema de pressurização.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Alta Variação (29.29%). Variação excessiva (mesmo após o filtro).
+  * CONCLUSÃO QUALITATIVA: Este alto CV de vazão indica grande variabilidade na massa extrudada. Isso pode ser um sinal de 'wall slip' (deslizamento de parede), entupimento, ou que a amostra é altamente sensível à pressão/história de cisalhamento.
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Baixa/Incerteza Alta (30.81%).
+  * CONCLUSÃO QUALITATIVA: A alta incerteza na viscosidade final indica que a combinação dos desvios de τw e γ̇w está comprometendo a precisão da curva de fluxo. O produto pode ser inerentemente não-reprodutível, ou o método requer melhor controle (temperatura, tempo de repouso).
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: Mesmo após o filtro, a variação é alta. Refazer o ensaio com maior controle da preparação da amostra (homogeneização) e verificar o desempenho do sistema.
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

@@ -1,0 +1,69 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA ROBUSTA (COM FILTRO DE OUTLIERS)
+Sessão Base: 1.5x43_20251029_163521
+Data de Análise: 2025-10-29 17:03:13
+================================================================================
+
+--- DETALHAMENTO DO AGRUPAMENTO E FILTRO DE OUTLIERS ---
+Fator de Agrupamento: 0.25 bar
+Filtro aplicado: > 2.0 desvios padrão da média de γ̇w (s⁻¹) (grupos com N < 3 são ignorados)
+P_Nominal (bar)    | N (Bruto)  | N (Removidos) | N (Final) 
+------------------------------------------------------------
+0.50               | 12         | 0             | 12        
+0.75               | 14         | 0             | 14        
+1.00               | 19         | 0             | 19        
+1.25               | 11         | 0             | 11        
+1.50               | 8          | 0             | 8         
+1.75               | 19         | 0             | 19        
+2.00               | 15         | 1             | 14        
+2.25               | 5          | 0             | 5         
+2.50               | 4          | 0             | 4         
+------------------------------------------------------------
+Total              | 107        | 1             | 106       
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO (PÓS-FILTRO) ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+ P_Nominal (bar)  N (Final)  τw Média (Pa)  CV τw (%)  γ̇w Média (s⁻¹)  CV γ̇w (%)  CV η (Prop.) (%)
+            0.50         12     138.866392  14.219446       197.440233   23.082587         27.110855
+            0.75         14     195.266214   8.768258       310.478879    8.348313         12.106885
+            1.00         19     259.206205   5.876510       461.877895   20.396499         21.226176
+            1.25         11     325.627973   2.400748       682.405691   14.323253         14.523057
+            1.50          8     398.651675   4.691806      1026.780737    6.568093          8.071734
+            1.75         19     447.993953   2.915559      1421.273084   20.568370         20.773982
+            2.00         14     514.589571   2.252004      1943.804721    5.912774          6.327118
+            2.25          5     585.829700   1.207107      2964.745920    1.148024          1.665853
+            2.50          4     664.738500   0.410620      3474.299350   32.992973         32.995528
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 3.20 %
+CV Médio Ponderado de γ̇w: 14.80 %
+CV Médio Ponderado de η:  15.59 %
+CV Máximo de τw (Pior Ponto): 14.22 %
+Pontos Analisados: 9
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 9 níveis de Pressão Nominal (P_ext) distintos.
+NOTA: Agrupamento por 0.25 bar. Filtro automático de outliers (baseado em >2σ de γ̇w) foi aplicado.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Excelente (3.20%). Indica uma alta reprodutibilidade da pressão aplicada e, consequentemente, da tensão de cisalhamento (τw).
+  * CONCLUSÃO QUALITATIVA: O equipamento e o procedimento de ensaio demonstram ser altamente estáveis e controláveis.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Aceitável (14.80%). Variação esperada, já que γ̇w depende da vazão e da geometria do capilar.
+  * CONCLUSÃO QUALITATIVA: O volume/massa extrudado(a) no tempo de ensaio se manteve relativamente constante para os diferentes testes (após remoção de outliers).
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Moderada (15.59%).
+  * CONCLUSÃO QUALITATIVA: A viscosidade é consistente. O CV moderado sugere que os desvios padrão (τw e γ̇w) são relevantes e devem ser reportados junto com os valores médios.
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: A variação é moderada, mas os dados são utilizáveis. O filtro automático removeu os piores pontos. Prossiga com cautela.
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

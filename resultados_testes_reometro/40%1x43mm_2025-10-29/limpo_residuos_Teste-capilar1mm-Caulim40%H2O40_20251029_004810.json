@@ -1,0 +1,16 @@
+{
+    "id_amostra": "Teste-capilar1mm-Caulim60H2O40",
+    "descricao": "Teste com capilar 1mm x 43 - caulim 40%",
+    "data_hora_inicio": "2025-10-23 14:26:17",
+    "diametro_capilar_mm": 1.0,
+    "comprimento_capilar_mm": 43.0,
+    "densidade_pasta_g_cm3": 1.63,
+    "calibracao_aplicada": {
+        "slope": 1.9423761735189375,
+        "intercept": -0.005710585950145676
+    },
+    "testes": [],
+    "data_hora_ultima_coleta": "2025-10-23 15:06:13",
+    "data_hora_filtragem_residuos": "2025-10-29 00:48:10",
+    "observacoes_filtragem": "Filtro por Resíduos (2.0 * STD). 0 ponto(s) removido(s) do total (28 pontos)."
+}

@@ -1,0 +1,65 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA ROBUSTA (COM FILTRO DE OUTLIERS)
+Sessão Base: 3x64_20251029_161631
+Data de Análise: 2025-10-29 17:03:35
+================================================================================
+
+--- DETALHAMENTO DO AGRUPAMENTO E FILTRO DE OUTLIERS ---
+Fator de Agrupamento: 0.25 bar
+Filtro aplicado: > 2.0 desvios padrão da média de γ̇w (s⁻¹) (grupos com N < 3 são ignorados)
+P_Nominal (bar)    | N (Bruto)  | N (Removidos) | N (Final) 
+------------------------------------------------------------
+0.25               | 11         | 0             | 11        
+0.50               | 16         | 1             | 15        
+0.75               | 10         | 0             | 10        
+1.00               | 6          | 0             | 6         
+1.25               | 13         | 1             | 12        
+1.50               | 15         | 0             | 15        
+1.75               | 1          | 0             | 1         
+------------------------------------------------------------
+Total              | 72         | 2             | 70        
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO (PÓS-FILTRO) ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+ P_Nominal (bar)  N (Final)  τw Média (Pa)  CV τw (%)  γ̇w Média (s⁻¹)  CV γ̇w (%)  CV η (Prop.) (%)
+            0.25         11      93.215109  15.921723        56.509782   34.364993         37.874187
+            0.50         15     177.331907   3.604500        98.949887    9.282633          9.957896
+            0.75         10     243.869580  10.824923       314.113540   53.146690         54.237898
+            1.00          6     341.078250   4.126408      1342.091650   37.515041         37.741298
+            1.25         12     412.683258   5.338643      1292.925475   36.770640         37.156171
+            1.50         15     487.404707   3.889280      3527.596327   37.143479         37.346546
+            1.75          1     610.431900        N/A      7801.404500         N/A               N/A
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 4.34 %
+CV Médio Ponderado de γ̇w: 27.00 %
+CV Médio Ponderado de η:  27.44 %
+CV Máximo de τw (Pior Ponto): 15.92 %
+Pontos Analisados: 7
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 7 níveis de Pressão Nominal (P_ext) distintos.
+NOTA: Agrupamento por 0.25 bar. Filtro automático de outliers (baseado em >2σ de γ̇w) foi aplicado.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Excelente (4.34%). Indica uma alta reprodutibilidade da pressão aplicada e, consequentemente, da tensão de cisalhamento (τw).
+  * CONCLUSÃO QUALITATIVA: O equipamento e o procedimento de ensaio demonstram ser altamente estáveis e controláveis.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Alta Variação (27.00%). Variação excessiva (mesmo após o filtro).
+  * CONCLUSÃO QUALITATIVA: Este alto CV de vazão indica grande variabilidade na massa extrudada. Isso pode ser um sinal de 'wall slip' (deslizamento de parede), entupimento, ou que a amostra é altamente sensível à pressão/história de cisalhamento.
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Baixa/Incerteza Alta (27.44%).
+  * CONCLUSÃO QUALITATIVA: A alta incerteza na viscosidade final indica que a combinação dos desvios de τw e γ̇w está comprometendo a precisão da curva de fluxo. O produto pode ser inerentemente não-reprodutível, ou o método requer melhor controle (temperatura, tempo de repouso).
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: Mesmo após o filtro, a variação é alta. Refazer o ensaio com maior controle da preparação da amostra (homogeneização) e verificar o desempenho do sistema.
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================
