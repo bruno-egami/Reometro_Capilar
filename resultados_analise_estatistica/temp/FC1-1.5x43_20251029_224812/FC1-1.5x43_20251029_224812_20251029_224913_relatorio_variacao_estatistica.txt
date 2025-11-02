@@ -1,0 +1,98 @@
+================================================================================
+RELATÓRIO DE VARIAÇÃO ESTATÍSTICA ROBUSTA (COM FILTRO DE OUTLIERS)
+Sessão Base: FC1-1.5x43_20251029_224812
+Data de Análise: 2025-10-29 22:49:13
+================================================================================
+
+--- DETALHAMENTO DO AGRUPAMENTO E FILTRO DE OUTLIERS ---
+Fator de Agrupamento: 0.1 bar
+Filtro aplicado: > 2.0 desvios padrão da média de γ̇w (s⁻¹) (grupos com N < 3 são ignorados)
+P_Nominal (bar)    | N (Bruto)  | N (Removidos) | N (Final) 
+------------------------------------------------------------
+0.40               | 2          | 0             | 2         
+0.50               | 3          | 0             | 3         
+0.60               | 8          | 1             | 7         
+0.70               | 6          | 0             | 6         
+0.80               | 7          | 0             | 7         
+0.90               | 7          | 0             | 7         
+1.00               | 7          | 0             | 7         
+1.10               | 5          | 0             | 5         
+1.20               | 4          | 0             | 4         
+1.30               | 7          | 0             | 7         
+1.40               | 1          | 0             | 1         
+1.50               | 3          | 0             | 3         
+1.60               | 4          | 0             | 4         
+1.70               | 14         | 0             | 14        
+1.80               | 4          | 0             | 4         
+1.90               | 5          | 0             | 5         
+2.00               | 11         | 1             | 10        
+2.20               | 1          | 0             | 1         
+2.30               | 4          | 0             | 4         
+2.60               | 4          | 0             | 4         
+------------------------------------------------------------
+Total              | 107        | 2             | 105       
+
+--- TABELA DE COEFICIENTE DE VARIAÇÃO (CV) POR PONTO (PÓS-FILTRO) ---
+CV = (Desvio Padrão / Média) * 100
+CV_η_PROPAGADO é uma estimativa de erro da viscosidade.
+
+ P_Nominal (bar)  N (Final)  τw Média (Pa)  CV τw (%)  γ̇w Média (s⁻¹)  CV γ̇w (%)  CV η (Prop.) (%)
+             0.4          2     380.382200   0.267464       138.362850    1.539443          1.562505
+             0.5          3     405.293967   2.931528       153.399700   12.271994         12.617278
+             0.6          7     522.411229   2.326503       233.194000    3.442138          4.154628
+             0.7          6     623.279950   5.995929       307.710050    9.071440         10.873922
+             0.8          7     705.833329   3.673385       319.537300    5.753141          6.825862
+             0.9          7     818.557457   0.625620       369.567714    2.298765          2.382377
+             1.0          7     887.486243   1.471356       457.180571    5.170551          5.375825
+             1.1          5     941.436100   1.779149       597.688400    5.249748          5.543034
+             1.2          4    1070.624950   1.206836       633.351650    4.485535          4.645049
+             1.3          7    1118.103129   0.997186       710.436571   16.047890         16.078842
+             1.4          1    1224.896400        N/A       967.535100         N/A               N/A
+             1.5          3    1325.507267   1.687140       976.421333    6.266005          6.489165
+             1.6          4    1395.059025   1.580167      1079.361700    2.493510          2.952037
+             1.7         14    1494.540164   1.408318      1397.799607   22.564907         22.608812
+             1.8          4    1554.664475   2.075732      1421.025925   14.569178         14.716305
+             1.9          5    1662.965460   1.425948      1746.907540    9.966896         10.068384
+             2.0         10    1753.857420   1.222941      2001.061930    2.210202          2.525981
+             2.2          1    1957.225600        N/A      2997.495000         N/A               N/A
+             2.3          4    1986.309300   1.166073      2956.558650    1.120623          1.617258
+             2.6          4    2247.256600   0.410618      3474.299350   32.992973         32.995528
+
+================================================================================
+--- RESUMO DAS MÉTRICAS GLOBAIS (Ponderado por τw) ---
+CV Médio Ponderado de τw: 1.34 %
+CV Médio Ponderado de γ̇w: 8.98 %
+CV Médio Ponderado de η:  9.23 %
+CV Máximo de τw (Pior Ponto): 6.00 %
+Pontos Analisados: 20
+================================================================================
+
+--- PARECER GERAL DA VARIAÇÃO ESTATÍSTICA (QUALI-QUANTITATIVO) ---
+Análise baseada em 20 níveis de Pressão Nominal (P_ext) distintos.
+NOTA: Agrupamento por 0.1 bar. Filtro automático de outliers (baseado em >2σ de γ̇w) foi aplicado.
+
+1. REPRODUTIBILIDADE DA TENSÃO DE CISALHAMENTO (τw - Pressão):
+  * RESULTADO: Excelente (1.34%). Indica uma alta reprodutibilidade da pressão aplicada e, consequentemente, da tensão de cisalhamento (τw).
+  * CONCLUSÃO QUALITATIVA: O equipamento e o procedimento de ensaio demonstram ser altamente estáveis e controláveis.
+
+2. REPRODUTIBILIDADE DA TAXA DE CISALHAMENTO (γ̇w - Vazão):
+  * RESULTADO: Aceitável (8.98%). Variação esperada, já que γ̇w depende da vazão e da geometria do capilar.
+  * CONCLUSÃO QUALITATIVA: O volume/massa extrudado(a) no tempo de ensaio se manteve relativamente constante para os diferentes testes (após remoção de outliers).
+
+3. ESTABILIDADE ESTATÍSTICA DA VISCOSIDADE (η - Propagação de Erro):
+  * RESULTADO: Estabilidade Alta (9.23%).
+  * CONCLUSÃO QUALITATIVA: A variabilidade nos parâmetros fundamentais (τw e γ̇w) não resulta em uma incerteza excessiva no resultado final da viscosidade, reforçando a validade dos dados reológicos.
+
+4. RECOMENDAÇÕES FINAIS (Qualitativas):
+  * RECOMENDAÇÃO: Os dados são estatisticamente robustos (após o filtro). Prossiga com a modelagem e comparação com outras amostras (Scripts 3 e 4).
+
+================================================================================
+--- ANÁLISE DO GRÁFICO DE RESÍDUOS (Modelo: Herschel-Bulkley) ---
+Resíduo Médio: -5.298 Pa
+* Distribuição: Os resíduos parecem estar razoavelmente centrados em torno de zero, o que é um bom sinal.
+* Tendência: Não há uma tendência linear clara nos resíduos em relação à taxa de cisalhamento (log). Isso indica que o modelo captura bem a forma da curva.
+* Avaliação Geral: Verifique o gráfico de resíduos visualmente. Uma distribuição aleatória e sem padrões claros em torno da linha zero indica um bom ajuste do modelo aos dados.
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

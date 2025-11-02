@@ -1,0 +1,74 @@
+﻿Amostra;Modelo;Parametro;Valor;R2;Melhor_Modelo_Para_Amostra
+Capilar 1.5x43;Bingham;R2;0,849709;0,849709;False
+Capilar 1.5x43;Bingham;ep (Pa.s);0,151462;0,849709;False
+Capilar 1.5x43;Bingham;t0 (Pa);190,416;0,849709;False
+Capilar 1.5x43;Casson;R2;0,909529;0,909529;False
+Capilar 1.5x43;Casson;eta_cas (Pa.s);0,073506;0,909529;False
+Capilar 1.5x43;Casson;t0 (Pa);106,609;0,909529;False
+Capilar 1.5x43;Herschel-Bulkley;K (Pa.s^n);15,3885;0,951753;True
+Capilar 1.5x43;Herschel-Bulkley;R2;0,951753;0,951753;True
+Capilar 1.5x43;Herschel-Bulkley;n (-);0,461459;0,951753;True
+Capilar 1.5x43;Herschel-Bulkley;t0 (Pa);2,8239e-11;0,951753;True
+Capilar 1.5x43;Lei da Potência;K (Pa.s^n);15,3885;0,951753;False
+Capilar 1.5x43;Lei da Potência;R2;0,951753;0,951753;False
+Capilar 1.5x43;Lei da Potência;n (-);0,461459;0,951753;False
+Capilar 1.5x43;Newtoniano;R2;0,168973;0,168973;False
+Capilar 1.5x43;Newtoniano;eta (Pa.s);0,255764;0,168973;False
+Capilar 1x43;Bingham;R2;0,925639;0,925639;False
+Capilar 1x43;Bingham;ep (Pa.s);0,135826;0,925639;False
+Capilar 1x43;Bingham;t0 (Pa);210,387;0,925639;False
+Capilar 1x43;Casson;R2;0,950966;0,950966;False
+Capilar 1x43;Casson;eta_cas (Pa.s);0,0785887;0,950966;False
+Capilar 1x43;Casson;t0 (Pa);97,3481;0,950966;False
+Capilar 1x43;Herschel-Bulkley;K (Pa.s^n);7,21198;0,968133;True
+Capilar 1x43;Herschel-Bulkley;R2;0,968133;0,968133;True
+Capilar 1x43;Herschel-Bulkley;n (-);0,563101;0,968133;True
+Capilar 1x43;Herschel-Bulkley;t0 (Pa);3,61775e-14;0,968133;True
+Capilar 1x43;Lei da Potência;K (Pa.s^n);7,21201;0,968133;False
+Capilar 1x43;Lei da Potência;R2;0,968133;0,968133;False
+Capilar 1x43;Lei da Potência;n (-);0,563101;0,968133;False
+Capilar 1x43;Newtoniano;R2;0,702372;0,702372;False
+Capilar 1x43;Newtoniano;eta (Pa.s);0,19123;0,702372;False
+Capilar 2x43;Bingham;R2;0,87333;0,87333;False
+Capilar 2x43;Bingham;ep (Pa.s);0,124339;0,87333;False
+Capilar 2x43;Bingham;t0 (Pa);279,908;0,87333;False
+Capilar 2x43;Casson;R2;0,930787;0,930787;False
+Capilar 2x43;Casson;eta_cas (Pa.s);0,0529189;0,930787;False
+Capilar 2x43;Casson;t0 (Pa);181,359;0,930787;False
+Capilar 2x43;Herschel-Bulkley;K (Pa.s^n);32,4372;0,965892;True
+Capilar 2x43;Herschel-Bulkley;R2;0,965892;0,965892;True
+Capilar 2x43;Herschel-Bulkley;n (-);0,384158;0,965892;True
+Capilar 2x43;Herschel-Bulkley;t0 (Pa);2,65317e-11;0,965892;True
+Capilar 2x43;Lei da Potência;K (Pa.s^n);32,4373;0,965892;False
+Capilar 2x43;Lei da Potência;R2;0,965892;0,965892;False
+Capilar 2x43;Lei da Potência;n (-);0,384158;0,965892;False
+Capilar 2x43;Newtoniano;R2;-0,242229;-0,242229;False
+Capilar 2x43;Newtoniano;eta (Pa.s);0,215344;-0,242229;False
+Ca´pilar;Bingham;R2;0,849709;0,849709;False
+Ca´pilar;Bingham;ep (Pa.s);0,169128;0,849709;False
+Ca´pilar;Bingham;t0 (Pa);212,625;0,849709;False
+Ca´pilar;Casson;R2;0,909529;0,909529;False
+Ca´pilar;Casson;eta_cas (Pa.s);0,0820793;0,909529;False
+Ca´pilar;Casson;t0 (Pa);119,043;0,909529;False
+Ca´pilar;Herschel-Bulkley;K (Pa.s^n);17,1833;0,951753;True
+Ca´pilar;Herschel-Bulkley;R2;0,951753;0,951753;True
+Ca´pilar;Herschel-Bulkley;n (-);0,461459;0,951753;True
+Ca´pilar;Herschel-Bulkley;t0 (Pa);3,32726e-11;0,951753;True
+Ca´pilar;Lei da Potência;K (Pa.s^n);17,1833;0,951753;False
+Ca´pilar;Lei da Potência;R2;0,951753;0,951753;False
+Ca´pilar;Lei da Potência;n (-);0,461459;0,951753;False
+Ca´pilar;Newtoniano;R2;0,168973;0,168973;False
+Ca´pilar;Newtoniano;eta (Pa.s);0,285595;0,168973;False
+MCR102;Bingham;R2;0,656986;0,656986;False
+MCR102;Bingham;ep (Pa.s);0,213365;0,656986;False
+MCR102;Bingham;t0 (Pa);116,332;0,656986;False
+MCR102;Casson;R2;0,808029;0,808029;False
+MCR102;Casson;eta_cas (Pa.s);0,0909339;0,808029;False
+MCR102;Casson;t0 (Pa);88,4121;0,808029;False
+MCR102;Herschel-Bulkley;K (Pa.s^n);45,8855;0,962548;False
+MCR102;Herschel-Bulkley;R2;0,962548;0,962548;False
+MCR102;Herschel-Bulkley;n (-);0,305224;0,962548;False
+MCR102;Herschel-Bulkley;t0 (Pa);1,75537e-13;0,962548;False
+MCR102;Lei da Potência;K (Pa.s^n);45,8853;0,962548;True
+MCR102;Lei da Potência;R2;0,962548;0,962548;True
+MCR102;Lei da Potência;n (-);0,305225;0,962548;True
