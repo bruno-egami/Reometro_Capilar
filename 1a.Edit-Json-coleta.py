@@ -1,661 +1,345 @@
 # -*- coding: utf-8 -*-
-# -----------------------------------------------------------------------------
-# SCRIPT 1a.EDIT-JSON-COLETA.PY
-# Ferramenta para visualizar, excluir pontos, reordenar, limpar massas 0g
-# e UNIR JSONs semelhantes.
-# -----------------------------------------------------------------------------
+"""
+SCRIPT PARA EDITAR ARQUIVOS JSON DE COLETA (Compatível com 1 ou 2 Sensores)
+Permite visualizar, modificar (massa/tempo) ou excluir pontos de um ensaio.
+Cria um novo arquivo 'edit_[nome_original].json' com as modificações.
+VERSÃO 2.0 - Suporte a JSON antigo (1 sensor) e novo (2 sensores)
+Autor: Bruno Egami (Modificado por Gemini)
+Data: 04/11/2025
+"""
 
+import json
 import os
 import glob
-import json
-import pandas as pd
-import re # Importado para expressões regulares
 from datetime import datetime
 
-# --- CONFIGURAÇÃO DE PASTAS ---
-JSON_INPUT_DIR = "resultados_testes_reometro"
+# --- Configurações ---
+RESULTS_JSON_DIR = "resultados_testes_reometro"
 
-# --- FUNÇÕES AUXILIARES ---
+# --- [NOVO] Variáveis Globais para detecção de formato ---
+g_formato_novo = False # Flag para saber se é o formato de 2 sensores
+g_chave_pressao_principal = "media_pressao_final_ponto_bar" # Chave padrão (formato antigo)
 
-def buscar_arquivos_json(pasta_json):
-    """
-    Busca todos os arquivos .json na pasta que são arquivos de "origem".
-    IGNORA arquivos já unidos (que terminam com _YYYY-MM-DD.json).
-    """
-    if not os.path.exists(pasta_json):
-        print(f"AVISO: A pasta '{pasta_json}' não existe.")
-        return []
-    
-    # Regex para identificar arquivos já unidos (ex: ..._2025-10-29.json)
-    merged_file_pattern = re.compile(r'_\d{4}-\d{2}-\d{2}\.json$')
-    
-    # Busca por arquivos JSON que sejam arquivos de origem
-    # E que estejam na pasta raiz (ignora subpastas)
-    arquivos = sorted([
-        os.path.join(pasta_json, f) 
-        for f in os.listdir(pasta_json) 
-        if f.endswith('.json') and \
-           not merged_file_pattern.search(f) and \
-           os.path.isfile(os.path.join(pasta_json, f))
-    ])
-    return arquivos
-
-def listar_arquivos_json_numerados(pasta_json):
-# ... (código existente inalterado) ...
-    """Lista todos os arquivos .json em uma pasta para que o usuário possa escolher pelo número."""
-    arquivos_paths = buscar_arquivos_json(pasta_json)
-    arquivos_nomes = [os.path.basename(p) for p in arquivos_paths]
-    
-    if not arquivos_nomes:
-        print(f"Nenhum arquivo .json de origem encontrado na pasta '{pasta_json}'.")
-        return [], []
-    else:
-        print(f"\nArquivos JSON de origem disponíveis em '{pasta_json}':")
-        for i, arq in enumerate(arquivos_nomes):
-            print(f"  {i+1}: {arq}")
-    return arquivos_nomes, arquivos_paths # Retorna nomes e caminhos completos
-
-def selecionar_arquivo_json(pasta_json):
-# ... (código existente inalterado) ...
-    """Gerencia o menu para o usuário escolher um arquivo JSON da lista."""
-    arquivos_nomes, arquivos_paths = listar_arquivos_json_numerados(pasta_json)
-    if not arquivos_nomes:
-        return None 
+def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=None):
+    """Pede um número float ao usuário, aceitando ',' como decimal."""
     while True:
-        try:
-            escolha_str = input("\nEscolha o NÚMERO do arquivo JSON a ser editado (ou '0' para sair): ").strip()
-            if escolha_str == '0':
-                return None
-            
-            escolha_num = int(escolha_str)
-            if 1 <= escolha_num <= len(arquivos_nomes):
-                return arquivos_paths[escolha_num - 1] # Retorna o caminho completo
+        if default_val is not None:
+            # Formata o default_val para exibição (ex: 3.140)
+            if isinstance(default_val, (int, float)):
+                default_str = f"{default_val:.3f}".replace('.', ',') if default_val > 0.1 else f"{default_val:.4f}".replace('.', ',')
             else:
-                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_nomes)}, ou '0'.")
+                default_str = str(default_val)
+            
+            prompt = f"{mensagem_prompt} (Atual: {default_str}) [ENTER para manter]: "
+        else:
+            prompt = mensagem_prompt
+            
+        entrada = input(prompt).strip()
+        
+        if permitir_vazio and entrada == "":
+            return default_val if default_val is not None else None
+        
+        try:
+            return float(entrada.replace(',', '.'))
         except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite um número ou '0'.")
-        except Exception as e:
-            print(f"Ocorreu um erro inesperado na seleção: {e}")
-            return None
-
-# --- NOVAS FUNÇÕES (OPÇÃO 3) ---
-
-def extrair_percentual(nome_arquivo):
-# ... (código existente inalterado) ...
-    """Extrai o primeiro valor de percentual (ex: 40%, 37.5%) do nome do arquivo."""
-    # Procura por um ou mais dígitos, opcionalmente um ponto e mais dígitos, seguido por '%'
-    match = re.search(r'(\d+(\.\d+)?%)', nome_arquivo)
-    return match.group(0) if match else None
-
-def extrair_criterios(caminho_arquivo):
-# ... (código existente inalterado) ...
-    """
-    Extrai os critérios de união de um arquivo JSON.
-    Pressupõe que os metadados estão em data['metadata']['capilar'] e data['metadata']['densidade_g_cm3']
-    """
-    nome_arquivo = os.path.basename(caminho_arquivo)
-    percentual = extrair_percentual(nome_arquivo)
-    
-    if not percentual:
-# ... (código existente inalterado) ...
-        print(f"AVISO: Não foi possível extrair o percentual (%) do nome do arquivo: {nome_arquivo}. Pulando.")
-        return None, None, None, None
-
-    try:
-        with open(caminho_arquivo, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # --- AJUSTE FEITO COM BASE NO JSON DE EXEMPLO ---
-        # Os dados de capilar e densidade estão na raiz do JSON
-        
-        # Cria um dicionário com as informações do capilar
-        capilar_info = {
-            "diametro_mm": data.get('diametro_capilar_mm', 0.0),
-            "comprimento_mm": data.get('comprimento_capilar_mm', 0.0)
-        }
-        
-        # Pega a informação de densidade
-        densidade_info = data.get('densidade_pasta_g_cm3', 0.0)
-        # --- FIM DA ÁREA DE AJUSTE ---
-
-        # Converte o dicionário do capilar em uma string "hasheável" para usar como chave
-        capilar_key = json.dumps(capilar_info, sort_keys=True)
-        
-        return percentual, capilar_key, densidade_info, data
-
-    except json.JSONDecodeError:
-# ... (código existente inalterado) ...
-        print(f"ERRO: Falha ao decodificar o arquivo {nome_arquivo}. Pulando.")
-        return None, None, None, None
-    except Exception as e:
-# ... (código existente inalterado) ...
-        print(f"ERRO ao ler {nome_arquivo}: {e}. Pulando.")
-        return None, None, None, None
-
-def processar_uniao_arquivos():
-# ... (código existente inalterado) ...
-    """
-    NOVA FUNÇÃO: Analisa, agrupa e une arquivos JSON semelhantes.
-    """
-    print("\n--- Iniciando União Automática de Arquivos ---")
-    arquivos_json = buscar_arquivos_json(JSON_INPUT_DIR)
-    
-    if not arquivos_json:
-# ... (código existente inalterado) ...
-        print(f"Nenhum arquivo .json de origem encontrado em '{JSON_INPUT_DIR}'.")
-        return
-
-    grupos_para_unir = {} # Chave: (percentual, capilar_key, densidade), Valor: [lista de caminhos]
-    dados_arquivos = {}   # Chave: caminho, Valor: dados do json (para evitar releitura)
-
-    # 1. Agrupar arquivos
-    print("Analisando e agrupando arquivos por critérios...")
-    for caminho_arquivo in arquivos_json:
-# ... (código existente inalterado) ...
-        percentual, capilar_key, densidade, data = extrair_criterios(caminho_arquivo)
-        
-        if not percentual:
-            continue
-            
-        grupo_key = (percentual, capilar_key, densidade)
-        
-        if grupo_key not in grupos_para_unir:
-            grupos_para_unir[grupo_key] = []
-            
-        grupos_para_unir[grupo_key].append(caminho_arquivo)
-        dados_arquivos[caminho_arquivo] = data
-
-    # 2. Filtrar grupos que realmente precisam de união (mais de 1 arquivo)
-    grupos_validos = {k: v for k, v in grupos_para_unir.items() if len(v) > 1}
-
-    # 3. Relatório e Confirmação
-    if not grupos_validos:
-# ... (código existente inalterado) ...
-        print("\nNenhum grupo de arquivos com critérios idênticos (e mais de 1 arquivo) foi encontrado para unir.")
-        return
-
-    print("\n" + "="*70)
-    print("RELATÓRIO DE UNIÃO DE ARQUIVOS")
-# ... (código existente inalterado) ...
-    print("="*70)
-    print("Os seguintes grupos de arquivos foram encontrados e podem ser unidos:")
-
-    for i, (grupo_key, arquivos_do_grupo) in enumerate(grupos_validos.items()):
-# ... (código existente inalterado) ...
-        percentual, capilar_key, densidade = grupo_key
-        print(f"\n--- GRUPO {i+1} ---")
-        print(f"  Critérios de União:")
-        print(f"    - Formulação (Nome): {percentual}")
-        print(f"    - Densidade (Meta):  {densidade}")
-        try:
-            # Tenta decodificar o JSON do capilar para exibição amigável
-            capilar_info_str = json.dumps(json.loads(capilar_key))
-        except:
-            capilar_info_str = capilar_key
-        print(f"    - Capilar (Meta):    {capilar_info_str}")
-        print(f"  Arquivos a serem unidos:")
-        for caminho_arquivo in arquivos_do_grupo:
-            print(f"    - {os.path.basename(caminho_arquivo)}")
-
-    print("="*70)
-
-    while True:
-# ... (código existente inalterado) ...
-        confirm = input("\nDeseja continuar e UNIR os grupos listados acima? (s/n): ").strip().lower()
-        if confirm == 's':
-            break
-        if confirm == 'n':
-            print("\nOperação de união cancelada pelo usuário.")
-            return
-
-    # 4. Executar União e Limpeza
-    print("\nIniciando união, limpeza e renumeração...")
-    
-    for grupo_key, arquivos_do_grupo in grupos_validos.items():
-        
-        # --- AJUSTE SOLICITADO ---
-# ... (código existente inalterado) ...
-        # Extrai todos os critérios da chave para exibição
-        percentual = grupo_key[0]
-        capilar_key = grupo_key[1]
-        densidade = grupo_key[2]
-        
-        # Formatar o capilar_key e extrair dados para sugestão
-# ... (código existente inalterado) ...
-        capilar_info_str = ""
-        diametro_str = ""
-        compr_str = ""
-        capilar_info = {} # Armazena o dict do capilar
-        try:
-            # Carrega a string JSON da chave
-            capilar_info = json.loads(capilar_key) 
-            # Formata como string para exibição
-            capilar_info_str = json.dumps(capilar_info) 
-            
-            # Tenta formatar '3.0' para '3' e '1.5' para '1p5'
-            diametro = capilar_info.get('diametro_mm', 'D')
-            compr = capilar_info.get('comprimento_mm', 'C')
-            
-            # --- ALTERAÇÃO AQUI ---
-            # Remove '.0' se for inteiro, mantém o float como está (ex: 1.5)
-            diametro_str = f"{diametro:.0f}" if diametro == int(diametro) else f"{diametro:.1f}"
-            compr_str = f"{compr:.0f}" if compr == int(compr) else f"{compr:.1f}"
-            # --- FIM DA ALTERAÇÃO ---
-            
-        except:
-            # Fallback se a chave não for um JSON válido (não deve acontecer)
-            capilar_info_str = capilar_key
-            
-        print(f"\nProcessando Grupo...")
-        print(f"  - Formulação: {percentual}")
-        print(f"  - Capilar:    {capilar_info_str}")
-        print(f"  - Densidade:  {densidade}")
-        # --- FIM DO AJUSTE ---
-
-        # --- ALTERAÇÃO AQUI ---
-        # 4a. Gerar nome do arquivo de saída automaticamente
-        pct_str = percentual # Mantém o '%' original
-        data_hoje_str = datetime.now().strftime('%Y-%m-%d')
-        
-        # Formato: 40%1.5x43mm_2025-10-29.json
-        nome_saida = f"{pct_str}{diametro_str}x{compr_str}mm_{data_hoje_str}.json"
-        # --- FIM DA ALTERAÇÃO ---
-        
-        print(f"  -> Nome do arquivo de saída gerado: {nome_saida}")
-        
-        caminho_saida = os.path.join(JSON_INPUT_DIR, nome_saida)
-        
-        if os.path.exists(caminho_saida):
-# ... (código existente inalterado) ...
-            print(f"  AVISO: O arquivo '{nome_saida}' já existe. Ele será sobrescrito.")
-            
-        testes_unidos = []
-        novo_json_data = {}
-        primeiro_arquivo = True
-
-        # --- NOVOS CONTADORES PARA O RELATÓRIO ---
-        total_pontos_brutos = 0
-        total_pontos_massa_zero_removidos = 0
-        
-        # --- NOVO RELATÓRIO PARA EMBUTIR ---
-        relatorio_uniao = {
-            "arquivos_unidos": [os.path.basename(p) for p in arquivos_do_grupo],
-            "criterios_uniao": {
-                "percentual": percentual,
-                "capilar": capilar_info, # Usa o dict decodificado
-                "densidade": densidade
-            },
-            "data_uniao": datetime.now().isoformat()
-        }
-        # --- FIM NOVO RELATÓRIO ---
-
-        # 4b. Coletar todos os 'testes'
-        for caminho_arquivo in arquivos_do_grupo:
-# ... (código existente inalterado) ...
-            data = dados_arquivos[caminho_arquivo]
-            
-            # Pega os metadados e cabeçalho do *primeiro* arquivo do grupo
-            if primeiro_arquivo:
-                novo_json_data = {k: v for k, v in data.items() if k != 'testes'}
-                primeiro_arquivo = False
-            
-            testes = data.get("testes", [])
-            total_pontos_brutos += len(testes) # Contagem
-            
-            # Limpeza de Massa 0g (Sua solicitação 3)
-            testes_limpos_massa = [t for t in testes if t.get('massa_g_registrada', 0.0) != 0.0]
-            
-            # Contagem de removidos
-            removidos_neste_arquivo = len(testes) - len(testes_limpos_massa)
-            total_pontos_massa_zero_removidos += removidos_neste_arquivo
-            
-            testes_unidos.extend(testes_limpos_massa)
-
-        # Total de pontos após a limpeza de massa 0g
-        pontos_apos_limpeza_massa = len(testes_unidos)
-
-        # 4c. Limpeza de Duplicados (Sua solicitação 4)
-        testes_sem_duplicatas = []
-        vistos = set()
-# ... (código existente inalterado) ...
-        # Define um "ponto duplicado" como tendo a mesma pressão, duração e massa.
-        # Ajuste esta chave se a definição de duplicata for outra.
-        for teste in testes_unidos:
-            chave_teste = (
-                teste.get('media_pressao_final_ponto_bar'), 
-                teste.get('duracao_real_s'), 
-                teste.get('massa_g_registrada')
-            )
-            
-            if chave_teste not in vistos:
-                testes_sem_duplicatas.append(teste)
-                vistos.add(chave_teste)
-        
-        # Total de pontos após a limpeza de duplicatas
-        pontos_apos_limpeza_duplicatas = len(testes_sem_duplicatas)
-        total_pontos_duplicados_removidos = pontos_apos_limpeza_massa - pontos_apos_limpeza_duplicatas
-            
-        # Adiciona estatísticas ao relatório
-        relatorio_uniao['estatisticas_limpeza'] = {
-            'total_pontos_brutos': total_pontos_brutos,
-            'pontos_massa_zero_removidos': total_pontos_massa_zero_removidos,
-            'pontos_duplicados_removidos': total_pontos_duplicados_removidos,
-            'total_pontos_finais': pontos_apos_limpeza_duplicatas
-        }
-
-        # 4d. Renumerar pontos
-        for i, teste in enumerate(testes_sem_duplicatas):
-# ... (código existente inalterado) ...
-            teste['ponto_n'] = i + 1
-
-        # 4e. Salvar arquivo final
-        novo_json_data['testes'] = testes_sem_duplicatas
-        novo_json_data['relatorio_uniao'] = relatorio_uniao # Adiciona o relatório ao JSON
-        
-        # Opcional: Atualizar a contagem de pontos no cabeçalho, se existir
-# ... (código existente inalterado) ...
-        # ATUALIZADO: com base no exemplo, não existe 'dados_cabecalho'
-        # Vamos apenas garantir que 'testes' seja atualizado.
-        # if 'dados_cabecalho' in novo_json_data and 'n_pontos_total' in novo_json_data.get('dados_cabecalho', {}):
-        #    novo_json_data['dados_cabecalho']['n_pontos_total'] = len(testes_sem_duplicatas)
-
-        try:
-            # Salva o arquivo unido
-            with open(caminho_saida, 'w', encoding='utf-8') as f:
-                json.dump(novo_json_data, f, indent=4, ensure_ascii=False)
-            
-            # Mensagem de sucesso existente
-            print(f"  -> SUCESSO: Grupo salvo em '{nome_saida}' com {pontos_apos_limpeza_duplicatas} pontos limpos e unidos.")
-            
-            # --- NOVO RELATÓRIO DO GRUPO ---
-            print("  --- Relatório do Grupo (impresso e salvo no JSON) ---")
-            print(f"    Arquivos unidos ({len(arquivos_do_grupo)}):")
-            for f_path in arquivos_do_grupo:
-                print(f"      - {os.path.basename(f_path)}")
-            print(f"    Pontos com massa 0g removidos: {total_pontos_massa_zero_removidos}")
-            print(f"    Pontos duplicados removidos:   {total_pontos_duplicados_removidos}")
-            print(f"    Total de pontos brutos:        {total_pontos_brutos}")
-            print(f"    Total de pontos finais:        {pontos_apos_limpeza_duplicatas}")
-            print("  ----------------------------")
-            # --- FIM DO NOVO RELATÓRIO ---
-            
-            # --- NOVO: Mover arquivos de origem para a subpasta ---
-            # 1. Criar o nome e o caminho da pasta
-            # Remove .json do nome do arquivo salvo para criar o nome da pasta
-            nome_pasta_arquivados = nome_saida.replace('.json', '')
-            caminho_pasta_arquivados = os.path.join(JSON_INPUT_DIR, nome_pasta_arquivados)
-            
-            # 2. Criar a pasta
-            os.makedirs(caminho_pasta_arquivados, exist_ok=True)
-            
-            # 3. Mover os arquivos
-            print(f"  Movendo arquivos de origem para '{nome_pasta_arquivados}'...")
-            arquivos_movidos_count = 0
-            for caminho_arquivo_original in arquivos_do_grupo:
-                nome_arquivo_original = os.path.basename(caminho_arquivo_original)
-                novo_caminho = os.path.join(caminho_pasta_arquivados, nome_arquivo_original)
-                
-                # Usa os.rename para mover o arquivo
-                os.rename(caminho_arquivo_original, novo_caminho)
-                arquivos_movidos_count += 1
-            
-            print(f"  -> SUCESSO: {arquivos_movidos_count} arquivos de origem movidos.")
-            # --- FIM DA NOVA SEÇÃO ---
-
-        except Exception as e:
-            print(f"  -> ERRO: Ocorreu um erro durante o salvamento ou movimentação de arquivos para '{nome_saida}': {e}")
-            print("     Verifique se o arquivo unido foi salvo. Os arquivos de origem não foram movidos.")
-            # Se deu erro, pula para o próximo grupo
-            continue
-
-    print(f"\n--- União de arquivos concluída. ---")
-
-
-# --- FUNÇÕES EXISTENTES (OPÇÕES 1 e 2) ---
-
-def processar_limpeza_massa_zero():
-# ... (código existente inalterado) ...
-    """
-    Analisa TODOS os JSONs, reporta amostras com massa 0g
-    e permite ao usuário removê-las, salvando no MESMO arquivo.
-    """
-    print("\n--- Iniciando Verificação de Massa 0g ---")
-    arquivos_json = buscar_arquivos_json(JSON_INPUT_DIR)
-    
-    if not arquivos_json:
-# ... (código existente inalterado) ...
-        print(f"Nenhum arquivo .json de origem encontrado em '{JSON_INPUT_DIR}'.")
-        return
-
-    arquivos_para_modificar = {} # Dicionário para guardar {caminho: [amostras_com_massa_zero]}
-
-    # 1. Escanear e encontrar amostras
-    print("Analisando arquivos...")
-    for caminho_arquivo in arquivos_json:
-        try:
-            with open(caminho_arquivo, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            testes = data.get("testes", [])
-            # Usamos 0.0 para garantir a comparação com float
-            amostras_massa_zero = [t for t in testes if t.get('massa_g_registrada', 0.0) == 0.0] 
-            
-            if amostras_massa_zero:
-                arquivos_para_modificar[caminho_arquivo] = amostras_massa_zero
-        except json.JSONDecodeError:
-            print(f"ERRO: Falha ao decodificar o arquivo {os.path.basename(caminho_arquivo)}. Pulando.")
-        except Exception as e:
-            print(f"ERRO ao ler {os.path.basename(caminho_arquivo)}: {e}. Pulando.")
-            
-    # 2. Relatório e Confirmação
-    if not arquivos_para_modificar:
-        print("\nSUCESSO: Nenhuma amostra com massa 0g encontrada nos arquivos.")
-        return
-
-    print("\n" + "="*70)
-    print("RELATÓRIO DE LIMPEZA (AMOSTRAS COM MASSA 0g)")
-    print("="*70)
-    print("Os seguintes arquivos contêm amostras com massa 0g e serão modificados:")
-    
-    for caminho_arquivo, amostras in arquivos_para_modificar.items():
-        print(f"\n[ Arquivo: {os.path.basename(caminho_arquivo)} ]")
-        print("  Amostras a serem removidas:")
-        for amostra in amostras:
-            print(f"    - Ponto No.: {amostra.get('ponto_n')}, Massa: {amostra.get('massa_g_registrada', 0.0):.3f}g")
-
-    print("="*70)
-    
-    # 3. Pedir confirmação
-    while True:
-        confirm = input("\nDeseja continuar e remover estas amostras dos arquivos ORIGINAIS? (s/n): ").strip().lower()
-        if confirm == 's':
-            break
-        if confirm == 'n':
-            print("\nOperação de limpeza cancelada pelo usuário.")
-            return
-
-    # 4. Executar Limpeza
-    print("\nIniciando limpeza e renumeração...")
-    total_amostras_removidas = 0
-    
-    for caminho_arquivo in arquivos_para_modificar.keys():
-        print(f"Processando: {os.path.basename(caminho_arquivo)}...")
-        try:
-            # Recarrega o arquivo para garantir
-            with open(caminho_arquivo, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            testes_originais = data.get("testes", [])
-            testes_limpos = []
-            novo_indice = 1
-            
-            # Filtra e renumera
-            for teste in testes_originais:
-                if teste.get('massa_g_registrada', 0.0) != 0.0:
-                    teste["ponto_n"] = novo_indice
-                    testes_limpos.append(teste)
-                    novo_indice += 1
-            
-            data["testes"] = testes_limpos
-            removidas = len(testes_originais) - len(testes_limpos)
-            total_amostras_removidas += removidas
-            
-            # Salva no MESMO arquivo
-            with open(caminho_arquivo, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
-            print(f"  -> SUCESSO: Arquivo salvo. {removidas} amostra(s) removida(s).")
-            
-        except Exception as e:
-            print(f"  -> ERRO ao salvar {os.path.basename(caminho_arquivo)}: {e}")
-
-    print(f"\n--- Limpeza de massa 0g concluída. Total de {total_amostras_removidas} amostra(s) removida(s). ---")
-
-
-def processar_limpeza_manual():
-# ... (código existente inalterado) ...
-    """Função original de limpeza e reordenação MANUAL."""
-    caminho_arquivo_original = selecionar_arquivo_json(JSON_INPUT_DIR)
-    
-    if not caminho_arquivo_original:
-        print("\nProcessamento manual cancelado.")
-        return
-
-    nome_arquivo_original = os.path.basename(caminho_arquivo_original)
-    print(f"\nCarregando arquivo: {nome_arquivo_original}")
-
-    # 1. Carregar o JSON
-    try:
-        with open(caminho_arquivo_original, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        print(f"ERRO: Arquivo não encontrado.")
-        return
-    except json.JSONDecodeError:
-        print("ERRO: Falha ao decodificar o arquivo JSON. Verifique o formato.")
-        return
-    except Exception as e:
-        print(f"ERRO ao carregar o arquivo: {e}")
-        return
-
-    testes_originais = data.get("testes", [])
-    if not testes_originais:
-        print("AVISO: O arquivo JSON não contém nenhum teste para editar.")
-        return
-
-    # 2. Exibir Tabela de Pontos para Edição
-    pontos_para_tabela = []
-    for teste in testes_originais:
-        pontos_para_tabela.append({
-            "Ponto No.": teste.get("ponto_n"),
-            "Massa (g)": f"{teste.get('massa_g_registrada', 0.0):.3f}",
-            "Duracao (s)": f"{teste.get('duracao_real_s', 0.0):.3f}",
-            "Pressao Media (bar)": f"{teste.get('media_pressao_final_ponto_bar', 0.0):.3f}"
-        })
-    
-    df_pontos = pd.DataFrame(pontos_para_tabela)
-    
-    print("\n" + "="*70)
-    print("VISUALIZAÇÃO DOS PONTOS DISPONÍVEIS PARA EDIÇÃO")
-    print("="*70)
-    # Garante que a coluna de ponto_n esteja sempre visível e não truncada
-    with pd.option_context('display.max_rows', None, 'display.width', 150):
-        print(df_pontos.to_string(index=False))
-    print("="*70)
-
-    # 3. Solicitar Pontos a Excluir
-    while True:
-        pontos_str = input("\nDigite os NÚMEROS de 'Ponto No.' a EXCLUIR, separados por vírgula (ex: 4, 36). Pressione Enter para NÃO excluir nenhum: ").strip()
-        
-        if not pontos_str:
-            indices_para_remover = set()
-            print("Nenhum ponto será excluído.")
-            break
-            
-        try:
-            # Converte a entrada do usuário para um set de inteiros
-            partes = pontos_str.replace(' ', '').split(',')
-            indices_para_remover = set(int(p) for p in partes if p.isdigit())
-            
-            pontos_validos = set(t.get("ponto_n") for t in testes_originais)
-            
-            # Valida se todos os pontos a remover existem
-            if not indices_para_remover.issubset(pontos_validos):
-                pontos_invalidos = indices_para_remover.difference(pontos_validos)
-                print(f"ERRO: Os seguintes números de ponto não existem: {list(pontos_invalidos)}. Tente novamente.")
-                continue
-            
-            break
-        except ValueError:
-            print("ERRO: Entrada inválida. Use apenas números separados por vírgula.")
+            print("ERRO: Entrada inválida. Insira um número.")
         except Exception as e:
             print(f"Ocorreu um erro: {e}")
-            return
 
-    # 4. Remover e Renumerar
-    testes_limpos = []
-    novo_indice = 1
+def selecionar_json_para_edicao(pasta_json):
+    """[MODIFICADO] Lista, seleciona e DETECTA O FORMATO do arquivo JSON."""
+    global g_formato_novo, g_chave_pressao_principal
     
-    for teste in testes_originais:
-        if teste.get("ponto_n") not in indices_para_remover:
-            # Renumera o ponto
-            teste["ponto_n"] = novo_indice
-            testes_limpos.append(teste)
-            novo_indice += 1
-
-    pontos_removidos_count = len(testes_originais) - len(testes_limpos)
+    print("\n" + "="*60)
+    print("--- SELECIONAR ARQUIVO JSON PARA EDIÇÃO ---")
+    print("="*60)
+    if not os.path.exists(pasta_json):
+        print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
+        return None, None
+        
+    arquivos_json = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and os.path.isfile(os.path.join(pasta_json, f))], reverse=True)
     
-    if pontos_removidos_count == 0 and not indices_para_remover:
-         print("\nNenhum ponto selecionado para remoção.")
-         # Mesmo que nada mude, podemos querer salvar um 'edit_' para consistência
-         # ou podemos simplesmente sair. Vamos sair se nada mudou.
-         if not pontos_str: # Se o usuário apertou Enter
-             print("Nenhuma alteração feita.")
-             return
-
-    print(f"\n--- Processamento Concluído ---")
-    print(f"{pontos_removidos_count} ponto(s) removido(s) do total. {len(testes_limpos)} ponto(s) restante(s).")
+    if not arquivos_json:
+        print(f"Nenhum arquivo .json encontrado na pasta '{pasta_json}'.")
+        return None, None
     
-    # 5. Atualizar o Objeto JSON e Salvar NOVO Arquivo (padrão 'edit_')
-    data["testes"] = testes_limpos
-    
-    caminho_saida = os.path.join(JSON_INPUT_DIR, f"edit_{nome_arquivo_original}")
-    
-    try:
-        with open(caminho_saida, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        print(f"SUCESSO: Arquivo limpo e reordenado salvo em: {caminho_saida}")
-        print("\nVocê deve usar este novo arquivo ('edit_...') nos scripts de análise (2.Analise_reologica.py e 2b.Tratamento_Estatistico.py).")
-    except Exception as e:
-        print(f"ERRO ao salvar o novo arquivo JSON: {e}")
-
-# --- Bloco Principal ---
-if __name__ == "__main__":
-# ... (código existente inalterado) ...
-    if not os.path.exists(JSON_INPUT_DIR):
-        os.makedirs(JSON_INPUT_DIR)
-        print(f"A pasta de entrada '{JSON_INPUT_DIR}' foi criada. Por favor, coloque os arquivos JSON de ensaio aqui.")
+    print("Ensaios disponíveis (do mais recente ao mais antigo):")
+    for i, arq in enumerate(arquivos_json):
+        print(f"  {i+1}: {arq}")
     
     while True:
-# ... (código existente inalterado) ...
-        print("\n" + "="*50)
-        print("MENU DE EDIÇÃO E UNIÃO DE ARQUIVOS JSON")
-        print("="*50)
-        print("1. Remover pontos manualmente (interativo)")
-        print("2. Limpar amostras com massa 0g (automático)")
-        print("3. Unir arquivos JSON semelhantes (automático)")
-        print("0. Sair")
-        
-        escolha_menu = input("Escolha uma opção: ").strip()
-        
-        if escolha_menu == '1':
-            processar_limpeza_manual()
-        elif escolha_menu == '2':
-            processar_limpeza_massa_zero()
-        elif escolha_menu == '3':
-            processar_uniao_arquivos()
-        elif escolha_menu == '0':
-            print("\n--- FIM DO SCRIPT ---")
-            break
-        else:
-            print("ERRO: Opção inválida. Tente novamente.")
+        try:
+            escolha_str = input("\nEscolha o NÚMERO do ensaio para editar (ou '0' para cancelar): ").strip()
+            if escolha_str == '0': return None, None
+            
+            escolha_num = int(escolha_str)
+            if 1 <= escolha_num <= len(arquivos_json):
+                arquivo_selecionado = arquivos_json[escolha_num - 1]
+                caminho_completo = os.path.join(pasta_json, arquivo_selecionado)
+                
+                with open(caminho_completo, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                print(f"  -> Selecionado: {arquivo_selecionado}")
+                print(f"  -> Amostra: {data.get('id_amostra', 'N/A')}")
+                
+                # --- [NOVO] Lógica de Detecção de Formato ---
+                if data.get('testes') and len(data['testes']) > 0:
+                    primeiro_ponto = data['testes'][0]
+                    if 'media_pressao_sistema_bar' in primeiro_ponto:
+                        g_formato_novo = True
+                        g_chave_pressao_principal = 'media_pressao_sistema_bar'
+                        print("  -> Formato: NOVO (2 Sensores) detectado.")
+                    else:
+                        g_formato_novo = False
+                        g_chave_pressao_principal = 'media_pressao_final_ponto_bar'
+                        print("  -> Formato: ANTIGO (1 Sensor) detectado.")
+                else:
+                    g_formato_novo = False # Assume antigo se vazio
+                    g_chave_pressao_principal = 'media_pressao_final_ponto_bar'
+                    print("  -> Ensaio vazio ou formato não reconhecido (assumindo antigo).")
+                
+                print(f"  -> Pontos existentes: {len(data.get('testes', []))}")
+                return data, arquivo_selecionado
+            else:
+                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_json)}, ou '0'.")
+        except ValueError:
+            print("ERRO: Entrada inválida. Por favor, digite um número.")
+        except Exception as e:
+            print(f"ERRO ao carregar o arquivo: {e}")
+            return None, None
 
+def listar_pontos_do_ensaio(data):
+    """[MODIFICADO] Lista os pontos de medição de forma tabular, adaptando-se ao formato."""
+    global g_formato_novo, g_chave_pressao_principal
+    
+    if not data.get('testes'):
+        print("Nenhum ponto de medição encontrado neste ensaio.")
+        return
+
+    print("\n" + "-"*80)
+    print("--- PONTOS DE MEDIÇÃO REGISTRADOS ---")
+    
+    # Ordena pela chave de pressão principal detectada
+    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+    
+    # [MODIFICADO] Cabeçalho dinâmico
+    if g_formato_novo:
+        print(f"{'Idx':<4} | {'Ponto Nº':<8} | {'P. Sistema (bar)':<18} | {'P. Pasta (bar)':<16} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
+        print("-" * 80)
+    else:
+        print(f"{'Idx':<4} | {'Ponto Nº':<8} | {'Pressão Média (bar)':<20} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
+        print("-" * 60)
+        
+    
+    for i, ponto in enumerate(testes_ordenados):
+        idx = i
+        ponto_n = ponto.get('ponto_n', 'N/A')
+        massa = ponto.get('massa_g_registrada', 0.0)
+        tempo = ponto.get('duracao_real_s', 0.0)
+        
+        # [MODIFICADO] Exibição dinâmica
+        if g_formato_novo:
+            pressao_sis = ponto.get('media_pressao_sistema_bar', 0.0)
+            pressao_pas = ponto.get('media_pressao_pasta_bar', 0.0)
+            print(f"{idx:<4} | {ponto_n:<8} | {pressao_sis:<18.4f} | {pressao_pas:<16.4f} | {massa:<12.3f} | {tempo:<10.2f}")
+        else:
+            pressao = ponto.get('media_pressao_final_ponto_bar', 0.0)
+            print(f"{idx:<4} | {ponto_n:<8} | {pressao:<20.4f} | {massa:<12.3f} | {tempo:<10.2f}")
+
+    if g_formato_novo:
+        print("-" * 80)
+    else:
+        print("-" * 60)
+
+
+def modificar_ponto(data):
+    """[MODIFICADO] Permite ao usuário modificar a massa ou o tempo de um ponto específico."""
+    global g_formato_novo, g_chave_pressao_principal
+    
+    listar_pontos_do_ensaio(data)
+    if not data.get('testes'):
+        return
+
+    # [MODIFICADO] Usa a chave de pressão correta para ordenar
+    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+    
+    while True:
+        try:
+            idx_str = input(f"Digite o 'Idx' (0 a {len(testes_ordenados)-1}) do ponto a modificar (ou 's' para sair): ").strip()
+            if idx_str.lower() == 's':
+                break
+            
+            idx = int(idx_str)
+            if 0 <= idx < len(testes_ordenados):
+                ponto_original = testes_ordenados[idx]
+                
+                print(f"\nModificando Ponto Nº {ponto_original.get('ponto_n', 'N/A')} (Idx: {idx})")
+                
+                # [MODIFICADO] Exibe a(s) pressão(ões) corretas
+                if g_formato_novo:
+                    print(f"  P. Sistema: {ponto_original.get('media_pressao_sistema_bar', 0.0):.4f} bar")
+                    print(f"  P. Pasta:   {ponto_original.get('media_pressao_pasta_bar', 0.0):.4f} bar")
+                else:
+                    print(f"  Pressão: {ponto_original.get('media_pressao_final_ponto_bar', 0.0):.4f} bar")
+                
+                # Modificar Massa
+                massa_antiga = ponto_original.get('massa_g_registrada', 0.0)
+                nova_massa = input_float_com_virgula("Nova Massa (g): ", permitir_vazio=True, default_val=massa_antiga)
+                if nova_massa is not None:
+                    ponto_original['massa_g_registrada'] = nova_massa
+                    print(f"  -> Massa atualizada para {nova_massa:.3f} g")
+
+                # Modificar Tempo
+                tempo_antigo = ponto_original.get('duracao_real_s', 0.0)
+                novo_tempo = input_float_com_virgula("Novo Tempo (s): ", permitir_vazio=True, default_val=tempo_antigo)
+                if novo_tempo is not None:
+                    ponto_original['duracao_real_s'] = novo_tempo
+                    print(f"  -> Tempo atualizado para {novo_tempo:.2f} s")
+                    
+                # Recalcula a lista ordenada
+                testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+                listar_pontos_do_ensaio(data) # Mostra a lista atualizada
+                
+            else:
+                print("ERRO: 'Idx' fora do intervalo válido.")
+        except ValueError:
+            print("ERRO: Entrada inválida. Digite um número.")
+
+def excluir_ponto(data):
+    """[MODIFICADO] Permite ao usuário excluir um ponto específico."""
+    global g_formato_novo, g_chave_pressao_principal
+    
+    listar_pontos_do_ensaio(data)
+    if not data.get('testes'):
+        return False
+
+    # [MODIFICADO] Usa a chave de pressão correta para ordenar
+    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+
+    while True:
+        try:
+            idx_str = input(f"Digite o 'Idx' (0 a {len(testes_ordenados)-1}) do ponto a EXCLUIR (ou 's' para sair): ").strip()
+            if idx_str.lower() == 's':
+                break
+            
+            idx = int(idx_str)
+            if 0 <= idx < len(testes_ordenados):
+                ponto_a_excluir_display = testes_ordenados[idx]
+                ponto_n_excluir = ponto_a_excluir_display.get('ponto_n', 'N/A')
+                
+                # [MODIFICADO] Usa a chave de pressão correta para encontrar o ponto
+                pressao_referencia = ponto_a_excluir_display.get(g_chave_pressao_principal, 0.0)
+                
+                # Encontrar o ponto real na lista 'data['testes']' (que não está ordenada)
+                ponto_original_para_excluir = None
+                for p in data['testes']:
+                    if (p.get('ponto_n') == ponto_n_excluir and 
+                        abs(p.get(g_chave_pressao_principal, -1) - pressao_referencia) < 1e-6):
+                        ponto_original_para_excluir = p
+                        break
+                
+                if ponto_original_para_excluir:
+                    confirm = input(f"Tem certeza que deseja EXCLUIR Ponto Nº {ponto_n_excluir} (Idx: {idx})? (s/n): ").lower()
+                    if confirm == 's':
+                        data['testes'].remove(ponto_original_para_excluir)
+                        print(f"Ponto Nº {ponto_n_excluir} (Idx: {idx}) excluído.")
+                        # Atualiza a lista ordenada para o próximo loop
+                        testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+                        listar_pontos_do_ensaio(data) # Mostra a lista atualizada
+                        return True # Indica que houve mudança
+                    else:
+                        print("Exclusão cancelada.")
+                else:
+                     print("ERRO: Não foi possível encontrar o ponto original para exclusão (disparidade de dados).")
+                     
+            else:
+                print("ERRO: 'Idx' fora do intervalo válido.")
+        except ValueError:
+            print("ERRO: Entrada inválida. Digite um número.")
+    return False
+
+def salvar_json_editado(data, nome_arquivo_original):
+    """[MODIFICADO] Salva os dados modificados usando a chave de ordenação correta."""
+    global g_chave_pressao_principal
+    
+    # Garante que o nome do arquivo de saída comece com 'edit_'
+    if nome_arquivo_original.startswith('edit_'):
+        nome_arquivo_editado = nome_arquivo_original
+    else:
+        nome_arquivo_editado = f"edit_{nome_arquivo_original}"
+        
+    caminho_completo_saida = os.path.join(RESULTS_JSON_DIR, nome_arquivo_editado)
+    
+    try:
+        # [MODIFICADO] Reordena pela chave de pressão correta antes de salvar
+        if data.get('testes'):
+            data['testes'] = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+        
+        data["data_hora_ultima_edicao"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        with open(caminho_completo_saida, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        print(f"\nArquivo editado salvo com sucesso em: {caminho_completo_saida}")
+    except IOError as e:
+        print(f"Erro ao salvar o arquivo JSON editado: {e}")
+    except Exception as e:
+        print(f"Ocorreu um erro inesperado ao salvar: {e}")
+
+
+def menu_edicao(data, nome_arquivo_original):
+    """Menu principal para edição do JSON carregado."""
+    houve_mudanca = False
+    while True:
+        print("\n" + "="*20 + f" Editando: {nome_arquivo_original} " + "="*20)
+        print("1. Listar Pontos de Medição")
+        print("2. Modificar Ponto (Massa / Tempo)")
+        print("3. Excluir Ponto")
+        print("0. Salvar e Sair")
+        print("9. Sair SEM Salvar")
+        
+        escolha = input("Digite sua opção: ").strip()
+        
+        if escolha == '1':
+            listar_pontos_do_ensaio(data)
+        
+        elif escolha == '2':
+            modificar_ponto(data)
+            houve_mudanca = True # Assume que modificar sempre muda
+        
+        elif escolha == '3':
+            if excluir_ponto(data):
+                houve_mudanca = True
+        
+        elif escolha == '0':
+            if houve_mudanca:
+                salvar_json_editado(data, nome_arquivo_original)
+            else:
+                print("Nenhuma mudança detectada. Saindo sem salvar.")
+            break
+            
+        elif escolha == '9':
+            if houve_mudanca:
+                confirm = input("AVISO: Você tem mudanças não salvas. Deseja sair mesmo assim? (s/n): ").lower()
+                if confirm != 's':
+                    continue # Volta ao menu
+            print("Saindo sem salvar.")
+            break
+        
+        else:
+            print("Opção inválida. Tente novamente.")
+
+def main():
+    """Função principal do script."""
+    if not os.path.exists(RESULTS_JSON_DIR):
+        os.makedirs(RESULTS_JSON_DIR)
+        
+    data, nome_arquivo = selecionar_json_para_edicao(RESULTS_JSON_DIR)
+    
+    if data and nome_arquivo:
+        menu_edicao(data, nome_arquivo)
+    else:
+        print("Nenhum arquivo selecionado. Saindo.")
+
+if __name__ == "__main__":
+    main()
