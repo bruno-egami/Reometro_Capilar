@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-SCRIPT PARA PRÉ-ANÁLISE E FILTRAGEM DE DADOS JSON (Compatível com 1 ou 2 Sensores)
-VERSÃO 2.0
+SCRIPT PARA PRÉ-ANÁLISE E FILTRAGEM DE DADOS JSON (Formato NOVO - 2 Sensores)
+VERSÃO 3.0
 Autor: Bruno Egami (Modificado por Gemini)
 Data: 04/11/2025
 
 Funcionalidade:
-1.  Carrega um arquivo JSON (antigo ou novo).
-2.  Deteta o formato e seleciona a chave de PRESSÃO DO SISTEMA apropriada.
-3.  Calcula a vazão (Q) e a tensão de cisalhamento na parede (Tw) usando a pressão do sistema.
-4.  Plota Pressão do Sistema (bar) vs Vazão (mm³/s) em escala log-log.
-5.  Permite ao usuário selecionar outliers visualmente para exclusão.
-6.  Salva um novo arquivo JSON "limpo_" contendo apenas os pontos selecionados.
+1.  Carrega um arquivo JSON (assume formato de 2 sensores).
+2.  Calcula a vazão (Q) e a tensão de cisalhamento na parede (Tw) 
+    usando a PRESSÃO DO SISTEMA (media_pressao_sistema_bar).
+3.  Plota Pressão do Sistema (bar) vs Vazão (mm³/s) em escala log-log.
+4.  Permite ao usuário selecionar outliers visualmente para exclusão.
+5.  Salva um novo arquivo JSON "limpo_" contendo apenas os pontos selecionados.
 """
 
 import json
@@ -23,22 +23,20 @@ from datetime import datetime
 
 # --- Configurações ---
 RESULTS_JSON_DIR = "resultados_testes_reometro"
-
-# --- [NOVO] Variáveis Globais para detecção de formato ---
-g_formato_novo = False # Flag para saber se é o formato de 2 sensores
-g_chave_pressao_sistema = "media_pressao_final_ponto_bar" # Chave padrão (formato antigo)
+# [NOVO] Chave de pressão para filtragem (Pressão do Pistão/Sistema)
+CHAVE_PRESSAO_FILTRAGEM = "media_pressao_sistema_bar"
 
 
 def selecionar_json_para_filtrar(pasta_json):
     """
-    [MODIFICADO] Lista, seleciona e DETECTA O FORMATO do arquivo JSON.
-    Define as variáveis globais 'g_formato_novo' e 'g_chave_pressao_sistema'.
+    [MODIFICADO] Lista e seleciona arquivos JSON. 
+    Assume que todos são do NOVO formato (2 sensores).
     """
-    global g_formato_novo, g_chave_pressao_sistema
-    
     print("\n" + "="*60)
     print("--- SELECIONAR ARQUIVO JSON PARA PRÉ-ANÁLISE E FILTRAGEM ---")
+    print(f"(Atenção: Este script assume o novo formato de 2 sensores)")
     print("="*60)
+    
     if not os.path.exists(pasta_json):
         print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
         return None, None
@@ -73,25 +71,17 @@ def selecionar_json_para_filtrar(pasta_json):
                 
                 print(f"  -> Selecionado: {arquivo_selecionado}")
                 print(f"  -> Amostra: {data.get('id_amostra', 'N/A')}")
-                print(f"  -> D/L: {data.get('diametro_capilar_mm', 'N/A')} mm / {data.get('comprimento_capilar_mm', 'N/A')} mm")
                 
-                # --- [NOVO] Lógica de Detecção de Formato ---
-                if data.get('testes') and len(data['testes']) > 0:
-                    primeiro_ponto = data['testes'][0]
-                    if 'media_pressao_sistema_bar' in primeiro_ponto:
-                        g_formato_novo = True
-                        g_chave_pressao_sistema = 'media_pressao_sistema_bar'
-                        print("  -> Formato: NOVO (2 Sensores) detectado.")
-                    else:
-                        g_formato_novo = False
-                        g_chave_pressao_sistema = 'media_pressao_final_ponto_bar'
-                        print("  -> Formato: ANTIGO (1 Sensor) detectado.")
-                else:
-                    g_formato_novo = False # Assume antigo se vazio
-                    g_chave_pressao_sistema = 'media_pressao_final_ponto_bar'
-                    print("  -> Ensaio vazio (assumindo formato antigo).")
-
-                print(f"  -> Usando a chave de pressão: '{g_chave_pressao_sistema}'")
+                # [MODIFICADO] Validação simples do formato
+                if (data.get('testes') and len(data['testes']) > 0 and 
+                    CHAVE_PRESSAO_FILTRAGEM not in data['testes'][0]):
+                    print(f"\nERRO: O arquivo '{arquivo_selecionado}' não parece ser do formato novo.")
+                    print(f"      Faltando a chave '{CHAVE_PRESSAO_FILTRAGEM}' no primeiro ponto.")
+                    print("      Por favor, use a versão antiga deste script para arquivos antigos.")
+                    return None, None
+                
+                print(f"  -> Formato: NOVO (2 Sensores) assumido.")
+                print(f"  -> Usando a chave de pressão: '{CHAVE_PRESSAO_FILTRAGEM}'")
                 print(f"  -> Pontos existentes: {len(data.get('testes', []))}")
                 return data, arquivo_selecionado
             else:
@@ -104,11 +94,9 @@ def selecionar_json_para_filtrar(pasta_json):
 
 def calcular_vazao_e_tensao(data):
     """
-    [MODIFICADO] Calcula Q e Tw (Tensão de cisalhamento) usando a 
-    PRESSÃO DO SISTEMA (seja ela a chave antiga ou a nova).
+    [MODIFICADO] Calcula Q e Tw (Tensão de cisalhamento) usando 
+    SEMPRE a 'media_pressao_sistema_bar'.
     """
-    global g_chave_pressao_sistema # [NOVO]
-    
     D_cap_mm = data.get('diametro_capilar_mm')
     L_cap_mm = data.get('comprimento_capilar_mm')
     rho_g_cm3 = data.get('densidade_pasta_g_cm3')
@@ -125,32 +113,27 @@ def calcular_vazao_e_tensao(data):
         massa_g = ponto.get('massa_g_registrada')
         duracao_s = ponto.get('duracao_real_s')
         
-        # [MODIFICADO] Usa a chave de pressão do sistema (antiga ou nova)
-        pressao_bar = ponto.get(g_chave_pressao_sistema) 
+        # [MODIFICADO] Usa diretamente a chave do sensor de Sistema
+        pressao_bar = ponto.get(CHAVE_PRESSAO_FILTRAGEM) 
         
-        if not all([massa_g, duracao_s, pressao_bar]) or duracao_s <= 0 or massa_g <= 0:
+        if not all([massa_g, duracao_s, pressao_bar]) or duracao_s <= 0 or massa_g <= 0 or pressao_bar < 0:
             print(f"Aviso: Ponto {i} (Ponto N° {ponto.get('ponto_n', '?')}) ignorado por dados incompletos (massa, tempo ou pressão <= 0).")
             continue
             
         # 1. Vazão Volumétrica (Q) em [mm³/s]
-        # Volume (cm³) = massa (g) / densidade (g/cm³)
-        # 1 cm³ = 1000 mm³
         volume_mm3 = (massa_g / rho_g_cm3) * 1000
         Q_mm3_s = volume_mm3 / duracao_s
         
         # 2. Tensão de Cisalhamento na Parede (Tw) em [Pa]
-        # P (Pa) = P (bar) * 100000
         pressao_Pa = pressao_bar * 100000
-        # Tw = (P * R) / (2 * L) -- (Todas unidades em mm e Pa)
         Tw_Pa = (pressao_Pa * R_cap_mm) / (2 * L_cap_mm)
         
-        # Adiciona o ponto original e os novos cálculos
         ponto_novo = {
-            "ponto_original": ponto, # Mantém o dicionário original
+            "ponto_original": ponto, 
             "Q_mm3_s": Q_mm3_s,
             "Tw_Pa": Tw_Pa,
-            "Pressao_Sistema_bar": pressao_bar, # [MODIFICADO] Nome da chave para plotagem
-            "id_display": i # ID temporário para plotagem
+            "Pressao_Sistema_bar": pressao_bar, # Chave explícita para plotagem
+            "id_display": i 
         }
         pontos_processados.append(ponto_novo)
         
@@ -167,14 +150,11 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
         print("Nenhum ponto válido para plotar.")
         return None
 
-    # Cria uma cópia dos pontos que será modificada
     pontos_para_manter = list(pontos_processados)
     
     while True:
-        # --- Setup do Gráfico ---
         fig, ax = plt.subplots(figsize=(12, 8))
         
-        # [MODIFICADO] Atualiza os dados a serem plotados
         Q_plot = np.array([p['Q_mm3_s'] for p in pontos_para_manter])
         P_plot = np.array([p['Pressao_Sistema_bar'] for p in pontos_para_manter]) # Usa a pressão do Sistema
         ids_plot = [p['id_display'] for p in pontos_para_manter]
@@ -182,18 +162,15 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
         if len(Q_plot) == 0:
             print("Nenhum ponto restante para plotar.")
             plt.close(fig)
-            break # Sai do loop se não houver mais pontos
+            break 
 
-        # Plot dos pontos restantes
         sc = ax.scatter(Q_plot, P_plot, c='blue', label='Pontos Mantidos', picker=True, pickradius=5)
         
-        # Plot dos pontos removidos (se houver)
         Q_removidos = [p['Q_mm3_s'] for p in pontos_processados if p not in pontos_para_manter]
         P_removidos = [p['Pressao_Sistema_bar'] for p in pontos_processados if p not in pontos_para_manter] # Usa a pressão do Sistema
         if Q_removidos:
             ax.scatter(Q_removidos, P_removidos, c='red', marker='x', label='Pontos Removidos')
 
-        # Anotações de texto (Ponto N)
         for i, p in enumerate(pontos_para_manter):
             ponto_n = p['ponto_original'].get('ponto_n', ids_plot[i])
             ax.text(Q_plot[i], P_plot[i], f" N{ponto_n}", fontsize=9, ha='left')
@@ -210,7 +187,6 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
         
         plt.tight_layout()
         
-        # --- Interatividade ---
         print("\n" + "-"*50)
         print("--- INSTRUÇÕES DE FILTRAGEM ---")
         print("1. Analise o gráfico gerado (Pressão do Sistema vs Vazão).")
@@ -220,7 +196,7 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
         
         clicks = plt.ginput(n=1, timeout=0, show_clicks=True)
         
-        if not clicks: # Janela fechada
+        if not clicks: 
             print("Janela fechada. Finalizando seleção.")
             plt.close(fig)
             break
@@ -228,18 +204,17 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
         click_info = clicks[0]
         x_click, y_click, button = click_info
         
-        if button == 3: # Botão direito
+        if button == 3: 
             print("Botão direito clicado. Finalizando seleção.")
             plt.close(fig)
             break
             
-        if button == 1: # Botão esquerdo
+        if button == 1: 
             if len(Q_plot) == 0:
                  print("Não há pontos para remover.")
                  plt.close(fig)
                  continue
                  
-            # Encontrar o ponto mais próximo do clique (em escala log)
             log_Q = np.log(Q_plot)
             log_P = np.log(P_plot)
             log_x_click = np.log(x_click)
@@ -249,17 +224,15 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
             
             if distancias.size > 0:
                 idx_mais_proximo = np.argmin(distancias)
-                ponto_removido = pontos_para_manter.pop(idx_mais_proximo) # Remove da lista de manter
+                ponto_removido = pontos_para_manter.pop(idx_mais_proximo) 
                 
                 p_n = ponto_removido['ponto_original'].get('ponto_n', 'N/A')
                 print(f"Ponto N°{p_n} (Idx: {ponto_removido['id_display']}) marcado para remoção.")
             
-            plt.close(fig) # Fecha o gráfico atual para redesenhar
+            plt.close(fig) 
     
-    # Fim do loop
     print(f"\nSeleção finalizada. {len(pontos_para_manter)} pontos serão mantidos.")
     
-    # Retorna apenas os dicionários originais dos pontos mantidos
     pontos_originais_filtrados = [p['ponto_original'] for p in pontos_para_manter]
     return pontos_originais_filtrados
 
@@ -267,36 +240,28 @@ def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
 def salvar_json_limpo(data_original, pontos_filtrados, nome_arquivo_original):
     """
     [MODIFICADO] Salva um novo JSON com os pontos filtrados,
-    ordenando pela chave de pressão do sistema correta.
+    ordenando pela chave de pressão do sistema.
     """
-    global g_chave_pressao_sistema # [NOVO]
-    
-    # Cria uma cópia profunda dos metadados
     data_limpa = {key: value for key, value in data_original.items() if key != 'testes'}
     
-    # Adiciona os pontos filtrados
     data_limpa['testes'] = pontos_filtrados
-    
-    # Atualiza o timestamp
     data_limpa["data_hora_filtragem"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Define o nome do arquivo de saída
     if nome_arquivo_original.startswith('edit_'):
-        base_name = nome_arquivo_original[5:] # Remove 'edit_'
+        base_name = nome_arquivo_original[5:]
     elif nome_arquivo_original.startswith('limpo_'):
-         base_name = nome_arquivo_original[6:] # Remove 'limpo_'
+         base_name = nome_arquivo_original[6:]
     else:
         base_name = nome_arquivo_original
         
-    # Garante que o .json seja removido e re-adicionado
     base_name = os.path.splitext(base_name)[0] 
     nome_arquivo_limpo = f"limpo_{base_name}.json"
     
     caminho_completo_saida = os.path.join(RESULTS_JSON_DIR, nome_arquivo_limpo)
     
     try:
-        # [MODIFICADO] Reordena pela chave de pressão do sistema (antiga ou nova)
-        data_limpa['testes'] = sorted(data_limpa['testes'], key=lambda t: t.get(g_chave_pressao_sistema, 0))
+        # [MODIFICADO] Reordena pela chave de pressão do sistema
+        data_limpa['testes'] = sorted(data_limpa['testes'], key=lambda t: t.get(CHAVE_PRESSAO_FILTRAGEM, 0))
         
         with open(caminho_completo_saida, 'w', encoding='utf-8') as f:
             json.dump(data_limpa, f, indent=4, ensure_ascii=False)
@@ -311,7 +276,6 @@ def main():
     if not os.path.exists(RESULTS_JSON_DIR):
         os.makedirs(RESULTS_JSON_DIR)
         
-    # [MODIFICADO] Esta função agora também define as chaves globais
     data, nome_arquivo = selecionar_json_para_filtrar(RESULTS_JSON_DIR)
     
     if not data or not nome_arquivo:
@@ -322,18 +286,18 @@ def main():
         print("Arquivo JSON selecionado não contém testes. Saindo.")
         return
 
-    # 1. Calcular Q e Tw (agora usa a chave de pressão global correta)
+    # 1. Calcular Q e Tw (usa CHAVE_PRESSAO_FILTRAGEM)
     pontos_processados = calcular_vazao_e_tensao(data)
     
     if not pontos_processados:
         print("Não foi possível processar os pontos (verifique dados no JSON). Saindo.")
         return
         
-    # 2. Plotar e Filtrar (agora plota a pressão do sistema correta)
+    # 2. Plotar e Filtrar (usa Pressao_Sistema_bar derivada da CHAVE_PRESSAO_FILTRAGEM)
     id_amostra = data.get('id_amostra', 'Ensaio Desconhecido')
     pontos_filtrados = plotar_e_filtrar_interativo(pontos_processados, id_amostra)
     
-    # 3. Salvar (agora salva ordenado pela chave de pressão correta)
+    # 3. Salvar (ordena por CHAVE_PRESSAO_FILTRAGEM)
     if pontos_filtrados is not None:
         salvar_json_limpo(data, pontos_filtrados, nome_arquivo)
     else:
