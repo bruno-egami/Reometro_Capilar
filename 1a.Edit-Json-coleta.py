@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-SCRIPT PARA EDITAR ARQUIVOS JSON DE COLETA (Compatível com 1 ou 2 Sensores)
+SCRIPT PARA EDITAR ARQUIVOS JSON DE COLETA (Formato NOVO - 2 Sensores)
 Permite visualizar, modificar (massa/tempo) ou excluir pontos de um ensaio.
 Cria um novo arquivo 'edit_[nome_original].json' com as modificações.
-VERSÃO 2.0 - Suporte a JSON antigo (1 sensor) e novo (2 sensores)
+
+VERSÃO 2.0 (Simplificada - Apenas 2 Sensores)
 Autor: Bruno Egami (Modificado por Gemini)
 Data: 04/11/2025
 """
@@ -15,16 +16,13 @@ from datetime import datetime
 
 # --- Configurações ---
 RESULTS_JSON_DIR = "resultados_testes_reometro"
-
-# --- [NOVO] Variáveis Globais para detecção de formato ---
-g_formato_novo = False # Flag para saber se é o formato de 2 sensores
-g_chave_pressao_principal = "media_pressao_final_ponto_bar" # Chave padrão (formato antigo)
+# [NOVO] Chave de pressão principal para este script (Sensor de Sistema)
+CHAVE_PRESSAO_PRINCIPAL = "media_pressao_sistema_bar"
 
 def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=None):
     """Pede um número float ao usuário, aceitando ',' como decimal."""
     while True:
         if default_val is not None:
-            # Formata o default_val para exibição (ex: 3.140)
             if isinstance(default_val, (int, float)):
                 default_str = f"{default_val:.3f}".replace('.', ',') if default_val > 0.1 else f"{default_val:.4f}".replace('.', ',')
             else:
@@ -47,11 +45,13 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=N
             print(f"Ocorreu um erro: {e}")
 
 def selecionar_json_para_edicao(pasta_json):
-    """[MODIFICADO] Lista, seleciona e DETECTA O FORMATO do arquivo JSON."""
-    global g_formato_novo, g_chave_pressao_principal
-    
+    """
+    [MODIFICADO] Lista e seleciona arquivos JSON.
+    Valida se o arquivo selecionado é do NOVO formato (2 sensores).
+    """
     print("\n" + "="*60)
     print("--- SELECIONAR ARQUIVO JSON PARA EDIÇÃO ---")
+    print(f"(Atenção: Este script aceita apenas o novo formato de 2 sensores)")
     print("="*60)
     if not os.path.exists(pasta_json):
         print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
@@ -80,25 +80,18 @@ def selecionar_json_para_edicao(pasta_json):
                 with open(caminho_completo, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
+                # --- [NOVO] Validação do Formato ---
+                if (not data.get('testes') or len(data['testes']) == 0 or 
+                    CHAVE_PRESSAO_PRINCIPAL not in data['testes'][0]):
+                    
+                    print(f"\nERRO: O arquivo '{arquivo_selecionado}' não é do formato novo (2 sensores).")
+                    print(f"      Faltando a chave '{CHAVE_PRESSAO_PRINCIPAL}' no primeiro ponto.")
+                    print("      Por favor, use a versão antiga (V1.0) deste script para arquivos antigos.")
+                    return None, None
+                
                 print(f"  -> Selecionado: {arquivo_selecionado}")
                 print(f"  -> Amostra: {data.get('id_amostra', 'N/A')}")
-                
-                # --- [NOVO] Lógica de Detecção de Formato ---
-                if data.get('testes') and len(data['testes']) > 0:
-                    primeiro_ponto = data['testes'][0]
-                    if 'media_pressao_sistema_bar' in primeiro_ponto:
-                        g_formato_novo = True
-                        g_chave_pressao_principal = 'media_pressao_sistema_bar'
-                        print("  -> Formato: NOVO (2 Sensores) detectado.")
-                    else:
-                        g_formato_novo = False
-                        g_chave_pressao_principal = 'media_pressao_final_ponto_bar'
-                        print("  -> Formato: ANTIGO (1 Sensor) detectado.")
-                else:
-                    g_formato_novo = False # Assume antigo se vazio
-                    g_chave_pressao_principal = 'media_pressao_final_ponto_bar'
-                    print("  -> Ensaio vazio ou formato não reconhecido (assumindo antigo).")
-                
+                print(f"  -> Formato: NOVO (2 Sensores) validado.")
                 print(f"  -> Pontos existentes: {len(data.get('testes', []))}")
                 return data, arquivo_selecionado
             else:
@@ -110,27 +103,22 @@ def selecionar_json_para_edicao(pasta_json):
             return None, None
 
 def listar_pontos_do_ensaio(data):
-    """[MODIFICADO] Lista os pontos de medição de forma tabular, adaptando-se ao formato."""
-    global g_formato_novo, g_chave_pressao_principal
-    
+    """
+    [MODIFICADO] Lista os pontos de medição, assumindo o formato de 2 sensores.
+    """
     if not data.get('testes'):
         print("Nenhum ponto de medição encontrado neste ensaio.")
         return
 
     print("\n" + "-"*80)
-    print("--- PONTOS DE MEDIÇÃO REGISTRADOS ---")
+    print("--- PONTOS DE MEDIÇÃO REGISTRADOS (Formato 2 Sensores) ---")
     
-    # Ordena pela chave de pressão principal detectada
-    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+    # [MODIFICADO] Ordena pela pressão do SISTEMA
+    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(CHAVE_PRESSAO_PRINCIPAL, 0))
     
-    # [MODIFICADO] Cabeçalho dinâmico
-    if g_formato_novo:
-        print(f"{'Idx':<4} | {'Ponto Nº':<8} | {'P. Sistema (bar)':<18} | {'P. Pasta (bar)':<16} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
-        print("-" * 80)
-    else:
-        print(f"{'Idx':<4} | {'Ponto Nº':<8} | {'Pressão Média (bar)':<20} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
-        print("-" * 60)
-        
+    # [MODIFICADO] Cabeçalho para 2 sensores
+    print(f"{'Idx':<4} | {'Ponto Nº':<8} | {'P. Sistema (bar)':<18} | {'P. Pasta (bar)':<16} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
+    print("-" * 80)
     
     for i, ponto in enumerate(testes_ordenados):
         idx = i
@@ -138,31 +126,25 @@ def listar_pontos_do_ensaio(data):
         massa = ponto.get('massa_g_registrada', 0.0)
         tempo = ponto.get('duracao_real_s', 0.0)
         
-        # [MODIFICADO] Exibição dinâmica
-        if g_formato_novo:
-            pressao_sis = ponto.get('media_pressao_sistema_bar', 0.0)
-            pressao_pas = ponto.get('media_pressao_pasta_bar', 0.0)
-            print(f"{idx:<4} | {ponto_n:<8} | {pressao_sis:<18.4f} | {pressao_pas:<16.4f} | {massa:<12.3f} | {tempo:<10.2f}")
-        else:
-            pressao = ponto.get('media_pressao_final_ponto_bar', 0.0)
-            print(f"{idx:<4} | {ponto_n:<8} | {pressao:<20.4f} | {massa:<12.3f} | {tempo:<10.2f}")
+        # [MODIFICADO] Exibe ambos os sensores
+        pressao_sis = ponto.get('media_pressao_sistema_bar', 0.0)
+        pressao_pas = ponto.get('media_pressao_pasta_bar', 0.0)
+        print(f"{idx:<4} | {ponto_n:<8} | {pressao_sis:<18.4f} | {pressao_pas:<16.4f} | {massa:<12.3f} | {tempo:<10.2f}")
 
-    if g_formato_novo:
-        print("-" * 80)
-    else:
-        print("-" * 60)
+    print("-" * 80)
 
 
 def modificar_ponto(data):
-    """[MODIFICADO] Permite ao usuário modificar a massa ou o tempo de um ponto específico."""
-    global g_formato_novo, g_chave_pressao_principal
-    
+    """
+    [MODIFICADO] Permite ao usuário modificar a massa ou o tempo, 
+    assumindo o formato de 2 sensores.
+    """
     listar_pontos_do_ensaio(data)
     if not data.get('testes'):
         return
 
-    # [MODIFICADO] Usa a chave de pressão correta para ordenar
-    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+    # [MODIFICADO] Ordena pela pressão do SISTEMA
+    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(CHAVE_PRESSAO_PRINCIPAL, 0))
     
     while True:
         try:
@@ -176,12 +158,9 @@ def modificar_ponto(data):
                 
                 print(f"\nModificando Ponto Nº {ponto_original.get('ponto_n', 'N/A')} (Idx: {idx})")
                 
-                # [MODIFICADO] Exibe a(s) pressão(ões) corretas
-                if g_formato_novo:
-                    print(f"  P. Sistema: {ponto_original.get('media_pressao_sistema_bar', 0.0):.4f} bar")
-                    print(f"  P. Pasta:   {ponto_original.get('media_pressao_pasta_bar', 0.0):.4f} bar")
-                else:
-                    print(f"  Pressão: {ponto_original.get('media_pressao_final_ponto_bar', 0.0):.4f} bar")
+                # [MODIFICADO] Exibe ambas as pressões
+                print(f"  P. Sistema: {ponto_original.get('media_pressao_sistema_bar', 0.0):.4f} bar")
+                print(f"  P. Pasta:   {ponto_original.get('media_pressao_pasta_bar', 0.0):.4f} bar")
                 
                 # Modificar Massa
                 massa_antiga = ponto_original.get('massa_g_registrada', 0.0)
@@ -198,7 +177,7 @@ def modificar_ponto(data):
                     print(f"  -> Tempo atualizado para {novo_tempo:.2f} s")
                     
                 # Recalcula a lista ordenada
-                testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+                testes_ordenados = sorted(data['testes'], key=lambda t: t.get(CHAVE_PRESSAO_PRINCIPAL, 0))
                 listar_pontos_do_ensaio(data) # Mostra a lista atualizada
                 
             else:
@@ -207,15 +186,16 @@ def modificar_ponto(data):
             print("ERRO: Entrada inválida. Digite um número.")
 
 def excluir_ponto(data):
-    """[MODIFICADO] Permite ao usuário excluir um ponto específico."""
-    global g_formato_novo, g_chave_pressao_principal
-    
+    """
+    [MODIFICADO] Permite ao usuário excluir um ponto específico,
+    assumindo o formato de 2 sensores.
+    """
     listar_pontos_do_ensaio(data)
     if not data.get('testes'):
         return False
 
-    # [MODIFICADO] Usa a chave de pressão correta para ordenar
-    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+    # [MODIFICADO] Ordena pela pressão do SISTEMA
+    testes_ordenados = sorted(data['testes'], key=lambda t: t.get(CHAVE_PRESSAO_PRINCIPAL, 0))
 
     while True:
         try:
@@ -228,14 +208,13 @@ def excluir_ponto(data):
                 ponto_a_excluir_display = testes_ordenados[idx]
                 ponto_n_excluir = ponto_a_excluir_display.get('ponto_n', 'N/A')
                 
-                # [MODIFICADO] Usa a chave de pressão correta para encontrar o ponto
-                pressao_referencia = ponto_a_excluir_display.get(g_chave_pressao_principal, 0.0)
+                # [MODIFICADO] Usa a pressão do SISTEMA para encontrar o ponto
+                pressao_referencia = ponto_a_excluir_display.get(CHAVE_PRESSAO_PRINCIPAL, 0.0)
                 
-                # Encontrar o ponto real na lista 'data['testes']' (que não está ordenada)
                 ponto_original_para_excluir = None
                 for p in data['testes']:
                     if (p.get('ponto_n') == ponto_n_excluir and 
-                        abs(p.get(g_chave_pressao_principal, -1) - pressao_referencia) < 1e-6):
+                        abs(p.get(CHAVE_PRESSAO_PRINCIPAL, -1) - pressao_referencia) < 1e-6):
                         ponto_original_para_excluir = p
                         break
                 
@@ -244,8 +223,8 @@ def excluir_ponto(data):
                     if confirm == 's':
                         data['testes'].remove(ponto_original_para_excluir)
                         print(f"Ponto Nº {ponto_n_excluir} (Idx: {idx}) excluído.")
-                        # Atualiza a lista ordenada para o próximo loop
-                        testes_ordenados = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+                        
+                        testes_ordenados = sorted(data['testes'], key=lambda t: t.get(CHAVE_PRESSAO_PRINCIPAL, 0))
                         listar_pontos_do_ensaio(data) # Mostra a lista atualizada
                         return True # Indica que houve mudança
                     else:
@@ -260,10 +239,10 @@ def excluir_ponto(data):
     return False
 
 def salvar_json_editado(data, nome_arquivo_original):
-    """[MODIFICADO] Salva os dados modificados usando a chave de ordenação correta."""
-    global g_chave_pressao_principal
-    
-    # Garante que o nome do arquivo de saída comece com 'edit_'
+    """
+    [MODIFICADO] Salva os dados modificados, ordenando pela 
+    pressão do SISTEMA.
+    """
     if nome_arquivo_original.startswith('edit_'):
         nome_arquivo_editado = nome_arquivo_original
     else:
@@ -272,9 +251,9 @@ def salvar_json_editado(data, nome_arquivo_original):
     caminho_completo_saida = os.path.join(RESULTS_JSON_DIR, nome_arquivo_editado)
     
     try:
-        # [MODIFICADO] Reordena pela chave de pressão correta antes de salvar
+        # [MODIFICADO] Reordena pela pressão do SISTEMA
         if data.get('testes'):
-            data['testes'] = sorted(data['testes'], key=lambda t: t.get(g_chave_pressao_principal, 0))
+            data['testes'] = sorted(data['testes'], key=lambda t: t.get(CHAVE_PRESSAO_PRINCIPAL, 0))
         
         data["data_hora_ultima_edicao"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -305,7 +284,7 @@ def menu_edicao(data, nome_arquivo_original):
         
         elif escolha == '2':
             modificar_ponto(data)
-            houve_mudanca = True # Assume que modificar sempre muda
+            houve_mudanca = True 
         
         elif escolha == '3':
             if excluir_ponto(data):
@@ -322,7 +301,7 @@ def menu_edicao(data, nome_arquivo_original):
             if houve_mudanca:
                 confirm = input("AVISO: Você tem mudanças não salvas. Deseja sair mesmo assim? (s/n): ").lower()
                 if confirm != 's':
-                    continue # Volta ao menu
+                    continue
             print("Saindo sem salvar.")
             break
         
@@ -339,7 +318,7 @@ def main():
     if data and nome_arquivo:
         menu_edicao(data, nome_arquivo)
     else:
-        print("Nenhum arquivo selecionado. Saindo.")
+        print("Nenhum arquivo selecionado ou formato inválido. Saindo.")
 
 if __name__ == "__main__":
     main()
