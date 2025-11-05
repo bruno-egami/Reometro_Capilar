@@ -1,426 +1,343 @@
 # -*- coding: utf-8 -*-
 """
-SCRIPT 2X.PRE_ANALISE_E_LIMPEZA.PY
-(Fusão de JSONs, Cálculo de CV e Remoção Automática de Outliers para Limpeza de Dados)
------------------------------------------------------------------------------
+SCRIPT PARA PRÉ-ANÁLISE E FILTRAGEM DE DADOS JSON (Compatível com 1 ou 2 Sensores)
+VERSÃO 2.0
+Autor: Bruno Egami (Modificado por Gemini)
+Data: 04/11/2025
+
+Funcionalidade:
+1.  Carrega um arquivo JSON (antigo ou novo).
+2.  Deteta o formato e seleciona a chave de PRESSÃO DO SISTEMA apropriada.
+3.  Calcula a vazão (Q) e a tensão de cisalhamento na parede (Tw) usando a pressão do sistema.
+4.  Plota Pressão do Sistema (bar) vs Vazão (mm³/s) em escala log-log.
+5.  Permite ao usuário selecionar outliers visualmente para exclusão.
+6.  Salva um novo arquivo JSON "limpo_" contendo apenas os pontos selecionados.
 """
 
-# 1. Importação de Bibliotecas
-import numpy as np
-import pandas as pd
-from datetime import datetime
-import os 
-import glob
-import re
 import json
-from scipy.stats import linregress
+import os
+import glob
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
 
-# --- CONFIGURAÇÃO DE PASTAS ---
-JSON_INPUT_DIR = "resultados_testes_reometro"
-STATISTICAL_OUTPUT_FOLDER = "resultados_analise_estatistica"
+# --- Configurações ---
+RESULTS_JSON_DIR = "resultados_testes_reometro"
 
-# Cria as pastas se não existirem
-if not os.path.exists(STATISTICAL_OUTPUT_FOLDER):
-    os.makedirs(STATISTICAL_OUTPUT_FOLDER)
-if not os.path.exists(JSON_INPUT_DIR):
-    os.makedirs(JSON_INPUT_DIR)
+# --- [NOVO] Variáveis Globais para detecção de formato ---
+g_formato_novo = False # Flag para saber se é o formato de 2 sensores
+g_chave_pressao_sistema = "media_pressao_final_ponto_bar" # Chave padrão (formato antigo)
 
 
-# -----------------------------------------------------------------------------
-# --- FUNÇÕES AUXILIARES ---
-# -----------------------------------------------------------------------------
-
-def input_float_com_virgula(mensagem_prompt, permitir_vazio=False):
-    """Pede um número float ao usuário, aceitando ',' como decimal."""
-    while True:
-        entrada = input(mensagem_prompt).strip()
-        if permitir_vazio and entrada == "":
-            return None
-        try:
-            return float(entrada.replace(',', '.'))
-        except ValueError:
-            print("ERRO: Entrada inválida. Insira um número.")
-
-def format_float_for_table(value, decimal_places=4):
-    """Formata um número float para exibição em tabelas."""
-    if isinstance(value, (float, np.floating)):
-        if np.isnan(value): return "NaN"
-        return f"{value:.{decimal_places}f}"
-    return str(value)
-
-def ler_dados_json(json_filepath):
-    """Lê dados de um arquivo JSON, retornando o dicionário completo."""
-    try:
-        with open(json_filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e: 
-        print(f"ERRO ao ler JSON '{os.path.basename(json_filepath)}': {e}"); return None
-
-def listar_arquivos_json_numerados(pasta_json):
-    """Lista todos os arquivos .json na pasta de testes."""
-    arquivos = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and os.path.isfile(os.path.join(pasta_json, f))])
-    if not arquivos:
-        print(f"Nenhum arquivo .json encontrado na pasta '{pasta_json}'.")
-    else:
-        print(f"\nArquivos JSON disponíveis em '{pasta_json}':")
-        for i, arq in enumerate(arquivos):
-            print(f"  {i+1}: {arq}")
-    return arquivos
-
-def selecionar_multiplos_json(pasta_json, mensagem_prompt):
-    """Permite selecionar múltiplos JSONs por número ou '0' para seleção manual."""
-    arquivos_disponiveis = listar_arquivos_json_numerados(pasta_json)
-    if not arquivos_disponiveis: return [] 
+def selecionar_json_para_filtrar(pasta_json):
+    """
+    [MODIFICADO] Lista, seleciona e DETECTA O FORMATO do arquivo JSON.
+    Define as variáveis globais 'g_formato_novo' e 'g_chave_pressao_sistema'.
+    """
+    global g_formato_novo, g_chave_pressao_sistema
+    
+    print("\n" + "="*60)
+    print("--- SELECIONAR ARQUIVO JSON PARA PRÉ-ANÁLISE E FILTRAGEM ---")
+    print("="*60)
+    if not os.path.exists(pasta_json):
+        print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
+        return None, None
+        
+    # Prioriza arquivos 'edit_' se existirem, senão os 'raw'
+    arquivos_edit = sorted([f for f in os.listdir(pasta_json) if f.startswith('edit_') and f.endswith('.json')], reverse=True)
+    arquivos_raw = sorted([f for f in os.listdir(pasta_json) if not f.startswith('edit_') and not f.startswith('limpo_') and f.endswith('.json')], reverse=True)
+    
+    arquivos_disponiveis = arquivos_edit + arquivos_raw
+    
+    if not arquivos_disponiveis:
+        print(f"Nenhum arquivo .json (raw ou editado) encontrado em '{pasta_json}'.")
+        return None, None
+    
+    print("Ensaios disponíveis (Prioridade para 'edit_'):")
+    for i, arq in enumerate(arquivos_disponiveis):
+        prefixo = "[Editado] " if arq.startswith('edit_') else "[Original] "
+        print(f"  {i+1}: {prefixo}{arq}")
     
     while True:
         try:
-            escolha_str = input(f"{mensagem_prompt} (Números separados por vírgula, ex: 1, 3): ").strip()
-            if not escolha_str: continue
-
-            indices_escolhidos = [int(i.strip()) - 1 for i in escolha_str.split(',') if i.strip().isdigit()]
+            escolha_str = input(f"\nEscolha o NÚMERO do ensaio (1 a {len(arquivos_disponiveis)}) (ou '0' para cancelar): ").strip()
+            if escolha_str == '0': return None, None
             
-            if any(i < 0 or i >= len(arquivos_disponiveis) for i in indices_escolhidos):
-                print("ERRO: Um ou mais números estão fora do intervalo válido.")
-                continue
-
-            caminhos_selecionados = [os.path.join(pasta_json, arquivos_disponiveis[i]) for i in indices_escolhidos]
-            nomes_selecionados = [arquivos_disponiveis[i] for i in indices_escolhidos]
-            
-            print(f"Selecionados ({len(caminhos_selecionados)}): {', '.join(nomes_selecionados)}")
-            return caminhos_selecionados
-            
-        except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite números separados por vírgula.")
-
-def validar_e_combinar_jsons(caminhos_jsons):
-    """Carrega, valida parâmetros globais e combina a lista de testes."""
-    if not caminhos_jsons: return None
-
-    dados_base = ler_dados_json(caminhos_jsons[0])
-    if not dados_base: return None
-
-    todos_testes = dados_base.get('testes', [])
-    
-    # 1. Validação de Compatibilidade
-    params_base = {k: dados_base.get(k) for k in ['diametro_capilar_mm', 'comprimento_capilar_mm', 'densidade_pasta_g_cm3']}
-    if any(p is None for p in params_base.values()):
-        print("ERRO: JSON base está incompleto (D, L, ou rho ausente).")
-        return None
-
-    for i, caminho in enumerate(caminhos_jsons[1:]):
-        dados = ler_dados_json(caminho)
-        if not dados: continue
-        
-        # Compara parâmetros globais com tolerância
-        if not (np.isclose(dados.get('diametro_capilar_mm', 0), params_base['diametro_capilar_mm']) and
-                np.isclose(dados.get('comprimento_capilar_mm', 0), params_base['comprimento_capilar_mm']) and
-                np.isclose(dados.get('densidade_pasta_g_cm3', 0), params_base['densidade_pasta_g_cm3'])):
-            print(f"ALERTA: JSON {os.path.basename(caminho)} tem parâmetros globais divergentes. Ignorando este arquivo.")
-            continue
-        
-        todos_testes.extend(dados.get('testes', []))
-
-    if not todos_testes:
-        print("ERRO: Nenhuma lista de testes válida foi combinada.")
-        return None
-
-    # 2. Ordenação e Renumeração Final
-    # Ordena por Pressão para garantir a curva correta
-    todos_testes = sorted(todos_testes, key=lambda t: t.get('media_pressao_final_ponto_bar', 0))
-    
-    # Renumera os pontos sequencialmente
-    for i, teste in enumerate(todos_testes):
-        teste['ponto_n'] = i + 1
-
-    dados_base['testes'] = todos_testes
-    
-    return dados_base
-
-# -----------------------------------------------------------------------------
-# --- FUNÇÕES DE CÁLCULO E TRATAMENTO (NOVO NÚCLEO) ---
-# -----------------------------------------------------------------------------
-
-def calcular_dados_reologicos_brutos(df_testes, rho_g_cm3, D_mm, L_mm):
-    """Calcula Tau_w, Gamma_aw e Taxa de Fluxo de Massa para cada ponto bruto."""
-    rho_si = rho_g_cm3 * 1000
-    R_cap_si, L_cap_m = (D_mm / 2000), L_mm / 1000
-    
-    df_testes['P_Pa'] = df_testes['media_pressao_final_ponto_bar'] * 1e5
-    df_testes['M_kg'] = df_testes['massa_g_registrada'] / 1000
-    
-    # Filtra dados de duração zero (evita Divisão por Zero)
-    df_testes = df_testes[df_testes['duracao_real_s'] > 0].copy()
-    
-    # Cálculos reológicos básicos
-    df_testes['τw (Pa)'] = df_testes['P_Pa'] * R_cap_si / (2 * L_cap_m)
-    df_testes['Q_m3_s'] = (df_testes['M_kg'] / rho_si) / df_testes['duracao_real_s']
-    df_testes['γ̇aw (s⁻¹)'] = (4 * df_testes['Q_m3_s']) / (np.pi * R_cap_si**3)
-    
-    # Taxa de fluxo de massa (para cálculo de CV)
-    df_testes['mass_flow_rate_g_s'] = df_testes['massa_g_registrada'] / df_testes['duracao_real_s']
-    
-    return df_testes
-
-def calcular_estatisticas_e_cv(df_testes):
-    """Agrupa por pressão nominal e calcula estatísticas, incluindo CV."""
-    
-    # Arredonda a pressão para agrupamento (2 casas decimais é razoável para a precisão do transdutor)
-    df_testes['P_NOMINAL_AGRUPADA'] = df_testes['media_pressao_final_ponto_bar'].round(2)
-    
-    # Colunas para calcular estatísticas (Taxa de Fluxo de Massa como proxy de Vazão)
-    cols_to_group = ['τw (Pa)', 'γ̇aw (s⁻¹)', 'mass_flow_rate_g_s']
-
-    # Calcular Média e Desvio Padrão
-    df_mean = df_testes.groupby('P_NOMINAL_AGRUPADA')[cols_to_group].mean().reset_index()
-    df_std = df_testes.groupby('P_NOMINAL_AGRUPADA')[cols_to_group].std().reset_index()
-    df_count = df_testes.groupby('P_NOMINAL_AGRUPADA').size().reset_index(name='N')
-
-    # Renomear para juntar
-    df_mean.columns = ['P_NOMINAL_AGRUPADA', 'mu_tau_w', 'mu_gamma_aw', 'mu_mass_flow']
-    df_std.columns = ['P_NOMINAL_AGRUPADA', 'std_tau_w', 'std_gamma_aw', 'std_mass_flow']
-
-    # Juntar e calcular CV
-    df_stats = pd.merge(df_mean, df_std, on='P_NOMINAL_AGRUPADA')
-    df_stats = pd.merge(df_stats, df_count, on='P_NOMINAL_AGRUPADA')
-    
-    # Filtro: Apenas grupos com N >= 2 para CV
-    df_stats = df_stats[df_stats['N'] >= 2].copy()
-    
-    # Garante que não haja divisão por zero no CV
-    df_stats = df_stats[df_stats['mu_mass_flow'] > 1e-9].copy()
-
-    # Cálculo do CV (Coefficient of Variation)
-    df_stats['CV_τw(%)'] = (df_stats['std_tau_w'] / df_stats['mu_tau_w']) * 100
-    df_stats['CV_γ̇aw(%)'] = (df_stats['std_gamma_aw'] / df_stats['mu_gamma_aw']) * 100
-
-    return df_stats
-
-def remover_outliers_por_cv(df_testes, df_stats_atual, cv_limite_pct=10):
-    """
-    Identifica e remove pontos outliers cuja taxa de fluxo de massa esteja
-    fora de 2 desvios padrão da média do seu grupo, SE o CV do grupo exceder o limite.
-    
-    Retorna o DataFrame limpo e o DataFrame de estatísticas recalculado.
-    """
-    
-    df_stats_map = df_stats_atual[['P_NOMINAL_AGRUPADA', 'mu_mass_flow', 'std_mass_flow', 'CV_γ̇aw(%)']].set_index('P_NOMINAL_AGRUPADA').to_dict('index')
-
-    indices_para_remover = set()
-    pontos_removidos_total = 0
-    
-    # Itera sobre cada ponto no DataFrame original de testes
-    for index, row in df_testes.iterrows():
-        p_nominal = row['P_NOMINAL_AGRUPADA']
-        
-        if p_nominal in df_stats_map:
-            stats = df_stats_map[p_nominal]
-            
-            cv_do_grupo = stats['CV_γ̇aw(%)']
-            fluxo_atual = row['mass_flow_rate_g_s']
-            
-            # Condição de remoção: Se o CV do grupo está alto E o ponto está fora de 2*STD
-            if cv_do_grupo > cv_limite_pct:
-                limite_superior = stats['mu_mass_flow'] + 2 * stats['std_mass_flow']
-                limite_inferior = stats['mu_mass_flow'] - 2 * stats['std_mass_flow']
+            escolha_num = int(escolha_str)
+            if 1 <= escolha_num <= len(arquivos_disponiveis):
+                arquivo_selecionado = arquivos_disponiveis[escolha_num - 1]
+                caminho_completo = os.path.join(pasta_json, arquivo_selecionado)
                 
-                if (fluxo_atual > limite_superior) or (fluxo_atual < limite_inferior):
-                    indices_para_remover.add(index)
-                    pontos_removidos_total += 1
-                    
-    df_limpo = df_testes.drop(indices_para_remover).copy()
-    
-    if pontos_removidos_total > 0:
-        print(f"-> Removidos {pontos_removidos_total} ponto(s) (Outlier de Vazão/CV > {cv_limite_pct:.1f}%)")
-        # Re-calcula estatísticas para a amostra limpa
-        return df_limpo, calcular_estatisticas_e_cv(df_limpo)
-    
-    return df_limpo, df_stats_atual
+                with open(caminho_completo, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                print(f"  -> Selecionado: {arquivo_selecionado}")
+                print(f"  -> Amostra: {data.get('id_amostra', 'N/A')}")
+                print(f"  -> D/L: {data.get('diametro_capilar_mm', 'N/A')} mm / {data.get('comprimento_capilar_mm', 'N/A')} mm")
+                
+                # --- [NOVO] Lógica de Detecção de Formato ---
+                if data.get('testes') and len(data['testes']) > 0:
+                    primeiro_ponto = data['testes'][0]
+                    if 'media_pressao_sistema_bar' in primeiro_ponto:
+                        g_formato_novo = True
+                        g_chave_pressao_sistema = 'media_pressao_sistema_bar'
+                        print("  -> Formato: NOVO (2 Sensores) detectado.")
+                    else:
+                        g_formato_novo = False
+                        g_chave_pressao_sistema = 'media_pressao_final_ponto_bar'
+                        print("  -> Formato: ANTIGO (1 Sensor) detectado.")
+                else:
+                    g_formato_novo = False # Assume antigo se vazio
+                    g_chave_pressao_sistema = 'media_pressao_final_ponto_bar'
+                    print("  -> Ensaio vazio (assumindo formato antigo).")
 
-# -----------------------------------------------------------------------------
-# --- FUNÇÃO PRINCIPAL DE PRÉ-ANÁLISE ---
-# -----------------------------------------------------------------------------
+                print(f"  -> Usando a chave de pressão: '{g_chave_pressao_sistema}'")
+                print(f"  -> Pontos existentes: {len(data.get('testes', []))}")
+                return data, arquivo_selecionado
+            else:
+                print("ERRO: Escolha inválida.")
+        except ValueError:
+            print("ERRO: Entrada inválida. Por favor, digite um número.")
+        except Exception as e:
+            print(f"ERRO ao carregar o arquivo: {e}")
+            return None, None
 
-def executar_pre_analise_e_limpeza():
-    """Gerencia a seleção de JSONs, a limpeza interativa e a geração do CSV e JSON final."""
+def calcular_vazao_e_tensao(data):
+    """
+    [MODIFICADO] Calcula Q e Tw (Tensão de cisalhamento) usando a 
+    PRESSÃO DO SISTEMA (seja ela a chave antiga ou a nova).
+    """
+    global g_chave_pressao_sistema # [NOVO]
     
-    print("="*70); print("--- FUSÃO, LIMPEZA E PRÉ-TRATAMENTO ESTATÍSTICO (2X) ---"); print("="*70)
+    D_cap_mm = data.get('diametro_capilar_mm')
+    L_cap_mm = data.get('comprimento_capilar_mm')
+    rho_g_cm3 = data.get('densidade_pasta_g_cm3')
     
-    # 1. Fusão e Combinação de JSONs
-    caminhos_jsons = selecionar_multiplos_json(JSON_INPUT_DIR, "Selecione os JSONs de teste a serem combinados")
-    if not caminhos_jsons: return
-    
-    dados_combinados = validar_e_combinar_jsons(caminhos_jsons)
-    if not dados_combinados: return
-    
-    nome_sessao_base = dados_combinados['id_amostra']
-    D_mm = dados_combinados['diametro_capilar_mm']
-    L_mm = dados_combinados['comprimento_capilar_mm']
-    rho_g_cm3 = dados_combinados['densidade_pasta_g_cm3']
-
-    # 2. Carrega para DataFrame e Calcula Dados Brutos
-    df_testes = pd.DataFrame(dados_combinados['testes'])
-    df_testes = calcular_dados_reologicos_brutos(df_testes, rho_g_cm3, D_mm, L_mm)
-    
-    # Limpa valores óbvios (Q ou Tau zero)
-    df_testes.dropna(subset=['τw (Pa)', 'γ̇aw (s⁻¹)'], inplace=True)
-    df_testes = df_testes[(df_testes['τw (Pa)'] > 1e-9) & (df_testes['γ̇aw (s⁻¹)'] > 1e-9)].copy()
-    
-    if len(df_testes) < 2:
-        print("\nERRO: Menos de 2 pontos válidos após a limpeza inicial (Duração ou Pressão zero).")
-        return
-
-    # 3. Processamento Iterativo de Outliers
-    
-    df_limpo = df_testes.copy()
-    
-    # Exibe estatísticas iniciais
-    df_stats_inicial = calcular_estatisticas_e_cv(df_limpo)
-    if df_stats_inicial.empty:
-        print("\nERRO: Nenhuma repetição (N >= 2) encontrada para calcular o CV. Continue com o Script 2.")
-        return
+    if not all([D_cap_mm, L_cap_mm, rho_g_cm3]):
+        print("ERRO: Dados geométricos (D, L) ou densidade (rho) ausentes no JSON.")
+        return None
         
-    print("\n--- VISUALIZAÇÃO ESTATÍSTICA INICIAL (N>=2) ---")
-    df_stats_display = df_stats_inicial[['P_NOMINAL_AGRUPADA', 'N', 'CV_γ̇aw(%)']].copy()
-    df_stats_display.columns = ['P_Nominal', 'N', 'CV Vazão (%)']
+    R_cap_mm = D_cap_mm / 2.0
     
-    # CORREÇÃO: Usa 'formatters' em vez de 'floatfmt' (compatibilidade)
-    fmt_display = {'P_Nominal': lambda x: format_float_for_table(x, 2),
-                   'N': lambda x: str(int(x)) if pd.notna(x) else 'N/A',
-                   'CV Vazão (%)': lambda x: format_float_for_table(x, 2)}
+    pontos_processados = []
     
-    print(df_stats_display.to_string(index=False, formatters=fmt_display))
-    
-    
-    # Pergunta o limite de CV para a remoção
-    cv_limite = input_float_com_virgula("\nLimite de CV (%) para remoção automática de outliers (Sugestão: 10): ")
-    if cv_limite is None or cv_limite <= 0: cv_limite = 10.0
+    for i, ponto in enumerate(data.get('testes', [])):
+        massa_g = ponto.get('massa_g_registrada')
+        duracao_s = ponto.get('duracao_real_s')
+        
+        # [MODIFICADO] Usa a chave de pressão do sistema (antiga ou nova)
+        pressao_bar = ponto.get(g_chave_pressao_sistema) 
+        
+        if not all([massa_g, duracao_s, pressao_bar]) or duracao_s <= 0 or massa_g <= 0:
+            print(f"Aviso: Ponto {i} (Ponto N° {ponto.get('ponto_n', '?')}) ignorado por dados incompletos (massa, tempo ou pressão <= 0).")
+            continue
+            
+        # 1. Vazão Volumétrica (Q) em [mm³/s]
+        # Volume (cm³) = massa (g) / densidade (g/cm³)
+        # 1 cm³ = 1000 mm³
+        volume_mm3 = (massa_g / rho_g_cm3) * 1000
+        Q_mm3_s = volume_mm3 / duracao_s
+        
+        # 2. Tensão de Cisalhamento na Parede (Tw) em [Pa]
+        # P (Pa) = P (bar) * 100000
+        pressao_Pa = pressao_bar * 100000
+        # Tw = (P * R) / (2 * L) -- (Todas unidades em mm e Pa)
+        Tw_Pa = (pressao_Pa * R_cap_mm) / (2 * L_cap_mm)
+        
+        # Adiciona o ponto original e os novos cálculos
+        ponto_novo = {
+            "ponto_original": ponto, # Mantém o dicionário original
+            "Q_mm3_s": Q_mm3_s,
+            "Tw_Pa": Tw_Pa,
+            "Pressao_Sistema_bar": pressao_bar, # [MODIFICADO] Nome da chave para plotagem
+            "id_display": i # ID temporário para plotagem
+        }
+        pontos_processados.append(ponto_novo)
+        
+    return pontos_processados
 
-    print(f"\n--- INICIANDO LIMPEZA ITERATIVA COM CV={cv_limite:.1f}% ---")
+
+def plotar_e_filtrar_interativo(pontos_processados, id_amostra):
+    """
+    [MODIFICADO] Plota os dados (Pressão do SISTEMA vs Q) e permite a 
+    seleção interativa de pontos.
+    """
     
-    df_stats_atual = df_stats_inicial
-    total_pontos_orig = len(df_limpo)
+    if not pontos_processados:
+        print("Nenhum ponto válido para plotar.")
+        return None
+
+    # Cria uma cópia dos pontos que será modificada
+    pontos_para_manter = list(pontos_processados)
     
-    # Loop de repetição para remover outliers e recalcular as estatísticas
     while True:
-        pontos_antes = len(df_limpo)
+        # --- Setup do Gráfico ---
+        fig, ax = plt.subplots(figsize=(12, 8))
         
-        # Remove outliers usando o CV e 2*STD
-        df_limpo, df_stats_recalc = remover_outliers_por_cv(df_limpo, df_stats_atual, cv_limite)
-        
-        pontos_depois = len(df_limpo)
-        
-        if pontos_depois == pontos_antes:
-            print("\nSUCESSO: Nenhuma remoção adicional de outliers necessária.")
-            break
-        
-        df_stats_atual = df_stats_recalc
-        print(f"  -> Limpeza resultou em {pontos_antes - pontos_depois} remoções. Novo ciclo de verificação...")
-        
-        if pontos_depois < 4:
-            print("AVISO: Restaram menos de 4 pontos válidos. Abortando limpeza.")
-            break
+        # [MODIFICADO] Atualiza os dados a serem plotados
+        Q_plot = np.array([p['Q_mm3_s'] for p in pontos_para_manter])
+        P_plot = np.array([p['Pressao_Sistema_bar'] for p in pontos_para_manter]) # Usa a pressão do Sistema
+        ids_plot = [p['id_display'] for p in pontos_para_manter]
 
-    # 4. Exibe o resultado final da limpeza
-    
-    df_stats_final = df_stats_recalc
-    
-    print("\n" + "="*70)
-    print("--- RESULTADO FINAL DO TRATAMENTO ESTATÍSTICO (PRONTO PARA O SCRIPT 2) ---")
-    print(f"Pontos Originais: {total_pontos_orig}. Pontos Finais: {len(df_limpo)}.")
-    
-    if not df_stats_final.empty:
-        # Formata para exibição
-        df_stats_display = df_stats_final.copy()
-        df_stats_display = df_stats_display[['P_NOMINAL_AGRUPADA', 'N', 'mu_tau_w', 'std_tau_w', 'CV_τw(%)', 'mu_gamma_aw', 'CV_γ̇aw(%)']]
-        df_stats_display.columns = ['P_Nominal', 'N', 'Média τw (Pa)', 'STD τw (Pa)', 'CV τw (%)', 'Média γ̇aw (s⁻¹)', 'CV γ̇aw (%)']
+        if len(Q_plot) == 0:
+            print("Nenhum ponto restante para plotar.")
+            plt.close(fig)
+            break # Sai do loop se não houver mais pontos
+
+        # Plot dos pontos restantes
+        sc = ax.scatter(Q_plot, P_plot, c='blue', label='Pontos Mantidos', picker=True, pickradius=5)
         
-        # Define os formatters para os dados de saída final
-        fmt = {'P_Nominal': lambda x: format_float_for_table(x, 2),
-               'N': lambda x: str(int(x)) if pd.notna(x) else 'N/A',
-               'Média τw (Pa)': lambda x: format_float_for_table(x, 3),
-               'STD τw (Pa)': lambda x: format_float_for_table(x, 3),
-               'CV τw (%)': lambda x: format_float_for_table(x, 2),
-               'Média γ̇aw (s⁻¹)': lambda x: format_float_for_table(x, 3),
-               'CV γ̇aw (%)': lambda x: format_float_for_table(x, 2)}
-               
-        print(df_stats_display.to_string(index=False, formatters=fmt))
+        # Plot dos pontos removidos (se houver)
+        Q_removidos = [p['Q_mm3_s'] for p in pontos_processados if p not in pontos_para_manter]
+        P_removidos = [p['Pressao_Sistema_bar'] for p in pontos_processados if p not in pontos_para_manter] # Usa a pressão do Sistema
+        if Q_removidos:
+            ax.scatter(Q_removidos, P_removidos, c='red', marker='x', label='Pontos Removidos')
+
+        # Anotações de texto (Ponto N)
+        for i, p in enumerate(pontos_para_manter):
+            ponto_n = p['ponto_original'].get('ponto_n', ids_plot[i])
+            ax.text(Q_plot[i], P_plot[i], f" N{ponto_n}", fontsize=9, ha='left')
+
+        ax.set_xlabel('Vazão Volumétrica (Q) [mm³/s] (Log)')
+        # [MODIFICADO] Label do eixo Y
+        ax.set_ylabel('Pressão Sistema (P) [bar] (Log)')
+        # [MODIFICADO] Título
+        ax.set_title(f'Pré-Análise: {id_amostra} (Usando Pressão do Sistema)\nClique (Esq) para REMOVER | Clique (Dir) ou [ENTER] para FINALIZAR')
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.grid(True, which="both", ls="--")
+        ax.legend()
+        
+        plt.tight_layout()
+        
+        # --- Interatividade ---
+        print("\n" + "-"*50)
+        print("--- INSTRUÇÕES DE FILTRAGEM ---")
+        print("1. Analise o gráfico gerado (Pressão do Sistema vs Vazão).")
+        print("2. Clique com o BOTÃO ESQUERDO perto de um ponto para marcá-lo para REMOÇÃO.")
+        print("3. O gráfico será atualizado, mostrando o ponto em vermelho.")
+        print("4. Para finalizar a seleção e salvar, feche a janela ou clique com o BOTÃO DIREITO.")
+        
+        clicks = plt.ginput(n=1, timeout=0, show_clicks=True)
+        
+        if not clicks: # Janela fechada
+            print("Janela fechada. Finalizando seleção.")
+            plt.close(fig)
+            break
+            
+        click_info = clicks[0]
+        x_click, y_click, button = click_info
+        
+        if button == 3: # Botão direito
+            print("Botão direito clicado. Finalizando seleção.")
+            plt.close(fig)
+            break
+            
+        if button == 1: # Botão esquerdo
+            if len(Q_plot) == 0:
+                 print("Não há pontos para remover.")
+                 plt.close(fig)
+                 continue
+                 
+            # Encontrar o ponto mais próximo do clique (em escala log)
+            log_Q = np.log(Q_plot)
+            log_P = np.log(P_plot)
+            log_x_click = np.log(x_click)
+            log_y_click = np.log(y_click)
+            
+            distancias = np.sqrt((log_Q - log_x_click)**2 + (log_P - log_y_click)**2)
+            
+            if distancias.size > 0:
+                idx_mais_proximo = np.argmin(distancias)
+                ponto_removido = pontos_para_manter.pop(idx_mais_proximo) # Remove da lista de manter
+                
+                p_n = ponto_removido['ponto_original'].get('ponto_n', 'N/A')
+                print(f"Ponto N°{p_n} (Idx: {ponto_removido['id_display']}) marcado para remoção.")
+            
+            plt.close(fig) # Fecha o gráfico atual para redesenhar
+    
+    # Fim do loop
+    print(f"\nSeleção finalizada. {len(pontos_para_manter)} pontos serão mantidos.")
+    
+    # Retorna apenas os dicionários originais dos pontos mantidos
+    pontos_originais_filtrados = [p['ponto_original'] for p in pontos_para_manter]
+    return pontos_originais_filtrados
+
+
+def salvar_json_limpo(data_original, pontos_filtrados, nome_arquivo_original):
+    """
+    [MODIFICADO] Salva um novo JSON com os pontos filtrados,
+    ordenando pela chave de pressão do sistema correta.
+    """
+    global g_chave_pressao_sistema # [NOVO]
+    
+    # Cria uma cópia profunda dos metadados
+    data_limpa = {key: value for key, value in data_original.items() if key != 'testes'}
+    
+    # Adiciona os pontos filtrados
+    data_limpa['testes'] = pontos_filtrados
+    
+    # Atualiza o timestamp
+    data_limpa["data_hora_filtragem"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Define o nome do arquivo de saída
+    if nome_arquivo_original.startswith('edit_'):
+        base_name = nome_arquivo_original[5:] # Remove 'edit_'
+    elif nome_arquivo_original.startswith('limpo_'):
+         base_name = nome_arquivo_original[6:] # Remove 'limpo_'
     else:
-        print("AVISO: Não restaram pontos com repetições (N>=2) para cálculo estatístico.")
-
-    # 5. GERA O ARQUIVO JSON LIMPO (Mantendo a estrutura do Script 1)
+        base_name = nome_arquivo_original
+        
+    # Garante que o .json seja removido e re-adicionado
+    base_name = os.path.splitext(base_name)[0] 
+    nome_arquivo_limpo = f"limpo_{base_name}.json"
     
-    # 5.1. Mapeia colunas do df_limpo de volta para a estrutura de lista de dicionários do JSON
-    testes_limpos_json = []
-    
-    # As colunas `media_pressao_final_ponto_bar`, `massa_g_registrada`, `duracao_real_s`, etc.,
-    # são as colunas originais que o Script 1 espera dentro da lista 'testes'.
-    # O Ponto_n é a numeração sequencial após a ordenação/limpeza.
-    
-    for i, row in df_limpo.reset_index(drop=True).iterrows():
-        testes_limpos_json.append({
-            "ponto_n": i + 1, # Renumeração final após a limpeza
-            "massa_g_registrada": row['massa_g_registrada'],
-            "duracao_real_s": row['duracao_real_s'],
-            "media_tensao_final_ponto_V": row['media_tensao_final_ponto_V'], # Mantém o valor original lido
-            "media_pressao_final_ponto_bar": row['media_pressao_final_ponto_bar']
-            # Omissão de 'leituras_pressao_detalhadas_bar' para simplificar o JSON
-        })
-
-    # 5.2. Cria o novo objeto JSON
-    dados_combinados['testes'] = testes_limpos_json
-    dados_combinados['data_hora_limpeza'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    dados_combinados['observacoes_limpeza'] = f"Combinado(s) de {len(caminhos_jsons)} arquivo(s). {total_pontos_orig - len(df_limpo)} ponto(s) removido(s) automaticamente (CV > {cv_limite:.1f}%)."
-    
-    # 5.3. Salva o JSON na pasta de testes
-    json_limpo_filename = f"limpo_{nome_sessao_base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    caminho_json_limpo = os.path.join(JSON_INPUT_DIR, json_limpo_filename)
+    caminho_completo_saida = os.path.join(RESULTS_JSON_DIR, nome_arquivo_limpo)
     
     try:
-        with open(caminho_json_limpo, 'w', encoding='utf-8') as f:
-            json.dump(dados_combinados, f, indent=4, ensure_ascii=False)
-        print(f"\nSUCESSO: JSON de Teste (Limpo) salvo em: {caminho_json_limpo}")
-    except Exception as e:
-        print(f"ERRO ao salvar JSON limpo: {e}")
+        # [MODIFICADO] Reordena pela chave de pressão do sistema (antiga ou nova)
+        data_limpa['testes'] = sorted(data_limpa['testes'], key=lambda t: t.get(g_chave_pressao_sistema, 0))
         
-    # 6. Gera o CSV de Resultados para o Script 2 (Como alternativa)
-    
-    # Mapeia colunas do df_limpo para o formato do Script 2
-    df_saida_individual = df_limpo.rename(columns={
-        'media_pressao_final_ponto_bar': 'P_ext(bar)',
-        'massa_g_registrada': 'M_ext(g)',
-        'duracao_real_s': 't_ext(s)',
-    })
-    
-    df_saida_individual['D_cap(mm)'] = D_mm
-    df_saida_individual['L_cap(mm)'] = L_mm
-    df_saida_individual['rho(g/cm³)'] = rho_g_cm3
-    df_saida_individual['τw (Pa)'] = df_saida_individual['τw (Pa)'] 
-    df_saida_individual['γ̇w (s⁻¹)'] = df_saida_individual['γ̇aw (s⁻¹)']
-    df_saida_individual['η (Pa·s)'] = df_saida_individual['τw (Pa)'] / df_saida_individual['γ̇w (s⁻¹)'].replace(0, np.nan)
-    
-    colunas_finais = ['P_ext(bar)', 'M_ext(g)', 't_ext(s)', 'D_cap(mm)', 'L_cap(mm)', 'rho(g/cm³)', 'τw (Pa)', 'γ̇w (s⁻¹)', 'η (Pa·s)']
-    df_saida_individual = df_saida_individual[colunas_finais]
-    
-    nome_pasta_analise = f"{nome_sessao_base}_ANALISE_LIMPA_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    caminho_pasta_individual = os.path.join("resultados_analise_reologica", nome_pasta_analise)
-    if not os.path.exists(caminho_pasta_individual):
-        os.makedirs(caminho_pasta_individual)
+        with open(caminho_completo_saida, 'w', encoding='utf-8') as f:
+            json.dump(data_limpa, f, indent=4, ensure_ascii=False)
+        print(f"\nArquivo filtrado salvo com sucesso em: {caminho_completo_saida}")
+        print(f"Total de pontos salvos: {len(pontos_filtrados)}")
+    except IOError as e:
+        print(f"Erro ao salvar o arquivo JSON limpo: {e}")
 
-    csv_individual_filename = f"limpo_{nome_pasta_analise}_resultados_reologicos.csv"
-    caminho_csv_individual = os.path.join(caminho_pasta_individual, csv_individual_filename)
+
+def main():
+    """Função principal do script."""
+    if not os.path.exists(RESULTS_JSON_DIR):
+        os.makedirs(RESULTS_JSON_DIR)
+        
+    # [MODIFICADO] Esta função agora também define as chaves globais
+    data, nome_arquivo = selecionar_json_para_filtrar(RESULTS_JSON_DIR)
     
-    try:
-        df_saida_individual.to_csv(caminho_csv_individual, index=False, sep=';', decimal=',', float_format='%.4f', encoding='utf-8-sig')
-        print(f"\nSUCESSO: CSV de Análise (Limpo) salvo em: {caminho_csv_individual}")
-        print(f"\nPRÓXIMO PASSO: Execute o Script 2.Analise_reologica.py.")
-        print(f"Use o modo 'JSON' e selecione '{json_limpo_filename}' ou o modo 'CSV' com o arquivo CSV salvo acima.")
+    if not data or not nome_arquivo:
+        print("Nenhum arquivo selecionado. Saindo.")
+        return
         
-    except Exception as e:
-        print(f"ERRO ao salvar CSV de análise: {e}")
+    if not data.get('testes'):
+        print("Arquivo JSON selecionado não contém testes. Saindo.")
+        return
+
+    # 1. Calcular Q e Tw (agora usa a chave de pressão global correta)
+    pontos_processados = calcular_vazao_e_tensao(data)
+    
+    if not pontos_processados:
+        print("Não foi possível processar os pontos (verifique dados no JSON). Saindo.")
+        return
         
-# -----------------------------------------------------------------------------
-# --- INÍCIO DA EXECUÇÃO --
-# -----------------------------------------------------------------------------
+    # 2. Plotar e Filtrar (agora plota a pressão do sistema correta)
+    id_amostra = data.get('id_amostra', 'Ensaio Desconhecido')
+    pontos_filtrados = plotar_e_filtrar_interativo(pontos_processados, id_amostra)
+    
+    # 3. Salvar (agora salva ordenado pela chave de pressão correta)
+    if pontos_filtrados is not None:
+        salvar_json_limpo(data, pontos_filtrados, nome_arquivo)
+    else:
+        print("Processo de filtragem cancelado ou falhou. Nenhum arquivo salvo.")
+
 if __name__ == "__main__":
-    executar_pre_analise_e_limpeza()
-    print("\n--- FIM DO SCRIPT DE PRÉ-ANÁLISE E LIMPEZA ---")
+    main()
