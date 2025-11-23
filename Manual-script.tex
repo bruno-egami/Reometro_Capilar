@@ -73,11 +73,104 @@ $\tau_0$ & Tensão de escoamento (\si{Pa}) \\
 $\eta_p$ & Viscosidade plástica (\si{Pa.s}) \\
 \end{tabular}
 
-\section*{3. Conversão de Medidas Experimentais}
+\section*{3. Fluxo de Trabalho e Arquitetura do Sistema}
+
+O sistema de análise reológica foi reestruturado em módulos independentes para garantir maior robustez, rastreabilidade e facilidade de manutenção. Cada script desempenha uma função específica no ciclo de vida dos dados, desde a coleta até a análise comparativa.
+
+\href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo Atualizado}}
+
+\subsection*{3.0 Launcher (Script 0: Launcher.py)}
+Interface de menu para facilitar a execução dos scripts.
+\begin{itemize}
+  \item \textbf{Função:} Apresenta um menu interativo numerado com todos os scripts disponíveis no sistema.
+  \item \textbf{Operação:} O usuário seleciona o número correspondente ao script desejado e o sistema o executa automaticamente.
+  \item \textbf{Benefício:} Simplifica o workflow eliminando a necessidade de executar cada script manualmente via linha de comando.
+\end{itemize}
+
+\subsection*{3.1 Coleta de Dados (Script 1: Controle\_Reometro.py)}
+Responsável pela interface com o hardware (Arduino/HX711).
+\begin{itemize}
+  \item \textbf{Função:} Leitura em tempo real dos sensores de pressão (Linha e Pasta) e da balança.
+  \item \textbf{Validação:} Implementa verificação automática de estabilidade e permite ao usuário rejeitar pontos espúrios durante o ensaio.
+  \item \textbf{Saída:} Gera um arquivo JSON bruto contendo os dados experimentais e metadados do ensaio.
+\end{itemize}
+
+\subsection*{3.2 Editor de Dados (Script 1a: Edit-Json-coleta.py)}
+Ferramenta para correção manual de erros nos arquivos JSON de coleta.
+\begin{itemize}
+  \item \textbf{Função:} Permite editar valores específicos nos JSONs brutos (pressão, massa, tempo, etc.) quando erros de digitação ou leitura são detectados pós-coleta.
+  \item \textbf{Interface:} Apresenta os dados de forma estruturada e solicita confirmação antes de salvar alterações.
+  \item \textbf{Segurança:} Valida os tipos de dados para evitar corrupção dos arquivos.
+\end{itemize}
+
+\subsection*{3.3 Pré-Filtro de Dados (Script 1b: Pre-analise-filtro.py)}
+Análise preliminar e identificação visual de outliers.
+\begin{itemize}
+  \item \textbf{Função:} Gera gráficos preliminares dos dados brutos (pressão vs. massa, tempo vs. vazão) para identificação visual de pontos anômalos.
+  \item \textbf{Interação:} Permite ao usuário selecionar e remover pontos problemáticos antes da análise reológica completa.
+  \item \textbf{Aplicação:} Útil quando ensaios apresentam instabilidades (bolhas de ar, entupimentos momentâneos).
+\end{itemize}
+
+\subsection*{3.4 Análise Reológica (Script 2: Analise\_reologica.py)}
+O núcleo matemático do sistema. Processa os dados brutos e aplica as correções físicas.
+\begin{itemize}
+  \item \textbf{Entrada:} Arquivo JSON gerado pelo Script 1, 1a ou 1b.
+  \item \textbf{Processamento:}
+  \begin{enumerate}
+      \item Conversão de unidades para o SI;
+      \item Cálculo de tensões e taxas aparentes;
+      \item Aplicação das correções de Bagley e Mooney (se dados disponíveis);
+      \item Correção de Weissenberg-Rabinowitsch;
+      \item Ajuste dos modelos reológicos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson).
+  \end{enumerate}
+  \item \textbf{Saída:} Arquivos CSV com os dados processados e JSON com os parâmetros dos modelos ajustados.
+\end{itemize}
+
+\subsection*{3.5 Tratamento Estatístico (Script 2b: Tratamento\_Estatistico.py)}
+Módulo de confiabilidade (detalhado na Seção 11).
+\begin{itemize}
+  \item \textbf{Função:} Analisa a dispersão dos dados experimentais quando há repetições.
+  \item \textbf{Método:} Agrupa dados por pressão nominal, remove outliers estatísticos ($> 2\sigma$) e calcula o Coeficiente de Variação (CV).
+  \item \textbf{Saída:} Relatório de qualidade dos dados, indicando a precisão do ensaio.
+\end{itemize}
+
+\subsection*{3.6 Filtro por Resíduos (Script 2c: Filtro\_Residuos\_Modelo.py)}
+Refinamento baseado no ajuste de modelo.
+\begin{itemize}
+  \item \textbf{Função:} Analisa os resíduos (diferenças entre dados experimentais e modelo ajustado) para identificar pontos com desvio excessivo.
+  \item \textbf{Método:} Remove automaticamente pontos cujos resíduos excedem um limite configurável.
+  \item \textbf{Recurso:} Inclui seleção manual de arquivo JSON quando a detecção automática falha (múltiplos JSONs na pasta).
+\end{itemize}
+
+\subsection*{3.7 Visualização (Script 3: Visualizar\_resultados.py)}
+Geração de gráficos detalhados de um único ensaio.
+\begin{itemize}
+  \item \textbf{Função:} Cria visualizações completas: curvas de fluxo ($\tau_w$ vs $\dot{\gamma}_w$), viscosidade ($\eta$ vs $\dot{\gamma}_w$), pressão vs viscosidade, e análise de resíduos.
+  \item \textbf{Modelo:} Sobrepõe as curvas teóricas do modelo ajustado aos dados experimentais.
+  \item \textbf{Saída:} Gráficos salvos em alta resolução (PNG) na pasta de resultados.
+\end{itemize}
+
+\subsection*{3.8 Análise Comparativa (Script 4: Comparativo-Analises.py)}
+Comparação entre múltiplos ensaios (detalhado na Seção 12).
+\begin{itemize}
+  \item \textbf{Função:} Permite sobrepor curvas de diferentes ensaios para comparação direta.
+  \item \textbf{Análise:} Calcula o erro relativo (MAPE) entre uma amostra de referência e outras amostras.
+  \item \textbf{Saída:} Gráficos comparativos e relatório de discrepâncias.
+\end{itemize}
+
+\subsection*{3.9 Processador Rotacional (Script 5: Processador\_Rotacional\_Completo.py)}
+Integração com reômetros comerciais.
+\begin{itemize}
+  \item \textbf{Função:} Processa dados exportados de reômetros rotacionais comerciais (ex: Anton Paar MCR 102).
+  \item \textbf{Conversão:} Converte os dados para o formato compatível com os scripts de análise do sistema.
+  \item \textbf{Aplicação:} Permite comparação direta entre o reômetro capilar DIY e equipamentos comerciais de referência.
+\end{itemize}
+
+\section*{4. Conversão de Medidas Experimentais}
 
 Durante os ensaios reológicos capilares, coletam-se dados experimentais em unidades técnicas convencionais — por exemplo, massa em gramas, pressão em bar, e dimensões do capilar em milímetros. No entanto, todas as equações da mecânica dos fluidos que regem a análise exigem que as grandezas estejam expressas em \textbf{unidades do Sistema Internacional (SI)}. Por isso, o primeiro passo do script é converter essas unidades de forma padronizada.
 
-\subsection*{3.1 Conversões de Unidades para SI}
+\subsection*{4.1 Conversões de Unidades para SI}
 
 A primeira etapa do processamento consiste em converter todas as grandezas fornecidas pelo usuário para o Sistema Internacional de Unidades (SI). Essa padronização é essencial para garantir a consistência matemática de todas as equações físicas subsequentes.
 
@@ -139,333 +232,6 @@ Q = \frac{V}{t} \quad \left[ \si{m^{3}/s} \right]
   \item $V$ – Volume extrudado (\si{m^3})
   \item $t$ – Tempo de extrusão (\si{s})
 \end{itemize}
-
-A vazão ($Q$) representa o volume de pasta que passa por segundo através do capilar. É uma das grandezas mais importantes da análise, pois se relaciona diretamente à deformação do fluido. Essa informação será usada no cálculo da taxa de cisalhamento (Seção 3.4) e, posteriormente, corrigida por efeitos geométricos (Seções 4 a 6).
-
-\vspace{1em}
-
-\subsection*{3.4 Taxa de Cisalhamento Aparente}
-\begin{equation}
-\dot{\gamma}_{aw} = \frac{4Q}{\pi R^3} \quad \left[ \si{s^{-1}} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\dot{\gamma}_{aw}$ – Taxa de cisalhamento aparente na parede (\si{s^{-1}})
-  \item $Q$ – Vazão volumétrica (\si{m^3/s})
-  \item $R$ – Raio interno do capilar (\si{m})
-  \item $\pi$ – Constante matemática (\textasciitilde 3{,}1416)
-\end{itemize}
-
-Estima a rapidez com que as camadas de fluido deslizam entre si na parede do capilar. É chamada "aparente" porque assume escoamento newtoniano ideal, e será corrigida mais adiante. Essa grandeza é usada como base para:
-
-\begin{itemize}[leftmargin=1.5em]
-  \item Aplicar a correção de Weissenberg–Rabinowitsch (Seção 6);
-  \item Calcular a viscosidade aparente (Seção 7.1);
-  \item Determinar os parâmetros dos modelos reológicos (Seção 8).
-\end{itemize}
-
-\vspace{1em}
-
-\subsection*{3.5 Tensão de Cisalhamento na Parede}
-\begin{equation}
-\tau_w = \frac{P R}{2 L} \quad \left[ \si{Pa} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\tau_w$ – Tensão de cisalhamento na parede (\si{Pa})
-  \item $P$ – Pressão aplicada (\si{Pa})
-  \item $R$ – Raio do capilar (\si{m})
-  \item $L$ – Comprimento do capilar (\si{m})
-\end{itemize}
-
-Quantifica o esforço por unidade de área exercido pela pasta na parede interna do capilar. Esse valor será:
-
-\begin{itemize}[leftmargin=1.5em]
-  \item Corrigido pela técnica de Bagley se necessário (Seção 4);
-  \item Utilizado diretamente na correção W-R (Seção 6);
-  \item Base para o cálculo de viscosidade aparente e verdadeira (Seção 7);
-  \item Variável dependente nos ajustes de modelos (Seção 8).
-\end{itemize}
-
-
-\textbf{Nota:} Esse valor é chamado de “bruto” porque pode incluir contribuições não desejadas, como perdas por entrada/saída e deslizamento — que serão corrigidas em seções posteriores.
-
-
-\section*{4. Correção de Bagley (Perda nas Extremidades)}
-
-A medição da pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades — isto é, à entrada e à saída do capilar. Essas perdas ocorrem por efeitos geométricos, contrações abruptas, turbulência localizada e atrito de entrada.
-
-A não correção dessas perdas resulta na superestimação da tensão de cisalhamento calculada, especialmente em capilares curtos. Isso compromete os valores de viscosidade e o ajuste dos modelos reológicos.
-
-\subsection*{4.1 Modelo Linear da Correção de Bagley}
-\begin{equation}
-P = 2 \tau_w \left( \frac{L}{R} \right) + P_e \quad \left[ \si{Pa} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $P$ – Pressão total medida experimentalmente (\si{Pa})
-  \item $\tau_w$ – Tensão de cisalhamento na parede (\si{Pa})
-  \item $L$ – Comprimento do capilar (\si{m})
-  \item $R$ – Raio interno do capilar (\si{m})
-  \item $P_e$ – Perda de pressão nas extremidades (\si{Pa})
-\end{itemize}
-
-\textbf{Interpretação:} A equação mostra que a pressão total é composta por:
-\begin{enumerate}[label=(\alph*)]
-  \item Um termo linear proporcional a $L/R$, que representa o escoamento interno.
-  \item Um termo constante $P_e$, que representa as perdas localizadas nas extremidades.
-\end{enumerate}
-
-\subsection*{4.2 Aplicação Experimental e Limitações}
-
-Para aplicar a correção de Bagley, utiliza-se um conjunto de capilares com:
-\begin{itemize}
-  \item Mesmo diâmetro interno ($D$);
-  \item Comprimentos distintos ($L_i$);
-  \item Vários pontos experimentais com massa e pressão para cada capilar.
-\end{itemize}
-
-O script executa os seguintes passos:
-\begin{enumerate}[leftmargin=2em]
-  \item Calcula $\dot{\gamma}_{aw}$ para cada ponto experimental (com $Q$ e $R$ fixos);
-  \item Define um conjunto comum de taxas de cisalhamento alvo $\dot{\gamma}_{aw,k}$;
-  \item Interpola os dados de pressão para essas taxas alvo em cada capilar;
-  \item Ajusta, para cada $\dot{\gamma}_{aw,k}$, uma reta da forma:
-  \begin{equation}
-  P_k = 2 \tau_{w,k} \left( \frac{L}{R} \right) + P_{e,k}
-  \end{equation}
-  \item Calcula a inclinação da reta ($\tau_{w,k}$) e o intercepto ($P_{e,k}$);
-  \item Constrói a curva de fluxo corrigida: pares $\left( \dot{\gamma}_{aw,k}, \tau_{w,k} \right)$.
-\end{enumerate}
-
-Ao remover as perdas de extremidade, a curva de fluxo se torna mais precisa, especialmente em altas pressões e com capilares curtos. Isso garante que os valores de viscosidade e os modelos reológicos reflitam o verdadeiro comportamento do fluido.
-
-Contudo, a correção exige pelo menos dois capilares com diferentes comprimentos e mesmo diâmetro. Se os dados forem escassos ou os comprimentos forem muito próximos, a regressão pode ser imprecisa.
-
-
-
-\section*{5. Correção de Mooney (Deslizamento na Parede)}
-
-Em certos materiais — especialmente pastas cerâmicas, argilas e suspensões concentradas — pode ocorrer um fenômeno chamado \textbf{deslizamento na parede} (wall slip). Isso acontece quando a interface entre o fluido e o capilar não apresenta atrito total, fazendo com que o fluido escorregue parcialmente em vez de aderir à parede. Esse deslizamento afeta diretamente a medição da taxa de cisalhamento, levando à superestimação da deformação real do fluido. Em razão deste efeito, a taxa de cisalhamento aparente medida inclui uma componente falsa de movimento, resultando em uma viscosidade artificialmente baixa e modelos que não representam o comportamento real da pasta.
-
-A correção de Mooney é aplicada para avaliar e quantificar esse deslizamento.
-
-\subsection*{5.1 Modelo de Mooney}
-\begin{equation}
-\label{eq:mooney_model}
-\dot{\gamma}_{aw} = \dot{\gamma}_{s,f} + \frac{C}{R} \quad \left[ \si{s^{-1}} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\dot{\gamma}_{aw}$ – Taxa de cisalhamento aparente na parede (\si{s^{-1}})
-  \item $\dot{\gamma}_{s,f}$ – Taxa de cisalhamento verdadeira do fluido (sem efeito de deslizamento) (\si{s^{-1}})
-  \item $C$ – Coeficiente de deslizamento (velocidade de deslizamento na parede, $v_s$) (\si{m/s})
-  \item $R$ – Raio do capilar (\si{m})
-\end{itemize}
-
-Quanto menor o raio $R$, maior será o impacto do termo de deslizamento ($C/R$) na taxa de cisalhamento aparente medida.
-
-\subsection*{5.2 Aplicação Experimental}
-O método exige:
-\begin{itemize}
-  \item Múltiplos capilares com mesmo comprimento $L$ e diferentes diâmetros ($R_i$);
-  \item Medidas de $\dot{\gamma}_{aw}$ para uma tensão de cisalhamento na parede ($\tau_w$) constante (ou um conjunto de $\tau_w$ alvo);
-  \item Ajuste linear de $\dot{\gamma}_{aw}$ como função de $1/R$.
-\end{itemize}
-
-A correção de Mooney é realizada com base em diferentes capilares de mesmo comprimento e raios distintos. Para cada valor de tensão de cisalhamento \( \tau_w \), interpola-se a taxa de cisalhamento aparente \( \dot{\gamma}_{aw} \) em função de \( 1/R \), e ajusta-se uma regressão linear da forma:
-
-\begin{equation}
-\dot{\gamma}_{aw} = \dot{\gamma}_s + \frac{2V_s}{R}
-\end{equation}
-
-O termo independente da regressão fornece uma estimativa da taxa de cisalhamento devido ao deslizamento na parede \( \dot{\gamma}_s \), indicando a influência de efeitos de parede no escoamento.
-
-
-Plotando $\dot{\gamma}_{aw}$ versus $1/R$ para um $\tau_w$ fixo, a equação \eqref{eq:mooney_model} representa uma reta. O \textbf{intercepto} dessa reta fornece $\dot{\gamma}_{s,f}$ (a taxa de cisalhamento do fluido corrigida para o deslizamento), e a \textbf{inclinação} fornece $C$ (o coeficiente de deslizamento, ou velocidade de deslizamento na parede). Com isso, pode-se reconstruir a curva de cisalhamento ($\tau_w$ vs $\dot{\gamma}_{s,f}$) sem o efeito de parede.
-
-
-\subsection*{5.3 Implementação da Correção de Mooney no Script}
-
-A correção de Mooney tem como objetivo estimar o deslizamento do fluido nas paredes do capilar, o que afeta a determinação da taxa de cisalhamento real. Este fenômeno é particularmente relevante em sistemas onde a tensão de cisalhamento na parede ($\tau_w$) não resulta exclusivamente da deformação do fluido, mas também da contribuição do escoamento por deslizamento.
-
-No presente script, a correção é ativada caso o usuário forneça dados de ao menos dois capilares com diâmetros distintos ($D_i$, portanto raios $R_i$ distintos) e comprimento comum ($L$). A metodologia consiste em:
-
-\begin{enumerate}
-    \item Para cada capilar, obter pares de dados ($\tau_w, \dot{\gamma}_{aw}$). A tensão $\tau_w$ pode ser proveniente dos dados corrigidos por Bagley (Seção 4), caso essa correção também tenha sido ativada; caso contrário, os valores diretos de $\tau_w$ são utilizados.
-    \item Definir um conjunto de valores alvo para a tensão de cisalhamento na parede ($\tau_{w,k}$).
-    \item Para cada $\tau_{w,k}$ alvo:
-    \begin{itemize}
-        \item Interpolar o valor de $\dot{\gamma}_{aw}$ correspondente para cada capilar $i$ (com raio $R_i$).
-        \item Se houver valores de $\dot{\gamma}_{aw}$ para pelo menos dois raios $R_i$ distintos, realizar um ajuste linear da forma:
-            \begin{equation} \dot{\gamma}_{aw}(R_i) = \dot{\gamma}_{s,f,k} + C_k \left( \frac{1}{R_i} \right) \end{equation}
-        \item O \textbf{intercepto} da regressão fornece $\dot{\gamma}_{s,f,k}$ (a taxa de cisalhamento do fluido para o $\tau_{w,k}$ considerado).
-        \item A \textbf{inclinação} da regressão fornece $C_k$ (o coeficiente de deslizamento para o $\tau_{w,k}$ considerado).
-    \end{itemize}
-    \item São aceitos apenas os pontos onde a regressão é bem definida (ex: intercepto fisicamente coerente, $R^2$ satisfatório).
-    \item Ao final, a lista de pares corrigidos ($\tau_{w,k}, \dot{\gamma}_{s,f,k}$) é salva para análise e visualização.
-\end{enumerate}
-
-Quando a regressão não é possível (por exemplo, devido a dados insuficientes ou inconsistentes para um determinado $\tau_{w,k}$), esse ponto específico da correção de Mooney é descartado, e o processamento para os demais pontos ou correções prossegue com os dados disponíveis.
-
-
-
-\section*{6. Correção de Weissenberg–Rabinowitsch}
-
-A equação da taxa de cisalhamento aparente (Seção 3.4) assume que o fluido apresenta um perfil de velocidade parabólico, típico de fluidos newtonianos. No entanto, pastas cerâmicas e materiais reológicos complexos exibem perfis não parabólicos devido à sua viscosidade dependente da taxa de deformação. Isso significa que $\dot{\gamma}_{aw}$ (ou $\dot{\gamma}_{s,f}$ após a correção de Mooney) \textbf{não representa corretamente} a taxa real de cisalhamento na parede do capilar para fluidos não newtonianos.
-
-A correção de Weissenberg–Rabinowitsch (W-R) ajusta esse erro, fornecendo uma estimativa mais realista da taxa de cisalhamento na parede, $\dot{\gamma}_w$, baseada no comportamento não newtoniano do material.
-Para a aplicação da correção de Rabinowitsch e obtenção da taxa de cisalhamento verdadeira na parede \( \dot{\gamma}_w \), é necessário estimar o índice de comportamento aparente \( n' \), obtido por regressão linear da relação logarítmica entre tensão e taxa de cisalhamento:
-
-\begin{equation}
-\log \tau_w = \log K' + n' \log \dot{\gamma}_{aw}
-\end{equation}
-
-O valor de \( n' \) é então utilizado na expressão:
-
-\begin{equation}
-\dot{\gamma}_w = \frac{3n' + 1}{4n'} \dot{\gamma}_{aw}
-\end{equation}
-
-Essa abordagem é recomendada quando não se conhece a equação constitutiva do fluido e permite uma correção geral da taxa de deformação.
-
-
-\subsection*{6.1 Fundamento Teórico}
-
-Para fluidos não newtonianos, o perfil de velocidade no capilar não é simétrico ou parabólico. Ele se achata (pseudoplásticos) ou se afunila (dilatantes), alterando a distribuição da velocidade radial e, consequentemente, a taxa de cisalhamento na parede.
-
-A correção W-R introduz um fator de ajuste baseado no \textbf{índice de comportamento de fluxo local}, $n'$, calculado a partir da relação entre tensão de cisalhamento e a taxa de cisalhamento efetiva antes desta correção (que pode ser $\dot{\gamma}_{aw}$ ou $\dot{\gamma}_{s,f}$) em escala logarítmica:
-
-\begin{equation}
-n' = \frac{d \ln \tau_w}{d \ln \dot{\gamma}_{\text{antes de W-R}}}
-\end{equation}
-
-\textbf{Interpretação:}
-\begin{itemize}[leftmargin=1.5em]
-  \item Se $n' = 1$, o fluido é newtoniano (sem correção significativa);
-  \item Se $n' < 1$, o fluido é pseudoplástico (tende a se afinar com o cisalhamento);
-  \item Se $n' > 1$, o fluido é dilatante (tende a engrossar com o cisalhamento).
-\end{itemize}
-
-\subsection*{6.2 Equação de Correção da Taxa de Cisalhamento}
-\begin{equation}
-\dot{\gamma}_w = \frac{3n' + 1}{4n'} \cdot \dot{\gamma}_{\text{antes de W-R}} \quad \left[ \si{s^{-1}} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\dot{\gamma}_w$ – Taxa de cisalhamento real na parede (\si{s^{-1}})
-  \item $\dot{\gamma}_{\text{antes de W-R}}$ – Taxa de cisalhamento aparente ou corrigida por Mooney (\si{s^{-1}})
-  \item $n'$ – Índice de comportamento de fluxo local (adimensional)
-\end{itemize}
-
-\textbf{Finalidade:} Corrigir a deformação medida levando em conta a forma real do perfil de velocidade no escoamento capilar. Essa taxa corrigida é usada diretamente para:
-\begin{itemize}[leftmargin=1.5em]
-  \item Calcular a \textbf{viscosidade verdadeira} (Seção 7.2);
-  \item Ajustar os \textbf{modelos reológicos} (Seção 8);
-  \item Analisar se o fluido tem comportamento pseudoplástico, dilatante ou aproximado de newtoniano.
-\end{itemize}
-
-\subsection*{6.3 Como o Script Aplica a Correção}
-
-O script realiza a correção W-R da seguinte maneira:
-
-\begin{enumerate}[leftmargin=2em]
-  \item Recebe os pares $(\tau_w, \dot{\gamma}_{\text{base}})$, onde $\dot{\gamma}_{\text{base}}$ são os dados de taxa de cisalhamento após correções anteriores (Bagley e/ou Mooney, se aplicadas) ou os dados brutos de $\dot{\gamma}_{aw}$;
-  \item Aplica interpolação ou suavização log-log (dependendo do número de pontos disponíveis);
-  \item Calcula $n'$ como a inclinação da curva $\ln(\tau_w)$ versus $\ln(\dot{\gamma}_{\text{base}})$;
-  \item Aplica a fórmula de correção para obter $\dot{\gamma}_w$;
-  \item Armazena os pares $(\tau_w, \dot{\gamma}_w)$ para uso em etapas posteriores.
-\end{enumerate}
-
-\textbf{Observações:}
-\begin{itemize}[leftmargin=1.5em]
-  \item O cálculo de $n'$ pode ser feito ponto a ponto (derivada numérica) ou globalmente (ajuste linear em escala log-log);
-  \item Se houver muitos pontos experimentais, o script opta por um modelo suavizado para evitar instabilidades;
-  \item Para garantir precisão, o script evita regiões com taxas de cisalhamento muito baixas (onde erros relativos são maiores).
-\end{itemize}
-
-\subsection*{6.4 Impacto Prático da Correção}
-
-\textbf{Sem correção:} A viscosidade seria calculada com base em uma taxa de cisalhamento não representativa do comportamento não newtoniano, levando a:
-\begin{itemize}[leftmargin=1.5em]
-  \item Subestimação da viscosidade em fluidos dilatantes;
-  \item Superestimação em fluidos pseudoplásticos;
-  \item Parâmetros incorretos nos modelos ajustados.
-\end{itemize}
-
-\textbf{Com correção:} O script fornece uma descrição realista do comportamento do fluido, refletindo a física do escoamento em um tubo capilar, e possibilita a aplicação rigorosa de modelos não newtonianos.
-
-\textbf{Resultado:} Os dados $(\tau_w, \dot{\gamma}_w)$ corrigidos são agora representações confiáveis do comportamento reológico do material e base para as próximas análises quantitativas.
-
-
-\section*{7. Viscosidades}
-
-A viscosidade é uma das propriedades mais fundamentais na reologia: ela quantifica a resistência interna de um fluido ao escoamento. No entanto, para fluidos não newtonianos, essa resistência depende da taxa de cisalhamento. Por isso, distinguimos dois conceitos:
-
-\begin{itemize}[leftmargin=1.5em]
-  \item \textbf{Viscosidade Aparente} – Calculada com base na taxa de cisalhamento aparente ($\dot{\gamma}_{aw}$) e na tensão correspondente ($\tau_w$) sem considerar o perfil real do escoamento ou outras correções.
-  \item \textbf{Viscosidade Verdadeira} – Calculada após todas as correções aplicáveis (Bagley, Mooney, W-R), usando a taxa de cisalhamento real na parede ($\dot{\gamma}_w$) e a tensão de cisalhamento na parede corrigida ($\tau_w$), representando melhor o comportamento físico real do material.
-\end{itemize}
-
-\subsection*{7.1 Viscosidade Aparente}
-\begin{equation}
-\eta_a = \frac{\tau_w}{\dot{\gamma}_{aw}} \quad \left[ \si{Pa.s} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\eta_a$ – Viscosidade aparente (\si{Pa.s})
-  \item $\tau_w$ – Tensão de cisalhamento na parede (não corrigida por Bagley) (\si{Pa})
-  \item $\dot{\gamma}_{aw}$ – Taxa de cisalhamento aparente (não corrigida por Mooney ou W-R) (\si{s^{-1}})
-\end{itemize}
-
-Este valor representa a “resistência ao escoamento” calculada diretamente dos dados brutos (após conversão de unidades). Ela é útil como uma estimativa inicial e é amplamente utilizada na indústria para controle de qualidade. No entanto, não representa fielmente a viscosidade real quando o fluido é não newtoniano ou quando há efeitos de extremidade e deslizamento significativos.
-
-\vspace{1em}
-
-\subsection*{7.2 Viscosidade Verdadeira}
-\begin{equation}
-\eta = \frac{\tau_w}{\dot{\gamma}_w} \quad \left[ \si{Pa.s} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\eta$ – Viscosidade verdadeira (\si{Pa.s})
-  \item $\tau_w$ – Tensão de cisalhamento na parede (corrigida por Bagley, se aplicável) (\si{Pa})
-  \item $\dot{\gamma}_w$ – Taxa de cisalhamento real na parede (corrigida por Mooney e W-R, se aplicáveis) (\si{s^{-1}})
-\end{itemize}
-
-\textbf{Finalidade e Interpretação:}
-
-Esta equação fornece a viscosidade mais representativa do comportamento intrínseco do material. Ela é mais fiel à realidade, pois considera o verdadeiro perfil de velocidade no interior do capilar e remove artefatos experimentais. Essa viscosidade é usada para ajustar modelos reológicos e prever o comportamento do material em diferentes condições de escoamento.
-
-
-\begin{table}[h!]
-\centering
-\caption{Comparação entre viscosidade aparente e verdadeira}
-\begin{tabular}{@{}lll@{}}
-\toprule
-\textbf{Tipo} & \textbf{Base de Cálculo} & \textbf{Aplicação Principal} \\
-\midrule
-Aparente (\(\eta_a\)) & \(\tau_w\) (bruta), \(\dot{\gamma}_{aw}\) (bruta) & Controle rápido, estimativas iniciais \\
-Verdadeira (\(\eta\)) & \(\tau_w\) (corrigida), \(\dot{\gamma}_w\) (corrigida) & Modelagem, predição, análise científica \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-
-\section*{8. Modelos Reológicos Ajustados}
-
-Após corrigir os dados experimentais para obter pares $(\tau_w, \dot{\gamma}_w)$ confiáveis, ajustam-se modelos matemáticos para descrever o comportamento reológico do material. Esses modelos permitem representar a relação entre tensão e taxa de cisalhamento de maneira funcional, possibilitando previsões e comparações entre diferentes materiais, bem como estimar parâmetros reológicos que caracterizem o tipo de fluido, como viscosidade, tensão de escoamento e pseudoplasticidade. O script ajusta todos os modelos abaixo e seleciona o melhor com base no coeficiente de determinação ($R^2$).
-
-Os modelos reológicos foram ajustados por meio de regressão não linear utilizando o método de mínimos quadrados (via \texttt{curve\_fit}). A seleção do melhor modelo baseou-se no coeficiente de determinação $R^2$, obtido a partir da comparação entre os valores experimentais $\tau_w$ e os valores previstos pelos modelos. Apenas pontos com $\tau_w > 0$ e $\dot{\gamma}_w > 0$ foram considerados válidos para o ajuste.
-
 O comportamento reológico foi classificado com base no valor do expoente \( n \) ajustado no modelo de Lei da Potência ou Herschel-Bulkley. Os critérios utilizados foram:
 \begin{table}[h!]
 \centering
