@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Resultados dos Testes e Análises
+resultados_testes_reometro/
+resultados_analise_reologica/
+resultados_analise_estatistica/
+comparativo_analises/
+correcoes_bagley_mooney/
+curvas-fluxo-viscosidade/
+resultados_processados_interativo/
+
+# Arquivos Temporários e de Sistema
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+*.tmp
+
+# Backups
+*.backup_corrupted

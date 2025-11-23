@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-SCRIPT PARA CONTROLE DE REÔMETRO CAPILAR COM DOIS TRANSDUTORES DE PRESSÃO
-VERSÃO 3.0 - Suporte a Transdutor de Sistema (Pistão) e Transdutor de Pasta (Capilar)
+SCRIPT PARA CONTROLE DE REÔMETRO CAPILAR COM DUPLO TRANSDUTOR DE PRESSÃO
+VERSÃO 3.1 - Dual Sensor (Linha & Pasta) + Diagnóstico Delta P
 Autor: Bruno Egami (Modificado por Gemini)
-Data: 04/11/2025
+Data: 22/11/2025
 """
 
 import serial
@@ -27,23 +27,23 @@ SERIAL_PORT = None
 BAUD_RATE = 115200
 TIMEOUT_SERIAL = 2
 # [MODIFICADO] Arquivos de calibração separados
-CALIBRATION_FILE_SISTEMA = 'calibracao_reometro_sistema.json' # Sensor 1 (Original)
-CALIBRATION_FILE_PASTA = 'calibracao_reometro_pasta.json'     # Sensor 2 (Novo, 0-10 bar)
+CALIBRATION_FILE = 'calibracao_reometro_dual.json' 
 RESULTS_JSON_DIR = "resultados_testes_reometro"
 
-# --- CONFIGURAÇÕES DE GATILHO DE PRESSÃO (Baseado no Sensor de SISTEMA) ---
-PRESSURE_THRESHOLD_START = 0.15 # Pressão em [bar] para iniciar o cronômetro (lida do Sensor de Sistema)
-PRESSURE_THRESHOLD_STOP = 0.10  # Pressão em [bar] para parar o cronômetro (lida do Sensor de Sistema)
+# --- NOVAS CONFIGURAÇÕES DE GATILHO DE PRESSÃO ---
+PRESSURE_THRESHOLD_START = 0.15 # Pressão em [bar] para iniciar o cronômetro
+PRESSURE_THRESHOLD_STOP = 0.10  # Pressão em [bar] para parar o cronômetro
+DELTA_P_ALERTA_BAR = 2.0        # Diferença de pressão (Linha - Pasta) para alerta
 
-# --- [MODIFICADO] Variáveis Globais para Calibração (Sistema) ---
-g_calibracao_slope_sistema = None
-g_calibracao_intercept_sistema = None
-g_calibracao_concluida_sistema = False
+# --- Variáveis Globais para a Nova Calibração Linear (DUAL) ---
+# Sensor 1: Linha (Antigo Barril)
+g_calib_slope_linha = None
+g_calib_intercept_linha = None
+# Sensor 2: Pasta (Antigo Entrada)
+g_calib_slope_pasta = None
+g_calib_intercept_pasta = None
 
-# --- [NOVO] Variáveis Globais para Calibração (Pasta) ---
-g_calibracao_slope_pasta = None
-g_calibracao_intercept_pasta = None
-g_calibracao_concluida_pasta = False
+g_calibracao_concluida = False
 
 # --- Funções de Comunicação com Arduino (Adaptadas) ---
 
@@ -56,7 +56,6 @@ def conectar_arduino(port, baud):
             print(f"Conectado ao Arduino na porta {port}.")
             ser.flushInput()
             ser.flushOutput()
-            # Envia um comando PING para verificar se o firmware correto está rodando
             ser.write(b"PING\n")
             resposta = ser.readline().decode('utf-8', 'ignore').strip()
             if "ACK_PING_OK" in resposta:
@@ -70,12 +69,10 @@ def conectar_arduino(port, baud):
         print(f"Erro ao conectar em {port}: {e}")
         return None
 
-def ler_float_do_arduino(ser, comando_leitura="READ_VOLTAGE_SISTEMA", timeout_float=TIMEOUT_SERIAL):
+def ler_voltagens_do_arduino(ser, comando_leitura="READ_VOLTAGE", timeout_float=TIMEOUT_SERIAL):
     """
-    [MODIFICADO] Envia um comando específico para o Arduino e espera uma resposta float (tensão).
-    Comandos esperados do Arduino:
-    - "READ_VOLTAGE_SISTEMA" (Sensor 1)
-    - "READ_VOLTAGE_PASTA" (Sensor 2)
+    Envia um comando para o Arduino e espera uma resposta com DUAS tensões (V1;V2).
+    Retorna uma tupla (v1, v2) ou (None, None).
     """
     if ser and ser.isOpen():
         ser.write(comando_leitura.encode('utf-8') + b'\n')
@@ -87,14 +84,20 @@ def ler_float_do_arduino(ser, comando_leitura="READ_VOLTAGE_SISTEMA", timeout_fl
         if ser.in_waiting > 0:
             resposta_str = ser.readline().decode('utf-8', 'ignore').strip()
             try:
-                return float(resposta_str)
+                # Espera formato "V1;V2" ex: "0.004;0.002"
+                partes = resposta_str.split(';')
+                if len(partes) == 2:
+                    return float(partes[0]), float(partes[1])
+                else:
+                    # Fallback para firmware antigo (apenas 1 valor)
+                    val = float(resposta_str)
+                    return val, 0.0
             except (ValueError, TypeError):
-                # print(f"Erro: Resposta do Arduino ('{resposta_str}') não é um float válido.")
-                return None
-    return None
+                return None, None
+    return None, None
 
 def input_float_com_virgula(mensagem_prompt, permitir_vazio=False):
-    """Pede um número float ao usuário, aceitando ',' como decimal. Permite entrada vazia opcionalmente."""
+    """Pede um número float ao usuário, aceitando ',' como decimal."""
     while True:
         entrada = input(mensagem_prompt).strip()
         if permitir_vazio and entrada == "":
@@ -106,10 +109,86 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False):
         except Exception as e:
             print(f"Ocorreu um erro: {e}")
 
+# --- Funções de Validação (NOVO) ---
+
+def validar_ponto(p_linha, p_pasta, massa_g, duracao_s):
+    """
+    Valida dados coletados antes de salvar.
+    Retorna uma ação: 'accept', 'retry', 'skip', 'finish'
+    """
+    avisos = []
+    erros_criticos = []
+    
+    # Validações CRÍTICAS (bloqueiam salvamento)
+    if p_linha <= 0 or p_pasta <= 0:
+        erros_criticos.append(f"Pressão inválida/negativa: L={p_linha:.3f}, P={p_pasta:.3f}")
+    
+    if massa_g <= 0:
+        erros_criticos.append(f"Massa inválida: {massa_g:.3f}g")
+        
+    if duracao_s <= 0:
+        erros_criticos.append(f"Duração inválida: {duracao_s:.2f}s")
+    
+    # Validações de AVISO (permitem override)
+    delta_p = abs(p_linha - p_pasta)
+    if delta_p > 10:
+        avisos.append(f"Delta P muito alto: {delta_p:.2f} bar")
+    
+    if massa_g < 0.1:
+        avisos.append(f"Massa muito baixa: {massa_g:.3f}g")
+    
+    if massa_g > 500:
+        avisos.append(f"Massa muito alta: {massa_g:.3f}g")
+    
+    if duracao_s < 5:
+        avisos.append(f"Duração muito curta: {duracao_s:.1f}s")
+    
+    if delta_p > 5:
+        avisos.append(f"Delta P alto: {delta_p:.2f} bar")
+    
+    # Lógica de Retorno
+    if erros_criticos:
+        print("\n" + "!"*60)
+        print("❌ ERROS CRÍTICOS DETECTADOS:")
+        for erro in erros_criticos:
+            print(f"   • {erro}")
+        print("!"*60)
+        print("\nOpções:")
+        print("  1. Repetir coleta deste ponto")
+        print("  2. Pular para o próximo ponto (descarta dados)")
+        print("  3. Finalizar ensaio agora")
+        
+        while True:
+            escolha = input("\nEscolha (1/2/3): ").strip()
+            if escolha == '1': return 'retry'
+            if escolha == '2': return 'skip'
+            if escolha == '3': return 'finish'
+    
+    if avisos:
+        print("\n" + "="*60)
+        print("⚠️  AVISOS DETECTADOS:")
+        for aviso in avisos:
+            print(f"   • {aviso}")
+        print("="*60)
+        print("\nOpções:")
+        print("  1. Aceitar e salvar ponto")
+        print("  2. Repetir coleta deste ponto")
+        print("  3. Pular para o próximo ponto (descarta dados)")
+        print("  4. Finalizar ensaio agora")
+        
+        while True:
+            escolha = input("\nEscolha (1/2/3/4): ").strip()
+            if escolha == '1': return 'accept'
+            if escolha == '2': return 'retry'
+            if escolha == '3': return 'skip'
+            if escolha == '4': return 'finish'
+            
+    return 'accept'
+
 # --- Funções de Calibração ---
 
 def salvar_dados_calibracao_py(filepath, data):
-    """Salva os dados da calibração (slope, intercept) em um arquivo JSON."""
+    """Salva os dados da calibração em um arquivo JSON."""
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
@@ -117,177 +196,147 @@ def salvar_dados_calibracao_py(filepath, data):
     except IOError as e:
         print(f"Erro ao salvar o arquivo de calibração: {e}")
 
-# [MODIFICADO] Função para carregar Sensor 1 (Sistema)
-def carregar_calibracao_sistema(filepath):
-    """Carrega os parâmetros da calibração (Sistema) do arquivo JSON."""
-    global g_calibracao_slope_sistema, g_calibracao_intercept_sistema, g_calibracao_concluida_sistema
+def carregar_dados_calibracao_py(filepath):
+    """Carrega os parâmetros da calibração linear do arquivo JSON."""
+    global g_calib_slope_linha, g_calib_intercept_linha
+    global g_calib_slope_pasta, g_calib_intercept_pasta
+    global g_calibracao_concluida
+    
     if os.path.exists(filepath):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            if "slope" in data and "intercept" in data:
-                g_calibracao_slope_sistema = data["slope"]
-                g_calibracao_intercept_sistema = data["intercept"]
-                g_calibracao_concluida_sistema = True
-                print(f"Dados de calibração (Sistema) carregados de: {filepath}")
-                print(f"  -> Eq. Sistema: Pressão = {g_calibracao_slope_sistema:.4f} * Tensão + {g_calibracao_intercept_sistema:.4f}")
+            
+            # Tenta carregar formato novo (Dual)
+            if "linha" in data and "pasta" in data:
+                g_calib_slope_linha = data["linha"]["slope"]
+                g_calib_intercept_linha = data["linha"]["intercept"]
+                g_calib_slope_pasta = data["pasta"]["slope"]
+                g_calib_intercept_pasta = data["pasta"]["intercept"]
+                g_calibracao_concluida = True
+                print(f"Calibração DUAL carregada de: {filepath}")
+                return True
+            
+            # Fallback para formato antigo (Single) - aplica o mesmo para os dois ou avisa
+            elif "slope" in data and "intercept" in data:
+                print("AVISO: Arquivo de calibração antigo (sensor único) detectado.")
+                print("       Aplicando calibração antiga para AMBOS os sensores provisoriamente.")
+                g_calib_slope_linha = data["slope"]
+                g_calib_intercept_linha = data["intercept"]
+                g_calib_slope_pasta = data["slope"] # Assume igual
+                g_calib_intercept_pasta = data["intercept"]
+                g_calibracao_concluida = True
                 return True
             else:
-                print(f"ERRO: Arquivo '{filepath}' (Sistema) não contém 'slope' e 'intercept'.")
-                g_calibracao_concluida_sistema = False
+                print(f"ERRO: Formato inválido em '{filepath}'. Recalibre.")
+                g_calibracao_concluida = False
         except Exception as e:
-            print(f"Erro ao carregar o arquivo de calibração (Sistema): {e}")
-            g_calibracao_concluida_sistema = False
+            print(f"Erro ao carregar calibração: {e}")
+            g_calibracao_concluida = False
     else:
-        print(f"Arquivo de calibração (Sistema) '{filepath}' não encontrado. É necessário calibrar.")
-        g_calibracao_concluida_sistema = False
+        print(f"Arquivo '{filepath}' não encontrado. Calibração necessária.")
+        g_calibracao_concluida = False
     return False
 
-# [NOVO] Função para carregar Sensor 2 (Pasta)
-def carregar_calibracao_pasta(filepath):
-    """Carrega os parâmetros da calibração (Pasta) do arquivo JSON."""
-    global g_calibracao_slope_pasta, g_calibracao_intercept_pasta, g_calibracao_concluida_pasta
-    if os.path.exists(filepath):
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if "slope" in data and "intercept" in data:
-                g_calibracao_slope_pasta = data["slope"]
-                g_calibracao_intercept_pasta = data["intercept"]
-                g_calibracao_concluida_pasta = True
-                print(f"Dados de calibração (Pasta) carregados de: {filepath}")
-                print(f"  -> Eq. Pasta: Pressão = {g_calibracao_slope_pasta:.4f} * Tensão + {g_calibracao_intercept_pasta:.4f}")
-                return True
-            else:
-                print(f"ERRO: Arquivo '{filepath}' (Pasta) não contém 'slope' e 'intercept'.")
-                g_calibracao_concluida_pasta = False
-        except Exception as e:
-            print(f"Erro ao carregar o arquivo de calibração (Pasta): {e}")
-            g_calibracao_concluida_pasta = False
-    else:
-        print(f"Arquivo de calibração (Pasta) '{filepath}' não encontrado. É necessário calibrar.")
-        g_calibracao_concluida_pasta = False
-    return False
-
-# [NOVO] Função genérica para realizar calibração interativa
-def realizar_calibracao_interativa_generica(ser, nome_sensor, comando_arduino, arquivo_calibracao):
-    """Guia o usuário através de uma calibração linear de 2 pontos para um sensor específico."""
+def realizar_calibracao_interativa_py(ser):
+    """Guia o usuário através de uma calibração linear de 2 pontos para AMBOS os sensores."""
+    global g_calib_slope_linha, g_calib_intercept_linha
+    global g_calib_slope_pasta, g_calib_intercept_pasta
+    global g_calibracao_concluida
     
     print("\n" + "="*60)
-    print(f"ASSISTENTE DE CALIBRAÇÃO DO TRANSDUTOR: {nome_sensor.upper()}")
+    print("ASSISTENTE DE CALIBRAÇÃO DUAL (LINHA & PASTA)")
     print("="*60)
+    print("Este processo calibrará os dois sensores simultaneamente.")
     
     # --- Ponto 1: Zero Pressão ---
-    input(f"\nPasso 1 ({nome_sensor}): Despressurize o sistema e pressione ENTER para ler a tensão de base (0 bar)...")
+    input("\nPasso 1: Despressurize o sistema (0 bar) e pressione ENTER...")
     
-    leituras_p1 = [ler_float_do_arduino(ser, comando_arduino) for _ in range(5)]
-    leituras_p1 = [v for v in leituras_p1 if v is not None]
+    v1_list, v2_list = [], []
+    for _ in range(5):
+        v1, v2 = ler_voltagens_do_arduino(ser)
+        if v1 is not None:
+            v1_list.append(v1); v2_list.append(v2)
+        time.sleep(0.1)
     
-    if not leituras_p1:
-        print("ERRO: Não foi possível ler a tensão do Arduino. Verifique a conexão. Abortando.")
-        return False
+    if not v1_list:
+        print("ERRO: Falha na leitura do Arduino."); return
         
-    tensao_p1 = np.mean(leituras_p1)
-    pressao_p1 = 0.0
-    print(f"  -> Tensão média a {pressao_p1:.1f} bar: {tensao_p1:.4f} V")
+    v1_p1 = np.mean(v1_list)
+    v2_p1 = np.mean(v2_list)
+    p_p1 = 0.0
+    print(f"  -> Zero (0 bar): V_Linha={v1_p1:.4f}V, V_Pasta={v2_p1:.4f}V")
 
     # --- Ponto 2: Pressão Conhecida ---
-    pressao_p2 = 0.0
-    while pressao_p2 <= 0:
-        # [NOVO] Adicionada sugestão para o sensor de pasta (0-10 bar)
-        sugestao = "(ex: 5.0)" if nome_sensor == "Pasta" else "(ex: 50.0)"
-        pressao_p2 = input_float_com_virgula(f"\nPasso 2 ({nome_sensor}): Aplique uma pressão conhecida {sugestao} e digite o valor em [bar]: ")
-        if pressao_p2 is None or pressao_p2 <= 0:
-             print("  A pressão deve ser um número maior que zero.")
+    p_p2 = 0.0
+    while p_p2 <= 0:
+        p_p2 = input_float_com_virgula("\nPasso 2: Aplique uma pressão conhecida (ex: 5.0 bar): ")
+        if p_p2 is None or p_p2 <= 0: print("  Valor deve ser > 0.")
             
-    input(f"Pressione ENTER para ler a tensão correspondente a {pressao_p2:.2f} bar...")
+    input(f"Pressione ENTER para ler as tensões a {p_p2:.2f} bar...")
     
-    leituras_p2 = [ler_float_do_arduino(ser, comando_arduino) for _ in range(5)]
-    leituras_p2 = [v for v in leituras_p2 if v is not None]
+    v1_list, v2_list = [], []
+    for _ in range(5):
+        v1, v2 = ler_voltagens_do_arduino(ser)
+        if v1 is not None:
+            v1_list.append(v1); v2_list.append(v2)
+        time.sleep(0.1)
 
-    if not leituras_p2:
-        print("ERRO: Não foi possível ler a tensão do Arduino. Abortando.")
-        return False
+    if not v1_list:
+        print("ERRO: Falha na leitura."); return
         
-    tensao_p2 = np.mean(leituras_p2)
-    print(f"  -> Tensão média a {pressao_p2:.2f} bar: {tensao_p2:.4f} V")
+    v1_p2 = np.mean(v1_list)
+    v2_p2 = np.mean(v2_list)
+    print(f"  -> Alta ({p_p2:.2f} bar): V_Linha={v1_p2:.4f}V, V_Pasta={v2_p2:.4f}V")
 
-    # --- Cálculo dos Parâmetros da Reta ---
-    if abs(tensao_p2 - tensao_p1) < 0.01: 
-        print("\nERRO DE CALIBRAÇÃO: A variação de tensão é muito pequena.")
-        return False
+    # --- Cálculo ---
+    if abs(v1_p2 - v1_p1) < 0.01 or abs(v2_p2 - v2_p1) < 0.01:
+        print("\nERRO: Variação de tensão muito baixa em um dos sensores.")
+        if input("Deseja salvar mesmo assim? (s/n): ").lower() != 's': return
 
-    slope = (pressao_p2 - pressao_p1) / (tensao_p2 - tensao_p1)
-    intercept = pressao_p1 - slope * tensao_p1
-
-    print("\n" + "-"*20 + f" CALIBRAÇÃO {nome_sensor.upper()} CONCLUÍDA " + "-"*20)
-    print(f"Slope (a):     {slope:.4f} bar/V")
-    print(f"Intercept (b): {intercept:.4f} bar")
-    print(f"EQUAÇÃO FINAL: Pressão [bar] = {slope:.4f} * Tensão [V] + {intercept:.4f}")
-
-    # Salva no arquivo
-    dados_calibracao = {"slope": slope, "intercept": intercept, "units": "bar/V"}
-    salvar_dados_calibracao_py(arquivo_calibracao, dados_calibracao)
+    # Linha (Sensor 1)
+    slope_L = (p_p2 - p_p1) / (v1_p2 - v1_p1)
+    intercept_L = p_p1 - slope_L * v1_p1
     
-    # Recarrega os dados na memória
-    return True
+    # Pasta (Sensor 2)
+    slope_P = (p_p2 - p_p1) / (v2_p2 - v2_p1)
+    intercept_P = p_p1 - slope_P * v2_p1
 
-# [MODIFICADO] Wrapper para calibração do Sistema
-def realizar_calibracao_sistema(ser):
-    if realizar_calibracao_interativa_generica(ser, "Sistema", "READ_VOLTAGE_SISTEMA", CALIBRATION_FILE_SISTEMA):
-        carregar_calibracao_sistema(CALIBRATION_FILE_SISTEMA)
+    print("\n" + "-"*25 + " RESULTADOS " + "-"*25)
+    print(f"LINHA: P = {slope_L:.4f}*V + {intercept_L:.4f}")
+    print(f"PASTA: P = {slope_P:.4f}*V + {intercept_P:.4f}")
 
-# [NOVO] Wrapper para calibração da Pasta
-def realizar_calibracao_pasta(ser):
-    if realizar_calibracao_interativa_generica(ser, "Pasta", "READ_VOLTAGE_PASTA", CALIBRATION_FILE_PASTA):
-        carregar_calibracao_pasta(CALIBRATION_FILE_PASTA)
+    g_calib_slope_linha = slope_L; g_calib_intercept_linha = intercept_L
+    g_calib_slope_pasta = slope_P; g_calib_intercept_pasta = intercept_P
+    g_calibracao_concluida = True
+    
+    dados = {
+        "linha": {"slope": slope_L, "intercept": intercept_L},
+        "pasta": {"slope": slope_P, "intercept": intercept_P},
+        "data": datetime.now().strftime("%Y-%m-%d")
+    }
+    salvar_dados_calibracao_py(CALIBRATION_FILE, dados)
 
-# [MODIFICADO] Visualizar Sensor 1 (Sistema)
-def visualizar_calibracao_sistema():
-    """Mostra a calibração (Sistema) atualmente carregada."""
-    print("\n=== CALIBRAÇÃO ATUAL (SISTEMA) ===")
-    if g_calibracao_concluida_sistema:
-        print(f"  Slope (a):     {g_calibracao_slope_sistema:.4f} bar/V")
-        print(f"  Intercept (b): {g_calibracao_intercept_sistema:.4f} bar")
-        print(f"  Equação: Pressão = {g_calibracao_slope_sistema:.4f} * Tensão + {g_calibracao_intercept_sistema:.4f}")
+def visualizar_pontos_calibracao_py():
+    print("\n=== CALIBRAÇÃO DUAL ===")
+    if g_calibracao_concluida:
+        print(f"LINHA: {g_calib_slope_linha:.4f} * V + {g_calib_intercept_linha:.4f}")
+        print(f"PASTA: {g_calib_slope_pasta:.4f} * V + {g_calib_intercept_pasta:.4f}")
     else:
-        print("Nenhuma calibração (Sistema) válida carregada. Por favor, realize a calibração.")
+        print("Nenhuma calibração carregada.")
 
-# [NOVO] Visualizar Sensor 2 (Pasta)
-def visualizar_calibracao_pasta():
-    """Mostra a calibração (Pasta) atualmente carregada."""
-    print("\n=== CALIBRAÇÃO ATUAL (PASTA) ===")
-    if g_calibracao_concluida_pasta:
-        print(f"  Slope (a):     {g_calibracao_slope_pasta:.4f} bar/V")
-        print(f"  Intercept (b): {g_calibracao_intercept_pasta:.4f} bar")
-        print(f"  Equação: Pressão = {g_calibracao_slope_pasta:.4f} * Tensão + {g_calibracao_intercept_pasta:.4f}")
-    else:
-        print("Nenhuma calibração (Pasta) válida carregada. Por favor, realize a calibração.")
-
-# [MODIFICADO] Conversor Sensor 1 (Sistema)
-def converter_tensao_para_pressao_sistema(tensao_lida):
-    """Converte tensão (Sistema) para pressão usando a calibração carregada."""
-    if not g_calibracao_concluida_sistema or tensao_lida is None:
-        return 0.0 # Retorna 0 se não houver calibração ou tensão
+def converter_tensoes_para_pressoes(v1, v2):
+    """Converte V1 e V2 para P_Linha e P_Pasta."""
+    if not g_calibracao_concluida: return -1.0, -1.0
     
-    pressao = (g_calibracao_slope_sistema * tensao_lida) + g_calibracao_intercept_sistema
-    return max(pressao, 0) # Garante que a pressão nunca seja negativa
-
-# [NOVO] Conversor Sensor 2 (Pasta)
-def converter_tensao_para_pressao_pasta(tensao_lida):
-    """Converte tensão (Pasta) para pressão usando a calibração carregada."""
-    if not g_calibracao_concluida_pasta or tensao_lida is None:
-        return 0.0 # Retorna 0 se não houver calibração ou tensão
-    
-    # O sensor de 0-10 bar (0.5-4.5V) pode ter uma calibração diferente
-    pressao = (g_calibracao_slope_pasta * tensao_lida) + g_calibracao_intercept_pasta
-    return max(pressao, 0) # Garante que a pressão nunca seja negativa
+    p1 = (g_calib_slope_linha * v1) + g_calib_intercept_linha
+    p2 = (g_calib_slope_pasta * v2) + g_calib_intercept_pasta
+    return max(p1, 0), max(p2, 0)
 
 # --- Funções de Coleta e Salvamento ---
 
 def salvar_resultados_json_individual_py(data_bateria, json_filename=None):
     """Salva os dados completos de um ensaio em um arquivo JSON único."""
-    # (Esta função não precisa de modificação, pois salva o dict 'data_bateria' que conterá os novos dados)
     if not data_bateria or not data_bateria.get('testes'):
         print("Nenhum dado de teste para salvar.")
         return
@@ -297,158 +346,96 @@ def salvar_resultados_json_individual_py(data_bateria, json_filename=None):
 
     if json_filename:
         filename = os.path.join(RESULTS_JSON_DIR, json_filename)
-        print(f"\nCONTINUAÇÃO: Sobrescrevendo o arquivo existente: {json_filename}")
+        print(f"\nCONTINUAÇÃO: Atualizando: {json_filename}")
     else:
         base_filename = data_bateria.get('id_amostra') or 'resultado_teste'
         sane_basename = sanitize_filename(base_filename)
         timestamp_str_file = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(RESULTS_JSON_DIR, f"{sane_basename}_{timestamp_str_file}.json")
     
-    if not os.path.exists(RESULTS_JSON_DIR):
-        os.makedirs(RESULTS_JSON_DIR)
+    if not os.path.exists(RESULTS_JSON_DIR): os.makedirs(RESULTS_JSON_DIR)
         
     try:
-        # [MODIFICADO] Ordena pela pressão do SISTEMA
-        data_bateria['testes'] = sorted(data_bateria['testes'], key=lambda t: t.get('media_pressao_sistema_bar', 0))
+        # Ordena por pressão da LINHA (Sensor 1) como referência principal
+        data_bateria['testes'] = sorted(data_bateria['testes'], key=lambda t: t.get('media_pressao_linha_bar', 0))
         data_bateria["data_hora_ultima_coleta"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data_bateria, f, indent=4, ensure_ascii=False)
-        print(f"\nResultados do ensaio salvos/atualizados com sucesso em: {filename}")
+        print(f"\nSalvo em: {filename}")
     except IOError as e:
-        print(f"Erro ao salvar resultados em JSON: {e}")
+        print(f"Erro ao salvar JSON: {e}")
 
 def executar_ciclo_preview_e_reset(ser):
-    """
-    [MODIFICADO] Executa um ciclo de pré-visualização OBRIGATÓRIO.
-    Monitora a pressão do SISTEMA (> START) e espera o RESET (< STOP).
-    Exibe a pressão de AMBOS os sensores.
-    
-    Retorna True se o ciclo foi concluído e o sistema está pronto.
-    Retorna False se o usuário CANCELAR.
-    """
+    """Ciclo de condicionamento usando P.LINHA como gatilho."""
     print("\n" + "="*50)
-    print("--- CICLO DE PRÉ-VISUALIZAÇÃO (AJUSTE E CONDICIONAMENTO) ---")
-    print(f"1. APLICAR PRESSÃO (Gatilho no Sensor de Sistema > {PRESSURE_THRESHOLD_START:.2f} bar)")
-    print("   (Pressione 'c' e ENTER a qualquer momento para CANCELAR a medição.)")
+    print("--- CICLO DE PRÉ-VISUALIZAÇÃO ---")
+    print(f"1. APLICAR PRESSÃO (Linha > {PRESSURE_THRESHOLD_START:.2f} bar).")
+    print("   (Pressione 'c' para CANCELAR)")
     print("="*50)
     
-    start_time_preview = time.time()
     pressure_triggered = False
     
     while not pressure_triggered:
-        # [MODIFICADO] Ler ambos os sensores
-        tensao_sis = ler_float_do_arduino(ser, "READ_VOLTAGE_SISTEMA")
-        tensao_pas = ler_float_do_arduino(ser, "READ_VOLTAGE_PASTA")
-        
-        pressao_sis = converter_tensao_para_pressao_sistema(tensao_sis)
-        pressao_pas = converter_tensao_para_pressao_pasta(tensao_pas)
-        
-        # [MODIFICADO] Exibir ambos
-        print(f"  Sistema: {pressao_sis:.2f} bar | Pasta: {pressao_pas:.2f} bar (PREVIEW)   \r", end="")
-        
-        # Checagem de cancelamento
-        if WINDOWS_OS and msvcrt.kbhit():
-            char = msvcrt.getch()
-            if char.lower() == b'c':
-                 print("\nCiclo de Preview CANCELADO pelo usuário.")
-                 return False
-        
-        # [MODIFICADO] Gatilho baseado apenas no sensor de Sistema
-        if pressao_sis > PRESSURE_THRESHOLD_START:
-            start_time_preview = time.time()
-            pressure_triggered = True
-            print(f"\nCiclo INICIADO! (Início Sistema: {pressao_sis:.2f} bar | Pasta: {pressao_pas:.2f} bar)")
-            break
-        
+        v1, v2 = ler_voltagens_do_arduino(ser)
+        if v1 is not None:
+            p1, p2 = converter_tensoes_para_pressoes(v1, v2)
+            print(f"  P.Linha: {p1:.2f} | P.Pasta: {p2:.2f} bar   \r", end="")
+            
+            if WINDOWS_OS and msvcrt.kbhit():
+                if msvcrt.getch().lower() == b'c': return False
+                 
+            if p1 > PRESSURE_THRESHOLD_START:
+                pressure_triggered = True
+                print(f"\nCiclo INICIADO! (P.Linha: {p1:.2f} bar)")
+                break
         time.sleep(0.1)
     
-    if not pressure_triggered:
-        print("\nAVISO: Falha na detecção do início do ciclo de preview.")
-        return True # Permite continuar mesmo assim
-
-    # Fase 2: Espera pelo reset (alívio da pressão) - AUTOMÁTICO
-    print(f"2. ALIVIAR PRESSÃO (Gatilho no Sensor de Sistema < {PRESSURE_THRESHOLD_STOP:.2f} bar)")
-    
-    max_pressure_sis = 0
-    max_pressure_pas = 0
-    
+    print(f"2. ALIVIAR PRESSÃO (Linha < {PRESSURE_THRESHOLD_STOP:.2f} bar).")
+    max_p = 0
     while True:
-        tensao_sis = ler_float_do_arduino(ser, "READ_VOLTAGE_SISTEMA")
-        tensao_pas = ler_float_do_arduino(ser, "READ_VOLTAGE_PASTA")
-        
-        pressao_sis = converter_tensao_para_pressao_sistema(tensao_sis)
-        pressao_pas = converter_tensao_para_pressao_pasta(tensao_pas)
+        v1, v2 = ler_voltagens_do_arduino(ser)
+        if v1 is not None:
+            p1, p2 = converter_tensoes_para_pressoes(v1, v2)
+            max_p = max(max_p, p1)
+            print(f"  P.Linha: {p1:.2f} | P.Pasta: {p2:.2f} | Máx: {max_p:.2f}   \r", end="")
 
-        max_pressure_sis = max(max_pressure_sis, pressao_sis)
-        max_pressure_pas = max(max_pressure_pas, pressao_pas)
-        
-        # [MODIFICADO] Exibir ambos
-        print(f"  Sis: {pressao_sis:.2f} (Máx {max_pressure_sis:.2f}) | Pas: {pressao_pas:.2f} (Máx {max_pressure_pas:.2f})   \r", end="")
-
-        # [MODIFICADO] Gatilho baseado apenas no sensor de Sistema
-        if pressao_sis < PRESSURE_THRESHOLD_STOP:
-            print(f"\n[OK] Pressão de repouso (Sistema) atingida. Início do ponto de MEDIÇÃO REAL.")
-            return True # Condicionamento concluído
-        
+            if p1 < PRESSURE_THRESHOLD_STOP:
+                print(f"\n[OK] Repouso atingido. PRONTO PARA MEDIR.")
+                return True
         time.sleep(0.1)
 
 
 def realizar_coleta_de_teste_py(ser, data_bateria=None, json_filename=None):
-    """[MODIFICADO] Função principal para guiar o usuário na coleta de dados,
-       lendo ambos os transdutores."""
-    
+    """Função principal de coleta."""
     is_continuation = data_bateria is not None
     
-    # [MODIFICADO] Verifica ambas as calibrações
-    if not g_calibracao_concluida_sistema or not g_calibracao_concluida_pasta:
-        print("\nERRO: É necessário realizar ou carregar a calibração de AMBOS os sensores (Sistema e Pasta).")
-        visualizar_calibracao_sistema()
-        visualizar_calibracao_pasta()
+    if not g_calibracao_concluida:
+        print("\nERRO: Calibração necessária.")
         return
 
     print("\n" + "="*60)
     if is_continuation:
         print(f"CONTINUANDO ENSAIO: {json_filename}")
-        print(f"Amostra: {data_bateria.get('id_amostra', 'N/A')}")
-        
-        # [MODIFICADO] Ordena pela pressão do SISTEMA
-        data_bateria['testes'] = sorted(data_bateria['testes'], key=lambda t: t.get('media_pressao_sistema_bar', 0))
+        # Ordena e mostra últimos pontos
+        data_bateria['testes'] = sorted(data_bateria['testes'], key=lambda t: t.get('media_pressao_linha_bar', 0))
         num_pontos_existentes = len(data_bateria['testes'])
         print(f"Pontos existentes: {num_pontos_existentes}")
-
-        if num_pontos_existentes > 0:
-            print("\nÚLTIMOS PONTOS REGISTRADOS (para referência):")
-            pontos_recentes = data_bateria['testes'][-min(3, num_pontos_existentes):]
-            # [MODIFICADO] Exibe pressão do Sistema e da Pasta
-            print(f"{'Ponto':<6} | {'P. Sistema (bar)':<17} | {'P. Pasta (bar)':<15} | {'Massa (g)':<10} | {'Tempo (s)':<10}")
-            print("-" * 62)
-            for p in pontos_recentes:
-                pressao_sis = p.get('media_pressao_sistema_bar', 0.0)
-                pressao_pas = p.get('media_pressao_pasta_bar', 0.0) # [NOVO]
-                massa = p.get('massa_g_registrada', 0.0)
-                tempo = p.get('duracao_real_s', 0.0)
-                print(f"{p.get('ponto_n', 'N/A'):<6} | {pressao_sis:<17.3f} | {pressao_pas:<15.3f} | {massa:<10.3f} | {tempo:<10.2f}")
-            print("-" * 62)
-
         num_ponto_inicial = num_pontos_existentes + 1
-        
     else:
-        print("ASSISTENTE DE NOVA COLETA DE DADOS REOLÓGICOS")
+        print("NOVA COLETA DE DADOS REOLÓGICOS")
         num_ponto_inicial = 1
     print("="*60)
     
     if not is_continuation:
-        id_amostra = input("ID ou nome da amostra: ")
-        descricao = input("Descrição breve do ensaio: ")
-        
-        D_cap_mm = input_float_com_virgula("Diâmetro do capilar [mm]: ")
-        L_cap_mm = input_float_com_virgula("Comprimento do capilar [mm]: ")
-        rho_g_cm3 = input_float_com_virgula("Densidade da pasta [g/cm³]: ")
+        id_amostra = input("ID da amostra: ")
+        descricao = input("Descrição: ")
+        D_cap_mm = input_float_com_virgula("D capilar [mm]: ")
+        L_cap_mm = input_float_com_virgula("L capilar [mm]: ")
+        rho_g_cm3 = input_float_com_virgula("Densidade [g/cm³]: ")
 
         if any(p is None or p <= 0 for p in [D_cap_mm, L_cap_mm, rho_g_cm3]):
-             print("ERRO: Parâmetros geométricos ou densidade devem ser números positivos. Abortando coleta.")
-             return
+             print("ERRO: Parâmetros inválidos."); return
 
         data_bateria = {
             "id_amostra": id_amostra,
@@ -457,131 +444,119 @@ def realizar_coleta_de_teste_py(ser, data_bateria=None, json_filename=None):
             "diametro_capilar_mm": D_cap_mm,
             "comprimento_capilar_mm": L_cap_mm,
             "densidade_pasta_g_cm3": rho_g_cm3,
-            # [MODIFICADO] Salva ambas as calibrações
-            "calibracao_aplicada_sistema": {
-                "slope": g_calibracao_slope_sistema,
-                "intercept": g_calibracao_intercept_sistema
-            },
-            "calibracao_aplicada_pasta": {
-                "slope": g_calibracao_slope_pasta,
-                "intercept": g_calibracao_intercept_pasta
+            "calibracao_aplicada": {
+                "linha": {"slope": g_calib_slope_linha, "intercept": g_calib_intercept_linha},
+                "pasta": {"slope": g_calib_slope_pasta, "intercept": g_calib_intercept_pasta}
             },
             "testes": []
         }
 
     num_ponto = num_ponto_inicial
     
-    # --- Loop de Coleta de Pontos ---
     while True:
-        print("\n" + "-"*20 + f" PONTO DE MEDIÇÃO Nº {num_ponto} " + "-"*20)
+        print("\n" + "-"*20 + f" PONTO Nº {num_ponto} " + "-"*20)
         
-        # Etapa 0: PRÉ-MEDIÇÃO OBRIGATÓRIA (Preview/Condicionamento)
-        if not executar_ciclo_preview_e_reset(ser):
-             break 
-        
-        # Etapa 1: Aguardando o início do ensaio REAL (Gatilho no Sensor de Sistema)
-        print(f"INICIANDO MEDIÇÃO. Aguardando pressão (Sistema) > {PRESSURE_THRESHOLD_START:.2f} bar...")
-        
-        start_time = time.time()
-        pressure_triggered = False
-
-        while not pressure_triggered:
-            tensao_sis = ler_float_do_arduino(ser, "READ_VOLTAGE_SISTEMA")
-            tensao_pas = ler_float_do_arduino(ser, "READ_VOLTAGE_PASTA")
-            
-            pressao_sis = converter_tensao_para_pressao_sistema(tensao_sis)
-            pressao_pas = converter_tensao_para_pressao_pasta(tensao_pas)
-
-            # [MODIFICADO] Exibe ambos
-            print(f"  Sistema: {pressao_sis:.2f} bar | Pasta: {pressao_pas:.2f} bar   \r", end="")
-            
-            # [MODIFICADO] Gatilho baseado apenas no sensor de Sistema
-            if pressao_sis > PRESSURE_THRESHOLD_START:
-                start_time = time.time()
-                pressure_triggered = True
-                print(f"\nINÍCIO DO ENSAIO! Cronômetro iniciado. (Sis: {pressao_sis:.2f} bar | Pas: {pressao_pas:.2f} bar)")
-                break
-            time.sleep(0.1)
-        
-        if not pressure_triggered:
-             print("\nERRO: Falha ao detectar o início do ensaio.")
-             continue
-
-
-        # Etapa 2: Ensaio em andamento
-        print(f"Ensaio em andamento... Alivie a pressão (Sistema) < {PRESSURE_THRESHOLD_STOP:.2f} bar para finalizar.")
-        
-        # [MODIFICADO] Listas para ambos os sensores
-        leituras_pressao_sistema_ensaio = []
-        leituras_tensao_sistema_ensaio = []
-        leituras_pressao_pasta_ensaio = []
-        leituras_tensao_pasta_ensaio = []
-        
+        # Loop de repetição do ponto (caso o usuário escolha 'retry')
         while True:
-            tensao_sis = ler_float_do_arduino(ser, "READ_VOLTAGE_SISTEMA")
-            tensao_pas = ler_float_do_arduino(ser, "READ_VOLTAGE_PASTA")
-
-            if tensao_sis is not None and tensao_pas is not None:
-                pressao_sis = converter_tensao_para_pressao_sistema(tensao_sis)
-                pressao_pas = converter_tensao_para_pressao_pasta(tensao_pas)
-                
-                leituras_pressao_sistema_ensaio.append(pressao_sis)
-                leituras_tensao_sistema_ensaio.append(tensao_sis)
-                leituras_pressao_pasta_ensaio.append(pressao_pas)
-                leituras_tensao_pasta_ensaio.append(tensao_pas)
-                
-                tempo_decorrido = time.time() - start_time
-                # [MODIFICADO] Exibe ambos
-                print(f"  Sis: {pressao_sis:.2f} bar | Pas: {pressao_pas:.2f} bar | T: {tempo_decorrido:.1f} s   \r", end="")
-
-                # [MODIFICADO] Gatilho baseado apenas no sensor de Sistema
-                if pressao_sis < PRESSURE_THRESHOLD_STOP:
-                    end_time = time.time()
-                    print(f"\nFIM DO ENSAIO! (Última Sis: {pressao_sis:.2f} bar | Pas: {pressao_pas:.2f} bar)")
-                    break
-            time.sleep(0.1)
+            if not executar_ciclo_preview_e_reset(ser): 
+                return # Sai da função se cancelar no preview
             
-        # Etapa 3: Coleta da massa e cálculo dos resultados
-        duracao_s = end_time - start_time
-        print(f"  -> Tempo total do ensaio registrado: {duracao_s:.2f} segundos.")
-        
-        massa_g = input_float_com_virgula("Digite a massa extrudada durante o ensaio [g]: ")
-        
-        if massa_g is None or massa_g < 0:
-             print("ERRO: Massa inválida ou negativa. Ponto descartado.")
-             continue
-
-        # [MODIFICADO] Calcula médias para ambos
-        pressao_media_sistema_ensaio = np.mean(leituras_pressao_sistema_ensaio) if leituras_pressao_sistema_ensaio else 0
-        tensao_media_sistema_ensaio = np.mean(leituras_tensao_sistema_ensaio) if leituras_tensao_sistema_ensaio else 0
-        pressao_media_pasta_ensaio = np.mean(leituras_pressao_pasta_ensaio) if leituras_pressao_pasta_ensaio else 0
-        tensao_media_pasta_ensaio = np.mean(leituras_tensao_pasta_ensaio) if leituras_tensao_pasta_ensaio else 0
-        
-        print(f"  -> Pressão MÉDIA (Sistema): {pressao_media_sistema_ensaio:.3f} bar")
-        print(f"  -> Pressão MÉDIA (Pasta):   {pressao_media_pasta_ensaio:.3f} bar")
-        
-        ponto_atual = {
-            "ponto_n": num_ponto,
-            "massa_g_registrada": massa_g, 
-            "duracao_real_s": duracao_s,
-            # [MODIFICADO] Chaves atualizadas
-            "media_tensao_sistema_V": tensao_media_sistema_ensaio,
-            "media_pressao_sistema_bar": pressao_media_sistema_ensaio,
-            "media_tensao_pasta_V": tensao_media_pasta_ensaio,
-            "media_pressao_pasta_bar": pressao_media_pasta_ensaio
-        }
-        data_bateria["testes"].append(ponto_atual)
-        
-        if input("\nDeseja adicionar outro ponto de medição? (s/n): ").lower() != 's':
-            break
+            print(f"INICIANDO MEDIÇÃO REAL (Aguardando P.Linha > {PRESSURE_THRESHOLD_START:.2f} bar)...")
             
+            start_time = time.time()
+            pressure_triggered = False
+
+            while not pressure_triggered:
+                v1, v2 = ler_voltagens_do_arduino(ser)
+                if v1 is not None:
+                    p1, p2 = converter_tensoes_para_pressoes(v1, v2)
+                    print(f"  P.Linha: {p1:.2f} | P.Pasta: {p2:.2f}   \r", end="")
+                    if p1 > PRESSURE_THRESHOLD_START:
+                        start_time = time.time()
+                        pressure_triggered = True
+                        print(f"\nINÍCIO! Cronômetro rodando.")
+                        break
+                time.sleep(0.1)
+            
+            if not pressure_triggered: continue
+
+            print(f"MEDINDO... (Parar quando P.Linha < {PRESSURE_THRESHOLD_STOP:.2f} bar)")
+            leituras_p1, leituras_p2 = [], []
+            leituras_v1, leituras_v2 = [], []
+            
+            while True:
+                v1, v2 = ler_voltagens_do_arduino(ser)
+                if v1 is not None:
+                    p1, p2 = converter_tensoes_para_pressoes(v1, v2)
+                    leituras_p1.append(p1); leituras_p2.append(p2)
+                    leituras_v1.append(v1); leituras_v2.append(v2)
+                    
+                    t_dec = time.time() - start_time
+                    
+                    # DIAGNÓSTICO DELTA P
+                    delta_p = p1 - p2
+                    diag_msg = ""
+                    if delta_p > DELTA_P_ALERTA_BAR:
+                        diag_msg = f" [ALERTA: Delta P Alto! {delta_p:.1f} bar]"
+                    
+                    print(f"  L: {p1:.2f} | P: {p2:.2f} | t: {t_dec:.1f}s{diag_msg}   \r", end="")
+
+                    if p1 < PRESSURE_THRESHOLD_STOP:
+                        end_time = time.time()
+                        print(f"\nFIM! (Última P.Linha: {p1:.2f} bar)")
+                        break
+                time.sleep(0.1)
+                
+            duracao_s = end_time - start_time
+            print(f"  -> Duração: {duracao_s:.2f} s")
+            
+            massa_g = input_float_com_virgula("Massa extrudada [g]: ")
+            if massa_g is None: massa_g = 0.0 # Trata cancelamento como 0 para validar
+
+            p1_med = np.mean(leituras_p1) if leituras_p1 else 0
+            p2_med = np.mean(leituras_p2) if leituras_p2 else 0
+            v1_med = np.mean(leituras_v1) if leituras_v1 else 0
+            v2_med = np.mean(leituras_v2) if leituras_v2 else 0
+            
+            print(f"  -> Médias: P.Linha={p1_med:.3f} bar, P.Pasta={p2_med:.3f} bar")
+            
+            # --- VALIDAÇÃO ---
+            acao = validar_ponto(p1_med, p2_med, massa_g, duracao_s)
+            
+            if acao == 'retry':
+                print("\n--> Reiniciando coleta deste ponto...")
+                continue # Volta para o início do loop 'while True' interno (preview)
+            elif acao == 'skip':
+                print("\n--> Ponto pulado. Dados descartados.")
+                break # Sai do loop interno, vai para o próximo ponto
+            elif acao == 'finish':
+                print("\n--> Finalizando ensaio e salvando...")
+                salvar_resultados_json_individual_py(data_bateria, json_filename)
+                return
+            elif acao == 'accept':
+                # Salva o ponto
+                ponto_atual = {
+                    "ponto_n": num_ponto,
+                    "massa_g_registrada": massa_g, 
+                    "duracao_real_s": duracao_s,
+                    "media_tensao_linha_V": v1_med,
+                    "media_tensao_pasta_V": v2_med,
+                    "media_pressao_linha_bar": p1_med,
+                    "media_pressao_pasta_bar": p2_med,
+                    "media_pressao_final_ponto_bar": p1_med 
+                }
+                data_bateria["testes"].append(ponto_atual)
+                print(f"--> Ponto {num_ponto} salvo com sucesso.")
+                break # Sai do loop interno, vai para o próximo ponto
+        
+        # Pergunta se quer continuar (se não tiver finalizado)
+        if input("\nAdicionar outro ponto? (s/n): ").lower() != 's': break
         num_ponto += 1
         
     salvar_resultados_json_individual_py(data_bateria, json_filename)
 
-
 def selecionar_json_existente(pasta_json):
-    """Lista todos os arquivos .json em uma pasta e permite selecionar um para continuação."""
+    """Lista JSONs para continuação."""
     print("\n" + "="*60)
     print("--- SELECIONAR ARQUIVO JSON PARA CONTINUIDADE ---")
     print("="*60)
@@ -589,204 +564,93 @@ def selecionar_json_existente(pasta_json):
         print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
         return None, None
         
-    arquivos_raw = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and not f.startswith('edit_') and os.path.isfile(os.path.join(pasta_json, f))], reverse=True)
+    arquivos_raw = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and not f.startswith('edit_')], reverse=True)
     
     if not arquivos_raw:
-        print(f"Nenhum arquivo .json 'raw' de teste encontrado na pasta '{pasta_json}'.")
-        return None, None
+        print(f"Nenhum arquivo encontrado."); return None, None
     
-    print("Ensaios disponíveis (do mais recente ao mais antigo):")
     for i, arq in enumerate(arquivos_raw):
         print(f"  {i+1}: {arq}")
     
     while True:
         try:
-            escolha_str = input("\nEscolha o NÚMERO do ensaio para continuar (ou '0' para cancelar): ").strip()
+            escolha_str = input("\nEscolha o NÚMERO (ou '0'): ").strip()
             if escolha_str == '0': return None, None
-            
             escolha_num = int(escolha_str)
             if 1 <= escolha_num <= len(arquivos_raw):
-                arquivo_selecionado = arquivos_raw[escolha_num - 1]
-                caminho_completo = os.path.join(pasta_json, arquivo_selecionado)
-                
-                with open(caminho_completo, 'r', encoding='utf-8') as f:
+                arq = arquivos_raw[escolha_num - 1]
+                with open(os.path.join(pasta_json, arq), 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                
-                print(f"  -> Selecionado: {arquivo_selecionado}")
-                print(f"  -> Amostra: {data.get('id_amostra', 'N/A')}")
-                print(f"  -> D/L: {data.get('diametro_capilar_mm', 'N/A')} mm / {data.get('comprimento_capilar_mm', 'N/A')} mm")
-                print(f"  -> Pontos existentes: {len(data.get('testes', []))}")
-                
-                # [NOVO] Verifica se o JSON antigo tem dados do sensor de pasta. Se não tiver, avisa.
-                if "calibracao_aplicada_pasta" not in data:
-                    print("\nAVISO: Este arquivo JSON é de um formato antigo (sem dados do sensor de pasta).")
-                    print("Os novos pontos incluirão dados da pasta, mas os antigos não.")
-                    # [NOVO] Adiciona chaves de calibração 'dummy' para compatibilidade
-                    data["calibracao_aplicada_pasta"] = {
-                        "slope": g_calibracao_slope_pasta,
-                        "intercept": g_calibracao_intercept_pasta
-                    }
-                
-                return data, arquivo_selecionado
-            else:
-                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_raw)}, ou '0'.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite um número.")
-        except Exception as e:
-            print(f"ERRO ao carregar o arquivo: {e}")
-            return None, None
+                return data, arq
+        except: pass
 
 def realizar_coleta_de_continuacao(ser, data_existente, nome_arquivo_existente):
-    """Função que gerencia o fluxo de Continuação."""
-    print("\n" + "="*60)
-    print("--- FLUXO DE CONTINUAÇÃO DE TESTE ---")
-    print("Prepara-se para o ciclo de condicionamento do primeiro novo ponto.")
-    print("="*60)
     realizar_coleta_de_teste_py(ser, data_bateria=data_existente, json_filename=nome_arquivo_existente)
-    
 
 def encontrar_e_conectar_arduino():
-    """Tenta encontrar e conectar ao Arduino automaticamente."""
-    print("Procurando portas seriais disponíveis...")
-    portas_disponiveis = serial.tools.list_ports.comports()
-    
-    if not portas_disponiveis:
-        print("Nenhuma porta serial foi encontrada no sistema.")
-        return None
-        
-    portas_promissoras = []
-    print("Portas encontradas:")
-    for porta in portas_disponiveis:
-        print(f"  - {porta.device}: {porta.description}")
-        if "USB" in porta.description.upper() or \
-           "ARDUINO" in porta.description.upper() or \
-           "CH340" in porta.description.upper():
-            portas_promissoras.append(porta)
-    
-    for porta in portas_promissoras:
-        print(f"\nTentando conectar na porta promissora: {porta.device}...")
-        ser = conectar_arduino(porta.device, BAUD_RATE)
-        if ser:
-            return ser
-            
-    for porta in portas_disponiveis:
-        if porta not in portas_promissoras:
-            print(f"\nTentando conectar na porta genérica: {porta.device}...")
-            ser = conectar_arduino(porta.device, BAUD_RATE)
-            if ser:
-                return ser
-                
+    print("Procurando Arduino...")
+    portas = serial.tools.list_ports.comports()
+    for p in portas:
+        if "USB" in p.description.upper() or "ARDUINO" in p.description.upper() or "CH340" in p.description.upper():
+            print(f"Tentando {p.device}...")
+            ser = conectar_arduino(p.device, BAUD_RATE)
+            if ser: return ser
     return None
 
-
-# --- Menu Principal e Execução ---
-
 def menu_principal_py(ser):
-    """[MODIFICADO] Exibe o menu principal e gerencia a interação com o usuário."""
     while True:
-        print("\n" + "="*20 + " MENU - CONTROLE REÔMETRO (2 SENSORES) " + "="*20)
-        print("1. INICIAR NOVA Coleta de Dados")
-        print("2. CONTINUAR Coleta de Dados (Adicionar Pontos)")
-        print("-" * 59)
-        print("3. Realizar Calibração (Sensor SISTEMA)")
-        print("3a. Realizar Calibração (Sensor PASTA)")
-        print("4. Visualizar Calibração (Sensor SISTEMA)")
-        print("4a. Visualizar Calibração (Sensor PASTA)")
-        print("5. Ler Pressões Imediatas (Ambos Sensores)")
+        print("\n" + "="*20 + " MENU REÔMETRO DUAL " + "="*20)
+        print("1. NOVA Coleta")
+        print("2. CONTINUAR Coleta")
+        print("3. CALIBRAR (Linha & Pasta)")
+        print("4. Ver Calibração")
+        print("5. Ler Pressões (Monitor)")
         print("0. Sair")
         
-        escolha = input("Digite sua opção: ").strip().lower()
+        escolha = input("Opção: ")
 
         if escolha == '1':
-            if ser:
-                realizar_coleta_de_teste_py(ser)
-            else:
-                print("Arduino não conectado. Não é possível iniciar a coleta.")
-        
+            if ser: realizar_coleta_de_teste_py(ser)
+            else: print("Sem conexão.")
         elif escolha == '2':
-            if not ser:
-                print("Arduino não conectado. Não é possível continuar a coleta.")
-                continue
-            
-            data_existente, nome_arquivo_existente = selecionar_json_existente(RESULTS_JSON_DIR)
-            if data_existente:
-                realizar_coleta_de_continuacao(ser, data_existente, nome_arquivo_existente)
-        
+            if ser:
+                data, nome = selecionar_json_existente(RESULTS_JSON_DIR)
+                if data: realizar_coleta_de_continuacao(ser, data, nome)
+            else: print("Sem conexão.")
         elif escolha == '3':
-            if ser:
-                realizar_calibracao_sistema(ser)
-            else:
-                print("Arduino não conectado. Não é possível calibrar.")
-
-        # [NOVO] Opção 3a
-        elif escolha == '3a':
-            if ser:
-                realizar_calibracao_pasta(ser)
-            else:
-                print("Arduino não conectado. Não é possível calibrar.")
-
+            if ser: realizar_calibracao_interativa_py(ser)
+            else: print("Sem conexão.")
         elif escolha == '4':
-            visualizar_calibracao_sistema()
-
-        # [NOVO] Opção 4a
-        elif escolha == '4a':
-            visualizar_calibracao_pasta()
-
+            visualizar_pontos_calibracao_py()
         elif escolha == '5':
-            # [MODIFICADO] Lê ambos os sensores
-            if ser and g_calibracao_concluida_sistema and g_calibracao_concluida_pasta:
+            if ser and g_calibracao_concluida:
                 try:
-                    print("\nLendo pressões imediatas... Pressione CTRL+C para parar.")
+                    print("\nCTRL+C para parar.")
                     while True:
-                        tensao_sis = ler_float_do_arduino(ser, "READ_VOLTAGE_SISTEMA")
-                        tensao_pas = ler_float_do_arduino(ser, "READ_VOLTAGE_PASTA")
-                        
-                        pressao_sis = converter_tensao_para_pressao_sistema(tensao_sis)
-                        pressao_pas = converter_tensao_para_pressao_pasta(tensao_pas)
-                        
-                        print(f"Sistema: {pressao_sis:6.2f} bar (T: {tensao_sis:.3f} V) | Pasta: {pressao_pas:6.2f} bar (T: {tensao_pas:.3f} V)   \r", end="")
+                        v1, v2 = ler_voltagens_do_arduino(ser)
+                        if v1 is not None:
+                            p1, p2 = converter_tensoes_para_pressoes(v1, v2)
+                            print(f"Linha: {p1:.2f} bar | Pasta: {p2:.2f} bar   \r", end="")
                         time.sleep(0.25)
-                except KeyboardInterrupt:
-                    print("\nLeitura imediata interrompida.")
-            elif not ser:
-                print("Arduino não conectado.")
-            else:
-                print("Calibração necessária para AMBOS os sensores (Sistema e Pasta).")
-                if not g_calibracao_concluida_sistema: print(" - Calibração do SISTEMA pendente.")
-                if not g_calibracao_concluida_pasta: print(" - Calibração da PASTA pendente.")
-
-        elif escolha == '0':
-            print("Saindo do script.")
-            break
-            
-        else:
-            print("Opção inválida. Tente novamente.")
+                except KeyboardInterrupt: pass
+            else: print("Sem conexão ou calibração.")
+        elif escolha == '0': break
 
 if __name__ == "__main__":
-    if not os.path.exists(RESULTS_JSON_DIR):
-        os.makedirs(RESULTS_JSON_DIR)
-        
+    if not os.path.exists(RESULTS_JSON_DIR): os.makedirs(RESULTS_JSON_DIR)
     arduino_ser = None
     try:
-        if SERIAL_PORT:
-            arduino_ser = conectar_arduino(SERIAL_PORT, BAUD_RATE)
-        else:
-            arduino_ser = encontrar_e_conectar_arduino()
+        if SERIAL_PORT: arduino_ser = conectar_arduino(SERIAL_PORT, BAUD_RATE)
+        else: arduino_ser = encontrar_e_conectar_arduino()
 
         if not arduino_ser:
-            print("\nAVISO: Não foi possível conectar ao Arduino.")
-            if input("Deseja continuar offline para visualizar calibrações? (s/n):").lower() != 's': 
-                exit()
+            print("\nAVISO: Arduino não encontrado.")
+            if input("Continuar offline? (s/n):").lower() != 's': exit()
         
-        # [MODIFICADO] Carrega ambas as calibrações
-        carregar_calibracao_sistema(CALIBRATION_FILE_SISTEMA)
-        carregar_calibracao_pasta(CALIBRATION_FILE_PASTA)
-        
+        carregar_dados_calibracao_py(CALIBRATION_FILE)
         menu_principal_py(arduino_ser)
 
     except Exception as e:
-        print(f"Ocorreu um erro geral e inesperado no script: {e}")
+        print(f"Erro fatal: {e}")
     finally:
-        if arduino_ser and arduino_ser.isOpen():
-            arduino_ser.close()
-            print("Porta serial fechada.")
+        if arduino_ser and arduino_ser.isOpen(): arduino_ser.close()

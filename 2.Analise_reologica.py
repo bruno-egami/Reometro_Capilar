@@ -24,6 +24,11 @@ from scipy.interpolate import interp1d
 main_output_base_folder = "resultados_analise_reologica"
 calibrations_folder = "correcoes_bagley_mooney" 
 
+# --- CONFIGURAÇÕES GERAIS ---
+# Fator de calibração empírico padrão (multiplicador final da tensão).
+# Altere este valor se desejar aplicar um fator de correção global.
+FATOR_CALIBRACAO_EMPIRICO_PADRAO = 1.0 
+
 # ---- MODIFICAÇÃO: Solicita um nome para a pasta de resultados ----
 while True:
     folder_prefix = input("\nDigite um prefixo para o nome da pasta de resultados (ex: LOTE_ABC_AMOSTRA_1): ").strip()
@@ -99,18 +104,27 @@ def ler_dados_json(json_filepath):
         
         if 'testes' in data and isinstance(data['testes'], list):
             for i, teste in enumerate(data['testes']):
-                p = teste.get('media_pressao_final_ponto_bar')
-                m = teste.get('massa_g_registrada')
-                t_real = teste.get('duracao_real_s') # Novo campo de tempo variável
+                # Leitura com suporte a novos nomes (Linha/Pasta) e fallback para antigos (Barril/Entrada)
+                p_linha = teste.get('media_pressao_linha_bar', teste.get('media_pressao_barril_bar'))
+                p_pasta = teste.get('media_pressao_pasta_bar', teste.get('media_pressao_entrada_bar'))
                 
-                if p is None or m is None:
-                    print(f"ALERTA JSON: Teste {i+1} em '{os.path.basename(json_filepath)}' sem 'media_pressao_final_ponto_bar' ou 'massa_g_registrada'. Pulando.")
+                # Fallback para arquivos muito antigos (apenas final)
+                p_final = teste.get('media_pressao_final_ponto_bar')
+                
+                m = teste.get('massa_g_registrada')
+                t_real = teste.get('duracao_real_s') 
+                
+                if m is None:
                     continue
                 
-                pressoes_bar_list.append(float(p))
+                # Prioridade: Linha > Barril > Final > 0.0
+                p_b = float(p_linha) if p_linha is not None else (float(p_final) if p_final is not None else 0.0)
+                # Prioridade: Pasta > Entrada > 0.0
+                p_e = float(p_pasta) if p_pasta is not None else 0.0
+                
+                pressoes_bar_list.append({'linha': p_b, 'pasta': p_e})
                 massas_g_list.append(float(m))
                 
-                # Prioriza t_real. Se não houver, usa o tempo fixo global.
                 if t_real is not None:
                     duracoes_s_list.append(float(t_real))
                 elif json_t_ext_s_fixo is not None:
@@ -584,20 +598,16 @@ def gerar_relatorio_texto(timestamp_str_report, rho_g_cm3, tempo_extrusao_info,
     except Exception as e: print(f"ERRO ao gerar relatório de texto: {e}")
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # --- INÍCIO DA EXECUÇÃO PRINCIPAL ---
 # -----------------------------------------------------------------------------
 print("="*70+f"\n--- ANÁLISE REOLÓGICA (Sessão: {timestamp_str}) ---\n"+"="*70)
 print(f"Todos os arquivos de saída serão salvos na pasta: {output_folder}")
 arquivos_gerados_lista = []
 
-# Pergunta pelo fator de calibração empírico no início
-fator_calibracao_empirico = input_float_com_virgula(
-    "Insira o fator de calibração empírico (pressione Enter para usar 1.0): ",
-    permitir_vazio=True
-)
-if fator_calibracao_empirico is None or fator_calibracao_empirico <= 0:
-    fator_calibracao_empirico = 1.0
-
+# Fator de calibração empírico (assumindo 1.0 para P. Pasta)
+# Pode ser alterado no topo do script (FATOR_CALIBRACAO_EMPIRICO_PADRAO)
+fator_calibracao_empirico = FATOR_CALIBRACAO_EMPIRICO_PADRAO
 
 dados_confirmados = False
 while not dados_confirmados:
@@ -622,6 +632,28 @@ while not dados_confirmados:
     metodo_entrada = ""
     while metodo_entrada not in ["1", "2", "3"]:
         metodo_entrada = input("Escolha o método (1, 2 ou 3): ").strip()
+
+    # SELEÇÃO DO SENSOR DE PRESSÃO
+    print("\n--- Seleção do Sensor de Pressão ---")
+    print("1. Sensor do BARRIL (Padrão - Requer Bagley)")
+    print("2. Sensor da ENTRADA (Membrana Aflorante - Direto)")
+    print("\n" + "="*30)
+    print("   CONFIGURAÇÃO DA ANÁLISE")
+    print("="*30)
+    
+    print("Fontes de Pressão Disponíveis:")
+    print("  1 - Pressão da LINHA (Antes do pistão/barril)")
+    print("  2 - Pressão da PASTA (Entrada do capilar - Recomendado)")
+    
+    fonte_pressao = input("Escolha a fonte de pressão (1 ou 2) [Enter = 2]: ").strip()
+    if not fonte_pressao: fonte_pressao = '2'
+    
+    usar_pressao_pasta = (fonte_pressao == '2')
+    
+    if usar_pressao_pasta:
+        print(">> USANDO PRESSÃO DA PASTA (Sensor 2). (Bagley pode ser dispensável)")
+    else:
+        print(">> USANDO PRESSÃO DA LINHA (Sensor 1).")
 
     realizar_bagley = input_sim_nao("\nCorreção de Bagley? (s/n): ")
     realizar_mooney = input_sim_nao("\nCorreção de Mooney? (s/n): ")
@@ -667,7 +699,14 @@ while not dados_confirmados:
         rho_pasta_si = rho_pasta_g_cm3_fixo * 1000
         _D_cap_mm_unico_val_resumo = f"{D_cap_mm_unico_val:.3f}"
         _L_cap_mm_unico_val_resumo = f"{L_cap_mm_unico_val:.2f}"
-        pressoes_bar_display_tab = json_data['pressoes_bar_list']
+        
+        # Extrai a pressão correta da lista de dicionários
+        raw_pressures = json_data['pressoes_bar_list']
+        if usar_pressao_pasta:
+            pressoes_bar_display_tab = [p['pasta'] for p in raw_pressures]
+        else:
+            pressoes_bar_display_tab = [p['linha'] for p in raw_pressures]
+            
         massas_g_display_tab = json_data['massas_g_list']
         
         # Adiciona o array de tempos ao mapa, para o caso de Correção W-R ou Plotagem
@@ -731,7 +770,14 @@ while not dados_confirmados:
                         print(f"ERRO: D={json_data['D_mm']:.3f}mm ('{json_filename}') difere do D comum de ref. {D_cap_mm_bagley_comum_val:.3f}mm."); erro_na_leitura = True; break
 
                 L_i_mm = json_data['L_mm']
-                p_bar_cap_i, m_g_cap_i = json_data['pressoes_bar_list'], json_data['massas_g_list']
+                raw_pressures = json_data['pressoes_bar_list']
+                m_g_cap_i = json_data['massas_g_list']
+                
+                if usar_pressao_pasta:
+                    p_bar_cap_i = [p['pasta'] for p in raw_pressures]
+                else:
+                    p_bar_cap_i = [p['linha'] for p in raw_pressures]
+
                 bagley_capilares_L_mm_info.append(L_i_mm)
                 
                 # ADICIONADO: Popula o mapa de arrays de tempo
@@ -786,7 +832,14 @@ while not dados_confirmados:
                     print(f"ERRO: L={json_data['L_mm']:.2f}mm ('{json_filename}') difere do L comum de ref. {L_cap_mm_mooney_comum_val:.2f}mm."); erro_na_leitura = True; break
 
                 D_i_mm = json_data['D_mm']
-                p_bar_cap_i, m_g_cap_i = json_data['pressoes_bar_list'], json_data['massas_g_list']
+                raw_pressures = json_data['pressoes_bar_list']
+                m_g_cap_i = json_data['massas_g_list']
+                
+                if usar_pressao_pasta:
+                    p_bar_cap_i = [p['pasta'] for p in raw_pressures]
+                else:
+                    p_bar_cap_i = [p['linha'] for p in raw_pressures]
+
                 mooney_capilares_D_mm_info.append(D_i_mm)
                 
                 # ADICIONADO: Popula o mapa de arrays de tempo
@@ -1572,7 +1625,37 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
             if np.any(valid_pv):
                 P_Pa_plot, eta_plot = pressoes_bar_np_plot[valid_pv]*1e5, eta_true_an[valid_pv]
                 fig4,ax4=plt.subplots(figsize=(10,7))
-                ax4.plot(P_Pa_plot,eta_plot,label='Viscosidade Real vs Pressão', color='purple',marker='D', linestyle='-', linewidth=1.5, markersize=7)
+                ax4.plot(P_Pa_plot,eta_plot,label='Viscosidade Real Experimental', color='purple',marker='D', linestyle='', linewidth=0, markersize=8, zorder=10)
+                
+                # NOVA ADIÇÃO: Curva do melhor modelo para comparação
+                if model_results and best_model_nome and len(gd_plot) > 0:
+                    try:
+                        # Calcula τ e η do modelo para a mesma faixa de γ̇
+                        best_model_data = model_results[best_model_nome]
+                        tau_modelo = models[best_model_nome](gd_plot, *best_model_data['params'])
+                        
+                        # Calcula viscosidade do modelo (η = τ/γ̇)
+                        if best_model_nome == "Newtoniano":
+                            eta_modelo = np.full_like(gd_plot, best_model_data['params'][0])
+                        else:
+                            eta_modelo = tau_modelo / gd_plot
+                        
+                        # Calcula pressão correspondente para cada γ̇ do modelo
+                        # P = τ * 2L/R (simplificado, assumindo mesma geometria)
+                        R_cap_m = D_cap_mm_unico_val / 2000  # raio em metros
+                        L_cap_m = L_cap_mm_unico_val / 1000   # comprimento em metros
+                        P_modelo_Pa = tau_modelo * (2 * L_cap_m / R_cap_m)
+                        
+                        # Filtra valores válidos do modelo
+                        valid_modelo = (P_modelo_Pa > 0) & (eta_modelo > 0) & (~np.isnan(eta_modelo)) & (~np.isinf(eta_modelo))
+                        
+                        if np.any(valid_modelo):
+                            ax4.plot(P_modelo_Pa[valid_modelo], eta_modelo[valid_modelo], 
+                                    label=f'Modelo {best_model_nome}', 
+                                    color='red', linestyle='-', linewidth=2.5, alpha=0.8, zorder=5)
+                    except Exception as e_plot_modelo_p:
+                        print(f"  Aviso: Não foi possível plotar curva do modelo em P vs η: {e_plot_modelo_p}")
+                
                 ax4.set_xlabel("Pressao Total Aplicada (ΔPtotal, Pa)")
                 ax4.set_ylabel("Viscosidade Real (η, Pa·s)")
                 ax4.set_title("Pressao Aplicada vs. Viscosidade Real (Capilar Unico s/ Correcoes)")
@@ -1591,10 +1674,34 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
     if np.any(valid_eta):
          ax5.plot(gamma_dot_w_an_wr[valid_eta],eta_true_an[valid_eta],
                      label=r'Viscosidade Real ($\eta$ vs $\dot{\gamma}_w$)',
-                     marker='s', linestyle='-', color='green', alpha=0.7, linewidth=1.5, zorder=5)
+                     marker='s', linestyle='', color='green', alpha=0.7, linewidth=0, markersize=6, zorder=5)
+    
+    # NOVA ADIÇÃO: Curva do melhor modelo para comparação
+    if model_results and best_model_nome and len(gd_plot) > 0:
+        try:
+            # Calcula τ e η do modelo para a mesma faixa de γ̇
+            best_model_data = model_results[best_model_nome]
+            tau_modelo = models[best_model_nome](gd_plot, *best_model_data['params'])
+            
+            # Calcula viscosidade do modelo (η = τ/γ̇)
+            if best_model_nome == "Newtoniano":
+                eta_modelo = np.full_like(gd_plot, best_model_data['params'][0])
+            else:
+                eta_modelo = tau_modelo / gd_plot
+            
+            # Filtra valores válidos do modelo
+            valid_modelo_eta = (eta_modelo > 0) & (~np.isnan(eta_modelo)) & (~np.isinf(eta_modelo))
+            
+            if np.any(valid_modelo_eta):
+                ax5.plot(gd_plot[valid_modelo_eta], eta_modelo[valid_modelo_eta], 
+                        label=f'Modelo {best_model_nome} (η)', 
+                        color='red', linestyle='-', linewidth=2.5, alpha=0.85, zorder=6)
+        except Exception as e_plot_modelo_eta:
+            print(f"  Aviso: Não foi possível plotar curva do modelo em Comparativo: {e_plot_modelo_eta}")
+    
     ax5.set_xlabel("Taxa de Cisalhamento (s⁻¹)")
     ax5.set_ylabel("Viscosidade (Pa·s)")
-    ax5.set_title("Comparativo: Viscosidade Aparente vs. Viscosidade Real")
+    ax5.set_title("Comparativo: Viscosidade Aparente vs. Viscosidade Real vs. Modelo")
     ax5.legend(); ax5.grid(True,which="both",ls="--"); ax5.set_xscale('log'); ax5.set_yscale('log'); fig5.tight_layout()
     f5_name = os.path.join(output_folder,f"{timestamp_str}_comparativo_viscosidades.png"); arquivos_gerados_lista.append(os.path.basename(f5_name))
     try: fig5.savefig(f5_name,dpi=300); print(f"Gráfico Comparativo Viscosidades salvo: {f5_name}")

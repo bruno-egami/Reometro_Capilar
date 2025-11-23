@@ -1,5 +1,12 @@
 {
-    "slope": 1.9423761735189375,
-    "intercept": -0.005710585950145676,
-    "units": "bar/V"
+    "sensor1": {
+        "slope": 1.0,
+        "intercept": 0.0
+    },
+    "sensor2": {
+        "slope": 1.0,
+        "intercept": 0.0
+    },
+    "units": "bar/V",
+    "last_calibration": "2025-11-22"
 }

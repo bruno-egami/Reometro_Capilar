@@ -344,7 +344,7 @@ def carregar_dados_completos(info_analise):
                  try:
                     with open(arquivos_json[0], 'r', encoding='utf-8') as f:
                         params_data = json.load(f)
-                    
+
                     # (MODIFICADO) Carrega TODOS os modelos
                     modelos_ajustados_all = params_data.get("modelos_ajustados", {})
                     
@@ -358,6 +358,7 @@ def carregar_dados_completos(info_analise):
                                 # Inferir nomes de parâmetros (necessário para compatibilidade com JSONs antigos)
                                 sig = list(inspect.signature(MODELS[name][0]).parameters.keys())[1:]
                                 modelos_ajustados_all[name]['param_names'] = sig
+
 
                         modelo_info_best = { 
                             "name": best_model_name, 
@@ -403,10 +404,15 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
 
     # 'dados_analises' agora contém os nomes personalizados como chaves
     for i, (nome_analise, dados) in enumerate(dados_analises.items()):
-        df = dados['df']
+        df = dados.get('df') # Usa .get() para segurança
         modelo = dados.get('modelo_best') # <-- MUDANÇA AQUI
         cor = cores(i % 10) 
         
+        # (NOVO) Destaque para a curva média
+        is_media = "Média" in nome_analise
+        
+        if df is None or df.empty:
+            continue
         has_std_tau = 'STD_τw (Pa)' in df.columns and np.any(df['STD_τw (Pa)'] > 1e-9)
         has_std_gamma = 'STD_γ̇w (s⁻¹)' in df.columns and np.any(df['STD_γ̇w (s⁻¹)'] > 1e-9)
         
@@ -415,10 +421,18 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
             
             x_data, y_data = df[coluna_x].values, df[coluna_y].values
             
-            ax.scatter(x_data, y_data, marker=marcadores[i % len(marcadores)], color=cor, label=nome_analise, s=50, zorder=10, alpha=0.9)
-            ax.plot(x_data, y_data, linestyle='-', color=cor, alpha=0.7, linewidth=2)
+            x_data, y_data = df[coluna_x].values, df[coluna_y].values
+            # --- FIM DA CORREÇÃO ---
+            
+            if is_media:
+                 # Plota a média com destaque
+                 ax.plot(x_data, y_data, linestyle='--', color='black', alpha=1.0, linewidth=3, label=nome_analise, zorder=15)
+            else:
+                # Plota pontos de dados normais
+                ax.scatter(x_data, y_data, marker=marcadores[i % len(marcadores)], color=cor, label=nome_analise, s=50, zorder=10, alpha=0.9)
+                ax.plot(x_data, y_data, linestyle='-', color=cor, alpha=0.7, linewidth=2)
 
-            if has_std_tau or has_std_gamma:
+            if (has_std_tau or has_std_gamma) and not is_media: # Não plota STD para a média (já é 0)
                 
                 if coluna_y == 'η (Pa·s)':
                     std_tau = df['STD_τw (Pa)'].values
@@ -459,7 +473,7 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                         y_pred_model = model_func(gd_plot, *params)
                         
                         if coluna_y == 'η (Pa·s)':
-                            eta_m = y_pred_model / gd_plot
+                            eta_m = y_pred_model / np.maximum(gd_plot, 1e-9)
                             
                             if nome_modelo in ["Herschel-Bulkley", "Bingham", "Casson"]:
                                 clip_start_gamma = max(1e-4, min_gd_data * 0.1) 
@@ -476,8 +490,9 @@ def plotar_comparativo_com_modelo(dados_analises, coluna_y, coluna_x, titulo, yl
                                         zorder=5)
                                 
                             else: 
-                                ax.plot(gd_plot, eta_m, 
-                                        color=cor, 
+                                valid_eta = np.isfinite(eta_m)
+                                ax.plot(gd_plot[valid_eta], eta_m[valid_eta], 
+                                        color=cor if not is_media else 'black',
                                         linestyle=':', 
                                         linewidth=2.5, 
                                         alpha=0.9,
@@ -962,10 +977,39 @@ if __name__ == "__main__":
             # --- PREPARAÇÃO PARA SALVAMENTO ---
             nomes_curtos_analises = [criar_nome_curto(nome) for nome in nomes_selecionados]
             
+            # Gera nome sugerido automaticamente baseado no tipo de comparação
             if escolha == '2':
-                 nome_comparativo = f"FCAL_ENTRE_{nomes_curtos_analises[0]}_E_{nomes_curtos_analises[1]}"
+                 nome_sugerido = f"FCAL_ENTRE_{nomes_curtos_analises[0]}_E_{nomes_curtos_analises[1]}"
+            elif escolha == '4':
+                 nome_sugerido = f"COMPARATIVO_COM_MEDIA_{nomes_curtos_analises[0]}_e_Outros"
             else:
-                 nome_comparativo = "+".join(sorted(list(set(nomes_curtos_analises))))
+                 nome_sugerido = "+".join(sorted(list(set(nomes_curtos_analises))))
+            
+            # --- SOLICITA NOME PERSONALIZADO PARA O COMPARATIVO ---
+            print("\n" + "="*70)
+            print("NOME DO COMPARATIVO")
+            print("="*70)
+            print(f"Nome automático sugerido: '{nome_sugerido}'")
+            print("Você pode fornecer um nome personalizado ou pressionar ENTER para usar a sugestão.")
+            print("="*70)
+            
+            while True:
+                nome_input = input("\nNome personalizado do comparativo (ou ENTER para sugestão): ").strip()
+                
+                if nome_input:
+                    # Valida o nome (remove caracteres inválidos)
+                    nome_personalizado = "".join(c for c in nome_input if c.isalnum() or c in (' ', '_', '-')).strip()
+                    if nome_personalizado:
+                        nome_comparativo = nome_personalizado.replace(' ', '_')
+                        print(f"\n✓ Nome personalizado aceito: '{nome_comparativo}'")
+                        break
+                    else:
+                        print("ERRO: Nome inválido. Use apenas letras, números, espaços, '-' ou '_'.")
+                else:
+                    # Usa o nome sugerido
+                    nome_comparativo = nome_sugerido
+                    print(f"\n✓ Usando nome sugerido: '{nome_comparativo}'")
+                    break
             
             timestamp_comparativo = datetime.now().strftime("%Y%m%d_%H%M%S")
             pasta_salvamento = os.path.join(CAMINHO_BASE_COMPARATIVOS, f"{nome_comparativo}_{timestamp_comparativo}")
@@ -973,7 +1017,7 @@ if __name__ == "__main__":
             if not os.path.exists(pasta_salvamento):
                 os.makedirs(pasta_salvamento)
             
-            print(f"\nOs resultados da análise serão salvos em: {os.path.basename(pasta_salvamento)}")
+            print(f"\n📁 Os resultados serão salvos em: {os.path.basename(pasta_salvamento)}\n")
 
             # --- CARREGAMENTO DOS DADOS ---
             # (MODIFICADO) 'dados_completos' agora armazena a estrutura completa
@@ -990,11 +1034,10 @@ if __name__ == "__main__":
                 # (MODIFICADO) Carrega df, o melhor modelo, e todos os modelos
                 df_analise, modelo_best, modelos_all = carregar_dados_completos(info_analise)
                 
-                if df_analise is not None:
+                if df_analise is not None and not df_analise.empty:
                     dados_completos[nome_final] = {
                         'df': df_analise, 
-                        'modelo_best': modelo_best, 
-                        'modelos_all': modelos_all
+                        'modelo': modelo_info
                     }
                 else:
                     print(f"AVISO: A análise '{nome_base_sessao}' foi descartada por falta de dados válidos.")

@@ -1,29 +1,377 @@
+# 🔬 Sistema de Controle e Análise - Reômetro Capilar
 
-Reômetro-capilar
-# Reômetro Capilar com Arduino e HX711
+Sistema completo para controle de reômetro capilar com **dual sensor de pressão** (Linha & Pasta), análise reológica avançada, correções de Bagley e Mooney, e comparação de dados.
 
-Este projeto tem como objetivo a construção de um reômetro capilar de baixo custo, utilizando um sistema de aquisição baseado em Arduino e em um transdutor de pressão. O sistema permite a medição indireta da viscosidade de suspensões cerâmicas (barbotinas) a partir da vazão de escoamento sob pressão controlada.
+---
 
-## Visão Geral do Sistema
+## 📋 **Índice**
 
-O sistema é composto por:
+1. [Requisitos](#requisitos)
+2. [Instalação](#instalação)
+3. [Estrutura do Sistema](#estrutura-do-sistema)
+4. [Fluxo de Trabalho](#fluxo-de-trabalho)
+5. [Descrição dos Scripts](#descrição-dos-scripts)
+6. [Solução de Problemas](#solução-de-problemas)
 
--   Um reometro feito de um cilindro preenchido com a barbotina (tubo PVC DN50);
--   Um conjunto de capilares metálicos;
--   Um manômetro e registro para controle de pressão aplicada;
--   Um transdutor de pressão 0 a 10bar e saída de sinal 0 a 5v;
--   Um Arduino Pro Micro para captura da pressão aplicada;
--   Um conjunto de scripts para: controle do reômetro, análise reologica, comparativo de análises e visualização dos resultados.
-    
-## Para detalhes de funcionamento do script, consultar o [manual-script.pdf](https://github.com/bruno-egami/HX711-4xSG350/blob/Re%C3%B4metro-capilar/Manual-script.pdf) 
+---
 
-## Autor
+## 🔧 **Requisitos**
 
-- [@bruno-egami](https://github.com/bruno-egami)
+### **Hardware**
+- Arduino com Firmware v3.0+ (dual sensor)
+- 2x Sensores de pressão (Transdutor 1: Linha, Transdutor 2: Pasta)
+- Balança de precisão conectada
+- Reômetro capilar com capilares intercambiáveis
 
+### **Software**
+- **Python:** 3.8 ou superior
+- **Sistema Operacional:** Windows, Linux ou macOS
 
-## Licença
+### **Dependências Python**
 
+Instale todas as dependências necessárias com:
 
-<p xmlns:cc="http://creativecommons.org/ns#" >This work is licensed under <a href="http://creativecommons.org/licenses/by-sa/4.0/?ref=chooser-v1" target="_blank" rel="license noopener noreferrer" style="display:inline-block;">CC BY-SA 4.0<img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1"></a></p>
+```bash
+pip install numpy pandas matplotlib scipy pyserial scikit-learn openpyxl
+```
 
+**Lista detalhada de dependências:**
+
+| Biblioteca | Versão Mínima | Finalidade |
+|------------|---------------|------------|
+| `numpy` | 1.20.0 | Cálculos numéricos e arrays |
+| `pandas` | 1.3.0 | Manipulação de dados tabulares |
+| `matplotlib` | 3.4.0 | Geração de gráficos |
+| `scipy` | 1.7.0 | Ajuste de modelos e interpolação |
+| `pyserial` | 3.5 | Comunicação com Arduino |
+| `scikit-learn` | 0.24.0 | Análise estatística |
+| `openpyxl` | 3.0.0 | Exportação para Excel (opcional) |
+
+**Instalação rápida (copie e cole):**
+```bash
+pip install numpy>=1.20.0 pandas>=1.3.0 matplotlib>=3.4.0 scipy>=1.7.0 pyserial>=3.5 scikit-learn>=0.24.0 openpyxl>=3.0.0
+```
+
+---
+
+## 🚀 **Instalação**
+
+### **1. Clone ou Baixe o Repositório**
+```bash
+git clone https://github.com/[seu-usuario]/Reometro_Capilar.git
+cd Reometro_Capilar
+```
+
+### **2. Instale as Dependências**
+```bash
+pip install numpy pandas matplotlib scipy pyserial scikit-learn openpyxl
+```
+
+### **3. Configure o Arduino**
+- Carregue o firmware v3.0+ no Arduino
+- Conecte os sensores de pressão
+- Conecte o Arduino via USB
+
+### **4. Teste a Instalação**
+```bash
+python 0.Launcher.py
+```
+
+Se abrir o menu principal, está tudo pronto! ✅
+
+---
+
+## 📁 **Estrutura do Sistema**
+
+```
+Reometro_Capilar/
+├── 0.Launcher.py                    # Menu principal
+├── 1.Controle_Reometro.py           # Coleta de dados (dual sensor)
+├── 1a.Edit-Json-coleta.py           # Edição manual de dados
+├── 1b.Pre-analise-filtro.py         # Pré-processamento
+├── 2.Analise_reologica.py           # Análise completa + modelos
+├── 2b.Tratamento_Estatistico.py     # Estatísticas de múltiplos testes
+├── 2cFiltro_Residuos_Modelo.py      # Filtro de outliers
+├── 3.Visualizar_resultados.py       # Visualização de gráficos
+├── 4.Comparativo-Analises.py        # Comparação capilar vs rotacional
+├── 5.Processador_Rotacional_Completo.py  # Dados rotacionais
+├── calibracoes_reometro/            # Calibrações salvas
+├── resultados_testes_reometro/      # JSONs brutos
+├── resultados_analise_reologica/    # CSVs, gráficos, relatórios
+├── comparativo_analises/            # Resultados comparativos
+└── resultados_processados_interativo/  # Dados rotacionais
+```
+
+---
+
+## 🔄 **Fluxo de Trabalho**
+
+### **Workflow Típico:**
+
+```
+1. COLETA
+   ├─ Script 1: Coleta dados dual sensor
+   └─ Script 1a: Remove pontos inválidos (opcional)
+
+2. PRÉ-PROCESSAMENTO
+   └─ Script 1b: Gera CSV e JSON processados
+
+3. ANÁLISE
+   ├─ Script 2: Ajusta modelos reológicos
+   ├─ Script 2c: Remove outliers estatísticos (opcional)
+   └─ Script 2b: Média de múltiplos ensaios (opcional)
+
+4. VISUALIZAÇÃO
+   ├─ Script 3: Visualiza gráficos individuais
+   └─ Script 4: Compara múltiplas análises
+```
+
+### **Exemplo Prático:**
+
+1. **Coletar Dados:**
+   ```bash
+   python 0.Launcher.py
+   # Escolha: 1. Controle do Reômetro
+   # Siga instruções na tela
+   ```
+
+2. **Analisar:**
+   ```bash
+   # Escolha: 4. Análise Reológica
+   # Selecione arquivo JSON gerado
+   # Aguarde ajuste de modelos
+   ```
+
+3. **Visualizar:**
+   ```bash
+   # Escolha: 7. Visualizar Resultados
+   # Veja gráficos interativos
+   ```
+
+---
+
+## 📖 **Descrição dos Scripts**
+
+### **🔵 Coleta e Pré-Processamento**
+
+#### **Script 1: Controle do Reômetro**
+- **Função:** Interface com Arduino para coleta de dados
+- **Features:**
+  - ✅ Dual sensor (Pressão Linha & Pasta)
+  - ✅ Calibração independente de sensores
+  - ✅ Diagnóstico Delta P em tempo real
+  - ✅ Monitor de pressão ao vivo
+  - ✅ Continuação de ensaios
+- **Entrada:** Comandos do usuário + Arduino serial
+- **Saída:** `[amostra]_[timestamp].json`
+
+#### **Script 1a: Editar JSON**
+- **Função:** Permite excluir pontos inválidos manualmente
+- **Features:**
+  - ✅ Exibe tabela completa (P.Linha, P.Pasta, Massa, Tempo)
+  - ✅ Exclusão seletiva de pontos
+  - ✅ Renumeração automática
+- **Entrada:** JSON bruto
+- **Saída:** `edit_[arquivo].json`
+
+#### **Script 1b: Pré-Análise**
+- **Função:** Processa dados brutos em formato final
+- **Features:**
+  - ✅ Cálculos reológicos básicos (τ, γ̇, η)
+  - ✅ Seleção de fonte de pressão (Linha ou Pasta)
+  - ✅ Geração de CSV e JSON final
+- **Entrada:** JSON bruto ou editado
+- **Saída:** CSV + JSON processados
+
+---
+
+### **🟢 Análise e Modelagem**
+
+#### **Script 2: Análise Reológica**
+- **Função:** Análise completa com ajuste de modelos
+- **Modelos Suportados:**
+  - Newtoniano
+  - Lei da Potência (Power Law)
+  - Bingham
+  - Herschel-Bulkley
+  - Casson
+- **Correções:**
+  - ✅ Bagley (múltiplos L/R)
+  - ✅ Mooney (múltiplos diâmetros)
+  - ✅ Aplicação de calibrações salvas
+- **Gráficos Gerados:**
+  1. Curva de fluxo (τ vs γ̇)
+  2. n' vs γ̇
+  3. Viscosidade vs γ̇
+  4. Pressão vs Viscosidade **(com curva do modelo)**
+  5. Comparativo aparente vs real **(com curva do modelo)**
+- **Saída:** 
+  - CSV com resultados
+  - JSON com parâmetros dos modelos
+  - Gráficos PNG
+  - Relatório TXT completo
+
+#### **Script 2c: Filtro por Resíduos**
+- **Função:** Remove outliers baseado em análise de resíduos
+- **Features:**
+  - ✅ Cálculo automático de resíduos
+  - ✅ Limite configurável (multiplicador σ)
+  - ✅ Iterativo: visualiza antes de confirmar
+  - ✅ Detecção automática de JSON bruto
+- **Entrada:** Sessão de análise do Script 2
+- **Saída:** `residuos_[arquivo].json` (limpo)
+
+#### **Script 2b: Tratamento Estatístico**
+- **Função:** Calcula média e desvio padrão de múltiplos ensaios
+- **Features:**
+  - ✅ Agrupa ensaios da mesma amostra
+  - ✅ Estatísticas completas (média, STD, CV)
+  - ✅ Exportação CSV
+- **Entrada:** Múltiplos CSVs do Script 2
+- **Saída:** CSV com estatísticas
+
+---
+
+### **🟡 Visualização e Comparação**
+
+#### **Script 3: Visualizar Resultados**
+- **Função:** Visualização rápida de gráficos
+- **Features:**
+  - ✅ Suporte a dados individuais e estatísticos
+  - ✅ Todos os modelos plotados
+  - ✅ Gráficos interativos (zoom, pan)
+- **Entrada:** Sessão de análise
+- **Saída:** Janelas gráficas
+
+#### **Script 4: Comparativo de Análises**
+- **Função:** Compara múltiplas análises (capilar vs rotacional)
+- **Features:**
+  - ✅ Comparação de N análises
+  - ✅ Cálculo de Fcal (fator de calibração)
+  - ✅ Análise de discrepância (MAPE)
+  - ✅ Média interpolada
+  - ✅ **Nome personalizado para saída**
+  - ✅ Relatórios compilados
+- **Entrada:** Múltiplas sessões
+- **Saída:** Pasta com gráficos + CSVs comparativos
+
+---
+
+### **🟣 Reômetro Rotacional**
+
+#### **Script 5: Processador Rotacional**
+- **Função:** Processa dados de reômetros rotacionais (Brookfield, Haake, etc)
+- **Features:**
+  - ✅ Importação de formatos variados
+  - ✅ Conversão para formato padrão
+  - ✅ Integração com Script 4
+- **Entrada:** Arquivo de reômetro rotacional
+- **Saída:** CSV padronizado
+
+---
+
+## ⚙️ **Configurações Importantes**
+
+### **Fator de Calibração Empírico (Script 2)**
+Localização: `2.Analise_reologica.py` - **Linha 34**
+```python
+FATOR_CALIBRACAO_EMPIRICO_PADRAO = 1.0
+```
+Altere este valor para aplicar correção global em todos os ensaios.
+
+### **Limites de Diagnóstico Delta P (Script 1)**
+Localização: `1.Controle_Reometro.py` - **Linha 23**
+```python
+DELTA_P_ALERTA_BAR = 2.0  # Alerta se |P.Linha - P.Pasta| > 2 bar
+```
+
+---
+
+## 🐛 **Solução de Problemas**
+
+### **Erro: "Arduino não detectado"**
+**Solução:**
+1. Verifique se Arduino está conectado via USB
+2. Confirme porta COM no Gerenciador de Dispositivos (Windows)
+3. Teste com: `python -m serial.tools.list_ports`
+4. Ajuste porta no Script 1 se necessário
+
+### **Erro: "ModuleNotFoundError"**
+**Solução:**
+```bash
+# Reinstale todas as dependências
+pip install --upgrade numpy pandas matplotlib scipy pyserial scikit-learn
+```
+
+### **Gráficos não aparecem**
+**Solução:**
+1. Verifique backend do matplotlib:
+   ```python
+   import matplotlib
+   print(matplotlib.get_backend())
+   ```
+2. Se necessário, altere para `TkAgg` ou `Qt5Agg`
+
+### **Script 2c não encontra JSON automaticamente**
+**Solução:**
+- Isso é esperado se o nome da sessão não corresponde ao JSON original
+- Basta **selecionar manualmente** o JSON correto na lista
+- Para evitar: use nomes originais ao executar Script 2
+
+### **Pressão negativa detectada**
+**Solução:**
+1. Verifique conexão dos sensores
+2. Recalibre os sensores (Script 1, Opção 3)
+3. Confirme que Arduino está com firmware v3.0+
+
+---
+
+## 📊 **Dados de Teste**
+
+Um arquivo de teste dual sensor está incluído:
+```
+resultados_testes_reometro/TESTE_DUAL_40Cap1_20251122.json
+```
+
+Use-o para testar o sistema completo sem hardware conectado.
+
+---
+
+## 🔄 **Atualizações Recentes (v3.1)**
+
+- ✅ **Dual Sensor Completo** (Linha & Pasta)
+- ✅ **Diagnóstico Delta P** em tempo real
+- ✅ **Gráficos com Modelo** (Figuras 4 e 5)
+- ✅ **Nome Personalizado** no Script 4
+- ✅ **Detecção Automática de JSON** melhorada (Script 2c)
+- ✅ **Tabela de Dados** antes de exclusão (Script 1a)
+
+---
+
+## 📝 **Licença e Contato**
+
+**Desenvolvido por:** Bruno Egami  
+**Versão:** 3.1  
+**Última Atualização:** Novembro 2025
+
+Para reportar bugs ou sugerir melhorias, entre em contato ou abra uma issue no repositório.
+
+---
+
+## ⭐ **Dicas Rápidas**
+
+### **Atalhos Úteis:**
+- Pressione `Ctrl+C` para interromper qualquer script
+- Use `0. Sair` no Launcher para fechar sistema
+- Arquivos JSON podem ser editados manualmente em emergências
+
+### **Boas Práticas:**
+1. **Sempre calibre** sensores antes de coletar dados
+2. **Nomeie amostras** de forma descritiva
+3. **Faça backup** de dados importantes
+4. **Revise dados** com Script 1a antes de analisar
+5. **Use mesmo nome** do JSON ao executar Script 2 (facilita Script 2c)
+
+---
+
+**Sistema Pronto para Uso! Execute `python 0.Launcher.py` para começar.** 🚀

@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
+<<<<<<< Updated upstream
 """
 SCRIPT PARA EDITAR ARQUIVOS JSON DE COLETA (Formato NOVO - 2 Sensores)
 Permite visualizar, modificar (massa/tempo) ou excluir pontos de um ensaio.
 Cria um novo arquivo 'edit_[nome_original].json' com as modificações.
+=======
+# -----------------------------------------------------------------------------
+# SCRIPT 1a.EDIT-JSON-COLETA.PY
+# Ferramenta para visualizar, excluir pontos e reordenar o JSON de testes brutos.
+# -----------------------------------------------------------------------------
+>>>>>>> Stashed changes
 
 VERSÃO 2.0 (Simplificada - Apenas 2 Sensores)
 Autor: Bruno Egami (Modificado por Gemini)
@@ -26,6 +33,7 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=N
             if isinstance(default_val, (int, float)):
                 default_str = f"{default_val:.3f}".replace('.', ',') if default_val > 0.1 else f"{default_val:.4f}".replace('.', ',')
             else:
+<<<<<<< Updated upstream
                 default_str = str(default_val)
             
             prompt = f"{mensagem_prompt} (Atual: {default_str}) [ENTER para manter]: "
@@ -36,6 +44,81 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=N
         
         if permitir_vazio and entrada == "":
             return default_val if default_val is not None else None
+=======
+                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_disponiveis)}, ou '0'.")
+        except ValueError:
+            print("ERRO: Entrada inválida. Por favor, digite um número ou '0'.")
+        except Exception as e:
+            print(f"Ocorreu um erro inesperado na seleção: {e}")
+            return None
+
+def processar_limpeza():
+    """Função principal de limpeza e reordenação."""
+    caminho_arquivo_original = selecionar_arquivo_json(JSON_INPUT_DIR)
+    
+    if not caminho_arquivo_original:
+        print("\nProcessamento cancelado.")
+        return
+
+    nome_arquivo_original = os.path.basename(caminho_arquivo_original)
+    print(f"\nCarregando arquivo: {nome_arquivo_original}")
+
+    # 1. Carregar o JSON
+    try:
+        with open(caminho_arquivo_original, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"ERRO: Arquivo não encontrado.")
+        return
+    except json.JSONDecodeError:
+        print("ERRO: Falha ao decodificar o arquivo JSON. Verifique o formato.")
+        return
+    except Exception as e:
+        print(f"ERRO ao carregar o arquivo: {e}")
+        return
+
+    testes_originais = data.get("testes", [])
+    
+    # 2. EXIBIR DADOS DO ENSAIO PARA O USUÁRIO
+    print("\n" + "="*80)
+    print("DADOS DO ENSAIO SELECIONADO")
+    print("="*80)
+    print(f"Amostra: {data.get('id_amostra', 'N/A')}")
+    print(f"Descrição: {data.get('descricao', 'N/A')}")
+    print(f"Total de Pontos: {len(testes_originais)}")
+    print("-"*80)
+    
+    if testes_originais:
+        # Cabeçalho da tabela
+        print(f"{'Ponto':<8} | {'P. Linha (bar)':<15} | {'P. Pasta (bar)':<15} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
+        print("-"*80)
+        
+        # Dados de cada ponto
+        for teste in testes_originais:
+            ponto_n = teste.get('ponto_n', 'N/A')
+            
+            # Tenta ler pressão Linha (novo) ou Barril (antigo)
+            p_linha = teste.get('media_pressao_linha_bar', 
+                                teste.get('media_pressao_barril_bar', 
+                                          teste.get('media_pressao_final_ponto_bar', 0.0)))
+            
+            # Tenta ler pressão Pasta (novo) ou Entrada (antigo)
+            p_pasta = teste.get('media_pressao_pasta_bar', 
+                                teste.get('media_pressao_entrada_bar', 0.0))
+            
+            massa = teste.get('massa_g_registrada', 0.0)
+            tempo = teste.get('duracao_real_s', 0.0)
+            
+            print(f"{ponto_n:<8} | {p_linha:<15.3f} | {p_pasta:<15.3f} | {massa:<12.3f} | {tempo:<10.2f}")
+        
+        print("="*80)
+    else:
+        print("AVISO: Nenhum teste encontrado neste arquivo.")
+    
+    # 3. Solicitar Pontos a Excluir
+    while True:
+        pontos_str = input("\nDigite os NÚMEROS de 'Ponto No.' a EXCLUIR, separados por vírgula (ex: 4, 36). Pressione Enter para NÃO excluir nenhum: ").strip()
+>>>>>>> Stashed changes
         
         try:
             return float(entrada.replace(',', '.'))
