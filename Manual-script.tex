@@ -5,13 +5,16 @@
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{enumitem}
-%\usepackage{titlesec}
+
+% Comandos personalizados para citações
+\newcommand{\citeonline}[1]{\textbf{#1}}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{indentfirst}
+\usepackage{tikz}
+\usetikzlibrary{calc, positioning, arrows.meta}
 \geometry{margin=2.5cm}
 \sisetup{locale = FR, per-mode=symbol, separate-uncertainty = true}
-%\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
 
 \title{Análise Reológica de Pastas Cerâmicas}
 \author{Bruno Kenji Nishitani Egami}
@@ -21,24 +24,154 @@
 
 \begin{document}
 \maketitle
-\href{https://github.com/bruno-egami/Reometro_Capilar-HX711-4xSG350}{\textbf{Link para o projeto}}
+\href{https://github.com/bruno-egami/Reometro_Capilar/tree/Reometro-capilar-Transdutor_Pasta}{\textbf{Link para o projeto}}
 
 \section*{1. Introdução}
 A caracterização reológica de pastas cerâmicas é essencial para entender seu comportamento durante processos de conformação, como a extrusão. O presente relatório descreve as equações utilizadas em um script Python desenvolvido para processar os dados experimentais obtidos com um reômetro capilar DIY de baixo custo. O objetivo é converter medidas diretas (como massa extrudada e pressão de extrusão) em parâmetros reológicos interpretáveis (como viscosidade e taxa de cisalhamento).
 
 \subsection*{1.1 Aplicações em Manufatura Aditiva}
-O controle reológico preciso é fundamental para tecnologias emergentes como a impressão 3D cerâmica, especialmente na técnica \textit{Direct Ink Writing} (DIW) ou \textit{Robocasting}. Esta técnica requer pastas com comportamento pseudoplástico que fluam sob cisalhamento (extrusão pelo bico), mas recuperem rapidamente sua viscosidade após a deposição para suportar as camadas subsequentes (\textit{buildability}). A caracterização sistemática do comportamento reológico da matéria-prima base é, portanto, um pré-requisito para o desenvolvimento de formulações otimizadas para manufatura aditiva. 
+O controle reológico preciso é fundamental para tecnologias emergentes como a impressão 3D cerâmica, especialmente na técnica \textit{Direct Ink Writing} (DIW) ou \textit{Robocasting}. Esta técnica requer pastas com comportamento pseudoplástico que fluam sob cisalhamento (extrusão pelo bico), mas recuperem rapidamente sua viscosidade após a deposição para suportar as camadas subsequentes (\textit{buildability}). A caracterização sistemática do comportamento reológico da matéria-prima base é, portanto, um pré-requisito para o desenvolvimento de formulações otimizadas para manufatura aditiva.
 
 \subsection*{1.2 Histórico de Desenvolvimento do Equipamento}
 O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo de três gerações:
 
 \begin{itemize}
-  \item \textbf{V1 (Protótipo Inicial):} A primeira versão utilizava medição indireta de pressão através de uma célula de carga (extensômetros e módulo HX711) acoplada ao pistão. Esta configuração permitia estimar a força aplicada durante a extrusão. O sistema foi validado experimentalmente demonstrando boa concordância com reômetros comerciais.
+  \item \textbf{V1 (Protótipo Inicial):} A primeira versão utilizava medição indireta de pressão através de uma célula de carga (extensômetros e módulo HX711). Esta configuração permitia estimar a força aplicada durante a extrusão. O sistema foi validado experimentalmente demonstrando boa concordância com reômetros comerciais.
   
   \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de 0-150 psi) para leitura direta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
   
   \item \textbf{V3 (Atual - Duplo Transdutor):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Esta configuração permite eliminar erros sistemáticos causados pelo atrito do pistão e possibilita a aplicação mais precisa das correções de Bagley e Mooney, fundamentais para fluidos não-Newtonianos.
-\end{itemize} 
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[node distance=2cm, auto]
+    \usetikzlibrary{calc, positioning}
+    
+    \tikzstyle{block} = [rectangle, draw, fill=blue!20, text width=8em, text centered, rounded corners, minimum height=3em]
+    \tikzstyle{instrument} = [circle, draw, fill=orange!30, text centered, minimum size=5em, align=center]
+    \tikzstyle{data_block} = [rectangle, draw, fill=purple!20, text width=8em, text centered, rounded corners, minimum height=3em]
+    \tikzstyle{line} = [draw, thick, -{Stealth[length=3mm]}]
+    \tikzstyle{data_line} = [draw, thick, dashed, color=green!60!black, -{Stealth[length=3mm]}]
+    \tikzstyle{manual_line} = [draw, thick, dotted, color=red!80!black, -{Stealth[length=3mm]}]
+    
+    \node [block] (compressor) {Compressor};
+    \node [block, right=1.5cm of compressor] (regulator) {Registro Regulador de Pressão};
+    \node [instrument, right=1.5cm of regulator] (manometer) {Manômetro};
+    \node [block, right=1.5cm of manometer] (valve) {Válvula de Bloqueio};
+    \node [block, right=1.5cm of valve] (rheometer) {Corpo do Reômetro};
+    
+    \coordinate (tap_point) at ($(valve.east)!0.5!(rheometer.west)$);
+    
+    \node [instrument, below=2cm of tap_point] (transducer) {Transdutor \\ de Pressão};
+    \node [data_block, left=2cm of transducer] (arduino) {Arduino};
+    \node [data_block, left=2cm of arduino] (computer) {Computador (Python)};
+    \node [data_block, below=3.5cm of rheometer] (balance) {Balança};
+    
+    \path [line] (compressor) -- (regulator);
+    \path [line] (regulator) -- (manometer);
+    \path [line] (manometer) -- (valve);
+    \path [line] (valve) -- (rheometer);
+    \path [line] (tap_point) -- (transducer);
+    \path [data_line] (transducer) -- (arduino);
+    \path [data_line] (arduino) -- (computer);
+    \path [manual_line] (rheometer) -- (balance);
+    \path [manual_line] (balance) -| (computer.south);
+\end{tikzpicture}
+}
+\caption{Esquema de funcionamento do reômetro capilar, mostrando a linha pneumática (sólida), a linha de aquisição de dados automática (tracejada) e as linhas de coleta e entrada de dados manual (pontilhada).}
+\label{fig:esquema_reometro}
+\end{figure}
+
+O controle do ensaio e o processamento de dados são realizados por um conjunto de scripts em Python.
+
+\subsection*{1.2.1 Cálculos Reológicos do Reômetro Capilar}
+A análise reológica busca descrever a relação entre a tensão aplicada a um material e a taxa de deformação resultante. Os parâmetros fundamentais que descrevem essa relação são: a \textbf{tensão de cisalhamento} ($\tau$), que representa a força por unidade de área necessária para induzir o escoamento; a \textbf{taxa de cisalhamento} ($\dot{\gamma}$), que mede a taxa com que o material se deforma ou a velocidade relativa entre camadas adjacentes do fluido; e a \textbf{viscosidade} ($\eta$), definida como a razão entre a tensão e a taxa de cisalhamento ($\eta = \tau / \dot{\gamma}$), representando a resistência interna do material ao fluxo. Para pastas e suspensões concentradas, a \textbf{tensão de escoamento} ($\tau_0$) é outro parâmetro importante, indicando a tensão mínima que deve ser superada para que o material comece a fluir.
+
+No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de grandezas experimentais. A metodologia, aqui detalhada, baseia-se na medição da pressão de extrusão, da massa de material extrudado em um determinado tempo e nas dimensões conhecidas do capilar.
+
+\textbf{Tensão de Cisalhamento na Parede:} O primeiro parâmetro calculado é a tensão de cisalhamento na parede ($\tau_w$). Sua equação é derivada de um balanço de forças em um elemento de volume cilíndrico de fluido em regime de escoamento permanente. A força motriz, gerada pela queda de pressão ao longo do capilar, é equilibrada pela força de atrito viscoso na parede. Isolando a tensão de cisalhamento, obtém-se a equação dada por \citeonline{barnes1989}:
+
+\begin{equation}
+    \tau_w = \frac{P \cdot R}{2 \cdot L}
+\end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\tau_w$ -- Tensão de cisalhamento na parede do capilar (\si{Pa})
+  \item $P$ -- Pressão de extrusão aplicada, medida pelo transdutor (\si{Pa})
+  \item $R$ -- Raio interno do capilar (\si{m})
+  \item $L$ -- Comprimento do capilar (\si{m})
+\end{itemize}
+
+Esta equação mostra que a tensão de cisalhamento é diretamente proporcional à pressão aplicada e ao raio do capilar, e inversamente proporcional ao seu comprimento.
+
+\vspace{1em}
+
+\textbf{Taxa de Cisalhamento Aparente:} O segundo parâmetro é a taxa de cisalhamento aparente na parede ($\dot{\gamma}_{aw}$). Ela é calculada a partir da vazão volumétrica ($Q$), que por sua vez é determinada pela massa extrudada, o tempo e a densidade da pasta. A equação para a taxa de cisalhamento aparente é dada por \citeonline{reed1995}:
+
+\begin{equation}
+    \dot{\gamma}_{aw} = \frac{4 \cdot Q}{\pi \cdot R^3}
+\end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\dot{\gamma}_{aw}$ -- Taxa de cisalhamento aparente na parede (\si{s^{-1}})
+  \item $Q$ -- Vazão volumétrica da pasta através do capilar (\si{m^3/s})
+  \item $R$ -- Raio interno do capilar (\si{m})
+  \item $\pi$ -- Constante matemática ($\approx$ 3,1416)
+\end{itemize}
+
+A vazão volumétrica $Q$ é calculada a partir das medidas experimentais diretas:
+\begin{equation}
+    Q = \frac{m}{\rho \cdot t}
+\end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $m$ -- Massa de pasta extrudada, medida pela balança (\si{kg})
+  \item $\rho$ -- Densidade da pasta cerâmica (\si{kg/m^3})
+  \item $t$ -- Tempo de extrusão (\si{s})
+\end{itemize}
+
+\textbf{Importante:} Ressalta-se o termo \textit{aparente}. Esta equação é derivada sob a premissa de um perfil de velocidade parabólico no interior do capilar, o que é estritamente válido apenas para fluidos Newtonianos. Como as suspensões cerâmicas são fluidos não-Newtonianos, seu perfil de velocidade não é parabólico, o que torna este valor uma aproximação inicial que será corrigida posteriormente.
+
+\vspace{1em}
+
+\textbf{Viscosidade Aparente:} A partir dos dois parâmetros anteriores, a viscosidade aparente ($\eta_a$) é calculada como a simples razão entre eles:
+
+\begin{equation}
+    \eta_a = \frac{\tau_w}{\dot{\gamma}_{aw}}
+\end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\eta_a$ -- Viscosidade aparente do material (\si{Pa.s})
+  \item $\tau_w$ -- Tensão de cisalhamento na parede (\si{Pa})
+  \item $\dot{\gamma}_{aw}$ -- Taxa de cisalhamento aparente na parede (\si{s^{-1}})
+\end{itemize}
+
+Esta viscosidade também é chamada de \textit{aparente} porque é calculada usando valores não corrigidos da taxa de cisalhamento. Para fluidos não-Newtonianos como pastas cerâmicas, são necessárias correções adicionais para obter a viscosidade verdadeira.
+
+
+\subsubsection*{Correções para Fluidos Não-Newtonianos}
+Para uma análise rigorosa de fluidos não-Newtonianos, o uso de valores aparentes exige a aplicação de correções.
+
+\textbf{Weissenberg-Rabinowitsch:} A mais importante delas para este estudo é a correção de Weissenberg-Rabinowitsch, que converte a taxa de cisalhamento aparente ($\dot{\gamma}_{aw}$) na taxa de cisalhamento verdadeira na parede ($\dot{\gamma}_w$). Esta correção é necessária porque, em fluidos pseudoplásticos, o perfil de velocidade do escoamento é mais achatado do que o perfil parabólico Newtoniano. A equação é dada por \citeonline{barnes1989}:
+\begin{equation}
+    \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right)
+\end{equation}
+
+\textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \citeonline{barnes1989}. A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$):
+\begin{equation}
+P = 2 \tau_w \left( \frac{L}{R} \right) + P_e
+\end{equation}
+
+\textbf{Mooney:} Em suspensões concentradas, pode ocorrer deslizamento na parede (\textit{wall slip}) \citeonline{barnes1989}. A taxa de cisalhamento aparente é relacionada com a taxa de cisalhamento verdadeira do fluido ($\dot{\gamma}_{s,f}$) e a velocidade de deslizamento ($C$) pela equação:
+\begin{equation}
+\dot{\gamma}_{aw} = \dot{\gamma}_{s,f} + \frac{C}{R}
+\end{equation}
 
 \subsection*{1.3 Validação Experimental}
 As versões anteriores do reômetro capilar foram validadas experimentalmente por meio de comparação direta com um reômetro comercial de referência (\textbf{Anton Paar MCR 102}), equipado com geometria de placas paralelas. Os ensaios comparativos, realizados com suspensões de caulim a 60\% de sólidos, demonstraram boa concordância entre os equipamentos, especialmente para taxas de cisalhamento elevadas (acima de \SI{100}{s^{-1}}), confirmando a confiabilidade do dispositivo de baixo custo para análises reológicas.
@@ -50,7 +183,7 @@ Com base na experiência acumulada durante o desenvolvimento do equipamento, rec
   \item \textbf{Homogeneização:} Utilizar sacos plásticos resistentes para misturar caulim e água por agitação manual vigorosa. Este método facilita a homogeneização e permite transferência direta da pasta para o reômetro (cortando uma das extremidades do saco).
   
   \item \textbf{Limites de Concentração:} Para suspensões puras de caulim-água (sem aditivos), o limite prático de concentração é de aproximadamente 65\% de sólidos. Acima deste valor, a pasta torna-se excessivamente rígida e quebradiça ("aspecto de farofa"), inviabilizando a extrusão sem o uso de modificadores reológicos (plastificantes ou defloculantes).
-\end{itemize} 
+\end{itemize}
 
 \section*{2. Variáveis e Nomenclatura Utilizada}
 \begin{tabular}{@{}ll@{}}
@@ -88,9 +221,9 @@ Interface de menu para facilitar a execução dos scripts.
 \end{itemize}
 
 \subsection*{3.1 Coleta de Dados (Script 1: Controle\_Reometro.py)}
-Responsável pela interface com o hardware (Arduino/HX711).
+Responsável pela interface com o hardware (Arduino/Transdutores).
 \begin{itemize}
-  \item \textbf{Função:} Leitura em tempo real dos sensores de pressão (Linha e Pasta) e da balança.
+  \item \textbf{Função:} Leitura em tempo real dos sensores de pressão (Linha e Pasta).
   \item \textbf{Validação:} Implementa verificação automática de estabilidade e permite ao usuário rejeitar pontos espúrios durante o ensaio.
   \item \textbf{Saída:} Gera um arquivo JSON bruto contendo os dados experimentais e metadados do ensaio.
 \end{itemize}
@@ -123,11 +256,11 @@ O núcleo matemático do sistema. Processa os dados brutos e aplica as correçõ
       \item Correção de Weissenberg-Rabinowitsch;
       \item Ajuste dos modelos reológicos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson).
   \end{enumerate}
-  \item \textbf{Saída:} Arquivos CSV com os dados processados e JSON com os parâmetros dos modelos ajustados.
+  \item \textbf{Saída:} Arquivos CSV com os dados processados e JSON com os parâmetros dos modelos ajustados. Geração de gráficos detalhados do ensaio.
 \end{itemize}
 
 \subsection*{3.5 Tratamento Estatístico (Script 2b: Tratamento\_Estatistico.py)}
-Módulo de confiabilidade (detalhado na Seção 11).
+Módulo de confiabilidade (detalhado na Seção 10).
 \begin{itemize}
   \item \textbf{Função:} Analisa a dispersão dos dados experimentais quando há repetições.
   \item \textbf{Método:} Agrupa dados por pressão nominal, remove outliers estatísticos ($> 2\sigma$) e calcula o Coeficiente de Variação (CV).
@@ -151,7 +284,7 @@ Geração de gráficos detalhados de um único ensaio.
 \end{itemize}
 
 \subsection*{3.8 Análise Comparativa (Script 4: Comparativo-Analises.py)}
-Comparação entre múltiplos ensaios (detalhado na Seção 12).
+Comparação entre múltiplos ensaios (detalhado na Seção 11).
 \begin{itemize}
   \item \textbf{Função:} Permite sobrepor curvas de diferentes ensaios para comparação direta.
   \item \textbf{Análise:} Calcula o erro relativo (MAPE) entre uma amostra de referência e outras amostras.
@@ -166,288 +299,12 @@ Integração com reômetros comerciais.
   \item \textbf{Aplicação:} Permite comparação direta entre o reômetro capilar DIY e equipamentos comerciais de referência.
 \end{itemize}
 
-\section*{4. Conversão de Medidas Experimentais}
+\section*{Referências}
 
-Durante os ensaios reológicos capilares, coletam-se dados experimentais em unidades técnicas convencionais — por exemplo, massa em gramas, pressão em bar, e dimensões do capilar em milímetros. No entanto, todas as equações da mecânica dos fluidos que regem a análise exigem que as grandezas estejam expressas em \textbf{unidades do Sistema Internacional (SI)}. Por isso, o primeiro passo do script é converter essas unidades de forma padronizada.
+\noindent
+\textbf{barnes1989}: Barnes, H. A., Hutton, J. F., \& Walters, K. (1989). \textit{An Introduction to Rheology}. Amsterdam: Elsevier.
 
-\subsection*{4.1 Conversões de Unidades para SI}
-
-A primeira etapa do processamento consiste em converter todas as grandezas fornecidas pelo usuário para o Sistema Internacional de Unidades (SI). Essa padronização é essencial para garantir a consistência matemática de todas as equações físicas subsequentes.
-
-\textbf{Conversões realizadas:}
-
-\begin{itemize}[leftmargin=1.5em]
-  \item \textbf{Comprimento:}
-  \begin{equation}
-  D~[\si{mm}] \rightarrow D~[\si{m}] \quad \text{via} \quad D = \frac{D_{\text{mm}}}{1000}
-  \end{equation}
-  \begin{equation}
-  L~[\si{mm}] \rightarrow L~[\si{m}] \quad \text{via} \quad L = \frac{L_{\text{mm}}}{1000}
-  \end{equation}
-
-  \item \textbf{Massa:}
-  \begin{equation}
-  m~[\si{g}] \rightarrow m~[\si{kg}] \quad \text{via} \quad m = \frac{m_{\text{g}}}{1000}
-  \end{equation}
-
-  \item \textbf{Densidade:}
-  \begin{equation}
-  \rho~[\si{g/cm^3}] \rightarrow \rho~[\si{kg/m^3}] \quad \text{via} \quad \rho = \rho_{\text{g/cm}^3} \times 1000
-  \end{equation}
-
-  \item \textbf{Pressão:}
-  \begin{equation}
-  P~[\si{bar}] \rightarrow P~[\si{Pa}] \quad \text{via} \quad P = P_{\text{bar}} \times 10^5
-  \end{equation}
-\end{itemize}
-
-\textbf{Uso nas demais seções:} Todas as equações da Seção 3 até a Seção 8 pressupõem que as variáveis estejam em SI. A partir daqui, assumiremos que todas as grandezas estão corretamente convertidas.
-
-\vspace{1em}
-
-\subsection*{3.2 Volume Extrudado}
-\begin{equation}
-V = \frac{m}{\rho} \quad \left[ \si{m^{3}} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $V$ – Volume extrudado (\si{m^3})
-  \item $m$ – Massa da pasta extrudada (\si{kg})
-  \item $\rho$ – Densidade da pasta (\si{kg/m^3})
-\end{itemize}
-
-O volume é necessário para calcular a \textbf{vazão volumétrica} na próxima etapa. Isso estabelece o primeiro elo entre a medição direta ($m$) e o comportamento do escoamento.
-
-\vspace{1em}
-
-\subsection*{3.3 Vazão Volumétrica}
-\begin{equation}
-Q = \frac{V}{t} \quad \left[ \si{m^{3}/s} \right]
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $Q$ – Vazão volumétrica da pasta (\si{m^3/s})
-  \item $V$ – Volume extrudado (\si{m^3})
-  \item $t$ – Tempo de extrusão (\si{s})
-\end{itemize}
-O comportamento reológico foi classificado com base no valor do expoente \( n \) ajustado no modelo de Lei da Potência ou Herschel-Bulkley. Os critérios utilizados foram:
-\begin{table}[h!]
-\centering
-\caption{Interpretação do índice de comportamento de escoamento \(n\)}
-\begin{tabular}{@{}ll@{}}
-\toprule
-Valor de \(n\) & Comportamento do fluido \\ \midrule
-\(n \approx 1\) & Fluido newtoniano \\
-\(n < 1\)       & Fluido pseudoplástico (afinamento com o aumento da taxa de cisalhamento) \\
-\(n > 1\)       & Fluido dilatante (espessamento com o aumento da taxa de cisalhamento) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-Essa classificação fornece uma visão qualitativa sobre a estrutura e dinâmica do fluido durante o escoamento.
-
-
-
-
-\vspace{1em}
-
-\subsection*{8.1 Modelo Newtoniano}
-\begin{equation}
-\tau_w = \eta \, \dot{\gamma}_w
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\tau_w$ – Tensão de cisalhamento (\si{Pa})
-  \item $\dot{\gamma}_w$ – Taxa de cisalhamento real (\si{s^{-1}})
-  \item $\eta$ – Viscosidade constante (\si{Pa.s})
-\end{itemize}
-
-\textbf{Descrição:} Modelo mais simples. Assume que a viscosidade é constante, independentemente da taxa de cisalhamento. Válido para fluidos ideais como água ou óleos leves. Raramente adequado para pastas cerâmicas.
-
-\vspace{1em}
-
-\subsection*{8.2 Lei da Potência (Power Law)}
-\begin{equation}
-\tau_w = K \, \dot{\gamma}_w^n
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $K$ – Coeficiente de consistência (\si{Pa.s^n})
-  \item $n$ – Índice de comportamento de fluxo (adimensional)
-\end{itemize}
-
-\textbf{Descrição:} Captura o comportamento de fluidos cuja viscosidade varia com a taxa de cisalhamento. Para $n<1$, o fluido é pseudoplástico (afinamento); para $n>1$, dilatante (espessamento). Não representa tensão de escoamento.
-
-\vspace{1em}
-
-\subsection*{8.3 Modelo de Bingham}
-\begin{equation}
-\tau_w = \tau_0 + \eta_p \, \dot{\gamma}_w
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\tau_0$ – Tensão de escoamento (\si{Pa})
-  \item $\eta_p$ – Viscosidade plástica (\si{Pa.s})
-\end{itemize}
-
-\textbf{Descrição:} Indica que o material não começa a fluir até que uma tensão mínima ($\tau_0$) seja ultrapassada. Após isso, flui com viscosidade constante ($\eta_p$). Útil para materiais como argilas e suspensões concentradas.
-
-\vspace{1em}
-
-\subsection*{8.4 Modelo de Herschel-Bulkley}
-\begin{equation}
-\tau_w = \tau_0 + K \, \dot{\gamma}_w^n
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\tau_0$ – Tensão de escoamento (\si{Pa})
-  \item $K$ – Coeficiente de consistência (\si{Pa.s^n})
-  \item $n$ – Índice de comportamento de fluxo (adimensional)
-\end{itemize}
-
-\textbf{Descrição:} Generaliza os modelos anteriores. Apresenta tensão de escoamento inicial ($\tau_0$), seguida por comportamento não newtoniano dependente de $n$. É o modelo mais versátil e frequentemente o melhor ajustado para pastas cerâmicas e suspensões complexas.
-
-\vspace{1em}
-
-\subsection*{8.5 Modelo de Casson}
-\begin{equation}
-\sqrt{\tau_w} = \sqrt{\tau_0} + \sqrt{\eta_{cas}} \sqrt{\dot{\gamma}_w}
-\end{equation}
-
-\textbf{Onde:}
-\begin{itemize}[leftmargin=1.5em]
-  \item $\tau_0$ – Tensão de escoamento (\si{Pa})
-  \item $\eta_{cas}$ – Viscosidade de Casson (\si{Pa.s})
-\end{itemize}
-
-\textbf{Descrição:} Modelo amplamente utilizado para descrever o comportamento de fluidos biológicos (como sangue) e alimentos (como chocolate derretido), mas que também se aplica bem a certas suspensões cerâmicas concentradas. Ele assume uma transição mais suave entre a região de escoamento e a de fluxo.
-
-\vspace{1em}
-
-O script calcula o coeficiente de determinação ($R^2$) para cada modelo e escolhe aquele que melhor representa os dados experimentais corrigidos.
-
-
-\section*{9. Fluxo de Trabalho e Arquitetura do Sistema}
-
-O sistema de análise reológica foi reestruturado em módulos independentes para garantir maior robustez, rastreabilidade e facilidade de manutenção. Cada script desempenha uma função específica no ciclo de vida dos dados, desde a coleta até a análise comparativa.
-
-\href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo Atualizado}}
-
-\subsection*{9.1 Coleta de Dados (Script 1: Controle\_Reometro.py)}
-Responsável pela interface com o hardware (Arduino/HX711).
-\begin{itemize}
-  \item \textbf{Função:} Leitura em tempo real dos sensores de pressão (Linha e Pasta) e da balança.
-  \item \textbf{Validação:} Implementa verificação automática de estabilidade e permite ao usuário rejeitar pontos espúrios durante o ensaio.
-  \item \textbf{Saída:} Gera um arquivo JSON bruto contendo os dados experimentais e metadados do ensaio.
-\end{itemize}
-
-\subsection*{9.2 Pré-Processamento (Script 1a: Unir\_Arquivos\_Json.py)}
-Módulo opcional para organização de dados.
-\begin{itemize}
-  \item \textbf{Função:} Permite fundir múltiplos arquivos JSON de ensaios parciais em um único arquivo consolidado.
-  \item \textbf{Aplicação:} Útil quando um ensaio é interrompido e retomado posteriormente, garantindo que a análise reológica trate o conjunto como um todo.
-\end{itemize}
-
-\subsection*{9.3 Análise Reológica (Script 2: Analise\_reologica.py)}
-O núcleo matemático do sistema. Processa os dados brutos e aplica as correções físicas.
-\begin{itemize}
-  \item \textbf{Entrada:} Arquivo JSON gerado pelo Script 1 ou 1a.
-  \item \textbf{Processamento:}
-  \begin{enumerate}
-      \item Conversão de unidades para o SI;
-      \item Cálculo de tensões e taxas aparentes;
-      \item Aplicação das correções de Bagley e Mooney (se dados disponíveis);
-      \item Correção de Weissenberg-Rabinowitsch;
-      \item Ajuste dos modelos reológicos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson).
-  \end{enumerate}
-  \item \textbf{Saída:} Arquivos CSV com os dados processados e JSON com os parâmetros dos modelos ajustados.
-\end{itemize}
-
-\subsection*{9.4 Tratamento Estatístico (Script 2b: Tratamento\_Estatistico.py)}
-Módulo de confiabilidade (detalhado na Seção 10).
-\begin{itemize}
-  \item \textbf{Função:} Analisa a dispersão dos dados experimentais.
-  \item \textbf{Método:} Agrupa dados por pressão nominal, remove outliers estatísticos ($> 2\sigma$) e calcula o Coeficiente de Variação (CV).
-  \item \textbf{Saída:} Relatório de qualidade dos dados, indicando a precisão do ensaio.
-\end{itemize}
-
-\subsection*{9.5 Visualização e Comparação (Scripts 3 e 4)}
-Ferramentas de pós-processamento para interpretação dos resultados.
-\begin{itemize}
-  \item \textbf{Script 3 (Visualizar\_resultados.py):} Gera gráficos detalhados de um único ensaio, incluindo curvas de fluxo, viscosidade e resíduos dos modelos.
-  \item \textbf{Script 4 (Comparativo-Analises.py):} Permite sobrepor curvas de múltiplos ensaios para comparação direta e calcula o erro relativo (MAPE) entre uma amostra de referência e outras amostras (detalhado na Seção 11).
-\end{itemize}
-\section*{10. Tratamento Estatístico de Dados (Script 2b)}
-
-Para garantir a confiabilidade dos dados experimentais, especialmente quando há múltiplas repetições para uma mesma pressão aplicada, o sistema implementa um módulo de tratamento estatístico robusto (Script 2b).
-
-\subsection*{10.1 Agrupamento e Filtragem de Outliers}
-Os dados brutos são primeiramente agrupados por níveis nominais de pressão aplicada ($P_{ext}$). Dentro de cada grupo, aplica-se um filtro estatístico para remover \textit{outliers} (pontos espúrios) que se desviam significativamente da média. O critério utilizado é baseado no desvio padrão ($\sigma$) da taxa de cisalhamento:
-
-\begin{equation}
-\text{Se } | \dot{\gamma}_{w,i} - \mu_{\dot{\gamma}} | > 2\sigma_{\dot{\gamma}} \implies \text{Ponto Descartado}
-\end{equation}
-
-Isso remove pontos afetados por bolhas de ar, entupimentos momentâneos ou erros de leitura, mantendo apenas os dados consistentes.
-
-\subsection*{10.2 Cálculo de Médias e Incertezas}
-Para cada nível de pressão, são calculadas as médias aritméticas ($\mu$) e os desvios padrão ($\sigma$) das grandezas principais ($\tau_w, \dot{\gamma}_w, \eta$).
-
-\begin{equation}
-\mu = \frac{1}{N} \sum_{i=1}^{N} x_i \quad ; \quad \sigma = \sqrt{\frac{\sum_{i=1}^{N} (x_i - \mu)^2}{N-1}}
-\end{equation}
-
-\subsection*{10.3 Coeficiente de Variação e Propagação de Erro}
-A qualidade do ensaio é avaliada pelo Coeficiente de Variação (CV), que expressa a dispersão relativa dos dados:
-
-\begin{equation}
-CV_{\%} = \left( \frac{\sigma}{\mu} \right) \times 100
-\end{equation}
-
-Para a viscosidade ($\eta = \tau_w / \dot{\gamma}_w$), a incerteza é estimada pela propagação de erros dos CVs da tensão e da taxa de cisalhamento:
-
-\begin{equation}
-CV_{\eta} \approx \sqrt{ (CV_{\tau_w})^2 + (CV_{\dot{\gamma}_w})^2 }
-\end{equation}
-
-Um $CV_{\eta}$ baixo ($< 10\%$) indica alta reprodutibilidade e confiabilidade dos resultados reológicos.
-
-\section*{11. Análise Comparativa e Discrepância (Script 4)}
-
-O módulo comparativo permite sobrepor curvas de diferentes ensaios e quantificar as diferenças entre elas.
-
-\subsection*{11.1 Metodologia de Comparação}
-O script carrega os modelos ajustados de múltiplos ensaios e gera gráficos comparativos de $\tau_w$ vs $\dot{\gamma}_w$ e $\eta$ vs $\dot{\gamma}_w$. Isso permite visualizar rapidamente o efeito de diferentes formulações ou condições de processamento.
-
-\subsection*{11.2 Análise de Discrepância (MAPE)}
-Para quantificar a diferença entre uma amostra de teste e uma amostra de referência, utiliza-se o Erro Percentual Absoluto Médio (MAPE). O script gera uma série de pontos virtuais na faixa de cisalhamento comum entre as amostras e calcula:
-
-\begin{equation}
-MAPE (\%) = \frac{100}{N} \sum_{j=1}^{N} \left| \frac{Y_{teste,j} - Y_{ref,j}}{Y_{ref,j}} \right|
-\end{equation}
-
-Onde $Y$ pode ser a tensão de cisalhamento ($\tau_w$) ou a viscosidade ($\eta$).
-\begin{itemize}
-    \item \textbf{MAPE $<$ 5\%}: As amostras são consideradas reologicamente equivalentes.
-    \item \textbf{MAPE $>$ 10\%}: Indica diferenças significativas no comportamento do fluxo.
-\end{itemize}
-
-
-    
-
-
-Esses gráficos estão salvos automaticamente na pasta de resultados com nomes descritivos (timestamp data/hora) e podem ser utilizados para visualização complementar dos ajustes.
-
-
-
-
-
+\noindent
+\textbf{reed1995}: Reed, J. S. (1995). \textit{Principles of Ceramics Processing} (2nd ed.). New York: John Wiley \& Sons.
 
 \end{document}
