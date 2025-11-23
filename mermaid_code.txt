@@ -1,0 +1,53 @@
+graph TD
+    subgraph COLETA ["1. Coleta de Dados (Script 1)"]
+        INICIO([Início]) --> CONFIG_SENSOR["Configurar Sensores<br/>(Linha e Pasta)"]
+        CONFIG_SENSOR --> LOOP_COLETA{Loop de Coleta}
+        LOOP_COLETA --> LEITURA[Ler Pressão e Massa]
+        LEITURA --> VALIDACAO{Validar Ponto?}
+        VALIDACAO -- Erro --> RETRY[Rejeitar/Refazer]
+        RETRY --> LOOP_COLETA
+        VALIDACAO -- OK --> SALVAR_PONTO[Salvar Ponto em Memória]
+        SALVAR_PONTO --> MAIS_PONTOS{Mais Pontos?}
+        MAIS_PONTOS -- Sim --> LOOP_COLETA
+        MAIS_PONTOS -- Nao --> EXPORT_JSON[Exportar JSON Bruto]
+    end
+
+    subgraph PRE_PROC ["1a. Pré-Processamento (Opcional)"]
+        EXPORT_JSON --> UNIR_JSON[Script 1a: Unir Arquivos JSON]
+        UNIR_JSON --> JSON_UNIFICADO[JSON Unificado]
+    end
+
+    subgraph ANALISE ["2. Análise Reológica (Script 2)"]
+        EXPORT_JSON -.-> CARREGA_DADOS
+        JSON_UNIFICADO -.-> CARREGA_DADOS[Carregar Dados JSON]
+        CARREGA_DADOS --> CONVERSAO[Conversão para SI]
+        CONVERSAO --> CALC_BASICO[Cálculo: τw, γ̇aw, ηa]
+        
+        CALC_BASICO --> BAGLEY{"Correção<br/>Bagley?"}
+        BAGLEY -- Sim --> APLICA_BAGLEY[Remover Perdas de Entrada]
+        BAGLEY -- Nao --> MOONEY
+        APLICA_BAGLEY --> MOONEY{"Correção<br/>Mooney?"}
+        
+        MOONEY -- Sim --> APLICA_MOONEY[Corrigir Deslizamento]
+        MOONEY -- Nao --> WR
+        APLICA_MOONEY --> WR[Correção Weissenberg-Rabinowitsch]
+        
+        WR --> MODELAGEM["Ajuste de Modelos<br/>(Newton, Power Law, Bingham, HB, Casson)"]
+        MODELAGEM --> EXPORT_RES["Exportar Resultados<br/>(CSV + JSON Parâmetros)"]
+    end
+
+    subgraph ESTATISTICA ["2b. Tratamento Estatístico (Script 2b)"]
+        EXPORT_RES --> AGRUPAMENTO[Agrupar por Pressão Nominal]
+        AGRUPAMENTO --> FILTRO_OUT["Filtro de Outliers (>2σ)"]
+        FILTRO_OUT --> CALC_STATS["Cálculo de Médias e CV%"]
+        CALC_STATS --> RELAT_STATS["Relatório Estatístico (TXT/CSV)"]
+    end
+
+    subgraph POS_PROC ["3. Visualização e 4. Comparativo"]
+        EXPORT_RES --> VISUALIZACAO[Script 3: Gráficos Detalhados]
+        RELAT_STATS --> VISUALIZACAO
+        
+        EXPORT_RES --> COMPARATIVO[Script 4: Comparativo entre Amostras]
+        COMPARATIVO --> MAPE["Cálculo de MAPE e Discrepância"]
+        MAPE --> RELAT_FINAL[Relatório Comparativo]
+    end
