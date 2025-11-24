@@ -1,36 +1,78 @@
 \documentclass[a4paper,12pt]{article}
-\usepackage{amsmath,amsfonts,siunitx}
-\usepackage{geometry}
-\usepackage{graphicx}
-\usepackage{booktabs}
-\usepackage{hyperref}
-\usepackage{enumitem}
 
-% Comandos personalizados para citações
-\newcommand{\citeonline}[1]{\textbf{#1}}
+% --- Codificação e Idioma ---
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage[brazil]{babel} % Essencial para hifenização correta em PT-BR
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault} % Fonte Arial-like
 \usepackage{indentfirst}
+
+% --- Matemática e Unidades ---
+\usepackage{amsmath,amsfonts}
+\usepackage{siunitx}
+\sisetup{
+    locale = FR,                 % Usa vírgula decimal
+    per-mode = symbol,           % Barra para divisão de unidades
+    separate-uncertainty = true, % Incerteza +/-
+    detect-all                   % Fonte igual ao texto
+}
+
+% --- Tabelas e Gráficos ---
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs} % Tabelas profissionais
+\usepackage{enumitem}
 \usepackage{tikz}
 \usetikzlibrary{calc, positioning, arrows.meta}
-\geometry{margin=2.5cm}
-\sisetup{locale = FR, per-mode=symbol, separate-uncertainty = true}
 
-\title{Análise Reológica de Pastas Cerâmicas}
-\author{Bruno Kenji Nishitani Egami}
-\date{}
-\usepackage{helvet}
-\renewcommand{\familydefault}{\sfdefault}
+% --- Links e Metadados do PDF ---
+\usepackage{hyperref}
+\hypersetup{
+    % Configuração para aceitar acentos nos metadados
+    pdfencoding=auto, 
+    unicode=true,
+    % Metadados do arquivo PDF
+    pdftitle={Desenvolvimento de um Reômetro Capilar DIY para Análise Reológica de Pastas Cerâmicas},
+    pdfauthor={Bruno Kenji Nishitani Egami},
+    pdfsubject={Reologia Capilar e Processamento de Dados},
+    pdfkeywords={Reologia, Cerâmica, Python, Instrumentação, DIY},
+    % Configuração visual dos links
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue,
+    filecolor=magenta,
+    urlcolor=blue
+}
 
+% --- Cabeçalho e Dados de Contato ---
+\title{Desenvolvimento de um Reômetro Capilar DIY para Análise Reológica de Pastas Cerâmicas}
+\author{
+    \textbf{Bruno Kenji Nishitani Egami} \\
+    \small \href{mailto:bruno.egami@farroupilha.ifrs.edu.br}{bruno.egami@farroupilha.ifrs.edu.br} \\
+    \small \href{https://github.com/bruno-egami}{GitHub: @bruno-egami} $\cdot$ 
+    \href{https://www.instagram.com/bruno.egami/}{Instagram: @bruno.egami}
+}
+\date{\today}
+
+% ---------------------------------------------------------------------
 \begin{document}
+
 \maketitle
-\href{https://github.com/bruno-egami/Reometro_Capilar/tree/Reometro-capilar-Transdutor_Pasta}{\textbf{Link para o projeto}}
+
+\noindent
+\href{https://github.com/bruno-egami/Reometro_Capilar/tree/Reometro-capilar-Transdutor_Pasta}{\textbf{Acesse aqui o repositório específico do Projeto}}
 
 \section*{1. Introdução}
-A caracterização reológica de pastas cerâmicas é essencial para entender seu comportamento durante processos de conformação, como a extrusão. O presente relatório descreve as equações utilizadas em um script Python desenvolvido para processar os dados experimentais obtidos com um reômetro capilar DIY de baixo custo. O objetivo é converter medidas diretas (como massa extrudada e pressão de extrusão) em parâmetros reológicos interpretáveis (como viscosidade e taxa de cisalhamento).
+A caracterização reológica de pastas cerâmicas é essencial para entender seu comportamento durante processos de conformação, como a extrusão. O presente relatório descreve as equações utilizadas em um conjunto de scripts Python desenvolvidos para processar os dados experimentais obtidos com um reômetro capilar (\textit{DIY}) de baixo custo.
+
+O objetivo é converter medidas diretas (como massa extrudada e pressão de extrusão) em parâmetros reológicos interpretáveis (como viscosidade e taxa de cisalhamento).
 
 \subsection*{1.1 Aplicações em Manufatura Aditiva}
-O controle reológico preciso é fundamental para tecnologias emergentes como a impressão 3D cerâmica, especialmente na técnica \textit{Direct Ink Writing} (DIW) ou \textit{Robocasting}. Esta técnica requer pastas com comportamento pseudoplástico que fluam sob cisalhamento (extrusão pelo bico), mas recuperem rapidamente sua viscosidade após a deposição para suportar as camadas subsequentes (\textit{buildability}). A caracterização sistemática do comportamento reológico da matéria-prima base é, portanto, um pré-requisito para o desenvolvimento de formulações otimizadas para manufatura aditiva.
+O controle reológico preciso é fundamental para tecnologias emergentes como a impressão 3D cerâmica, especialmente na técnica \textit{Direct Ink Writing} (DIW) ou \textit{Robocasting}. Esta técnica requer pastas com comportamento pseudoplástico que fluam sob cisalhamento (extrusão pelo bico), mas recuperem rapidamente sua viscosidade após a deposição para suportar as camadas subsequentes (\textit{buildability}).
+
+A caracterização sistemática do comportamento reológico da matéria-prima base é, portanto, um pré-requisito para o desenvolvimento de formulações otimizadas para manufatura aditiva.
 
 \subsection*{1.2 Histórico de Desenvolvimento do Equipamento}
 O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo de três gerações:
@@ -38,7 +80,7 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
 \begin{itemize}
   \item \textbf{V1 (Protótipo Inicial):} A primeira versão utilizava medição indireta de pressão através de uma célula de carga (extensômetros e módulo HX711). Esta configuração permitia estimar a força aplicada durante a extrusão. O sistema foi validado experimentalmente demonstrando boa concordância com reômetros comerciais.
   
-  \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de 0-150 psi) para leitura direta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
+  \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de \SI{0}{psi} a \SI{150}{psi}) para leitura direta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
   
   \item \textbf{V3 (Atual - Duplo Transdutor):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Esta configuração permite eliminar erros sistemáticos causados pelo atrito do pistão e possibilita a aplicação mais precisa das correções de Bagley e Mooney, fundamentais para fluidos não-Newtonianos.
 \end{itemize}
@@ -47,8 +89,6 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
 \centering
 \resizebox{0.95\textwidth}{!}{%
 \begin{tikzpicture}[node distance=2cm, auto]
-    \usetikzlibrary{calc, positioning}
-    
     \tikzstyle{block} = [rectangle, draw, fill=blue!20, text width=8em, text centered, rounded corners, minimum height=3em]
     \tikzstyle{instrument} = [circle, draw, fill=orange!30, text centered, minimum size=5em, align=center]
     \tikzstyle{data_block} = [rectangle, draw, fill=purple!20, text width=8em, text centered, rounded corners, minimum height=3em]
@@ -61,7 +101,6 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
     \node [instrument, right=1.5cm of regulator] (manometer) {Manômetro};
     \node [block, right=1.5cm of manometer] (valve) {Válvula de Bloqueio};
     \node [block, right=1.5cm of valve] (rheometer) {Corpo do Reômetro};
-    
     \coordinate (tap_point) at ($(valve.east)!0.5!(rheometer.west)$);
     
     \node [instrument, below=2cm of tap_point] (transducer) {Transdutor \\ de Pressão};
@@ -87,11 +126,13 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
 O controle do ensaio e o processamento de dados são realizados por um conjunto de scripts em Python.
 
 \subsection*{1.2.1 Cálculos Reológicos do Reômetro Capilar}
-A análise reológica busca descrever a relação entre a tensão aplicada a um material e a taxa de deformação resultante. Os parâmetros fundamentais que descrevem essa relação são: a \textbf{tensão de cisalhamento} ($\tau$), que representa a força por unidade de área necessária para induzir o escoamento; a \textbf{taxa de cisalhamento} ($\dot{\gamma}$), que mede a taxa com que o material se deforma ou a velocidade relativa entre camadas adjacentes do fluido; e a \textbf{viscosidade} ($\eta$), definida como a razão entre a tensão e a taxa de cisalhamento ($\eta = \tau / \dot{\gamma}$), representando a resistência interna do material ao fluxo. Para pastas e suspensões concentradas, a \textbf{tensão de escoamento} ($\tau_0$) é outro parâmetro importante, indicando a tensão mínima que deve ser superada para que o material comece a fluir.
+A análise reológica busca descrever a relação entre a tensão aplicada a um material e a taxa de deformação resultante. Os parâmetros fundamentais que descrevem essa relação são: a \textbf{tensão de cisalhamento} ($\tau$), que representa a força por unidade de área necessária para induzir o escoamento; a \textbf{taxa de cisalhamento} ($\dot{\gamma}$), que mede a taxa com que o material se deforma ou a velocidade relativa entre camadas adjacentes do fluido; e a \textbf{viscosidade} ($\eta$), definida como a razão entre a tensão e a taxa de cisalhamento ($\eta = \tau / \dot{\gamma}$), representando a resistência interna do material ao fluxo.
 
-No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de grandezas experimentais. A metodologia, aqui detalhada, baseia-se na medição da pressão de extrusão, da massa de material extrudado em um determinado tempo e nas dimensões conhecidas do capilar.
+Para pastas e suspensões concentradas, a \textbf{tensão de escoamento} ($\tau_0$) é outro parâmetro importante, indicando a tensão mínima que deve ser superada para que o material comece a fluir.
 
-\textbf{Tensão de Cisalhamento na Parede:} O primeiro parâmetro calculado é a tensão de cisalhamento na parede ($\tau_w$). Sua equação é derivada de um balanço de forças em um elemento de volume cilíndrico de fluido em regime de escoamento permanente. A força motriz, gerada pela queda de pressão ao longo do capilar, é equilibrada pela força de atrito viscoso na parede. Isolando a tensão de cisalhamento, obtém-se a equação dada por \citeonline{barnes1989}:
+No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de gran\-de\-zas experimentais. A metodologia, aqui detalhada, baseia-se na medição da pressão de extrusão, da massa de material extrudado em um determinado tempo e nas dimensões conhecidas do capilar.
+
+\textbf{Tensão de Cisalhamento na Parede:} O primeiro parâmetro calculado é a tensão de cisalhamento na parede ($\tau_w$). Sua equação é derivada de um balanço de forças em um elemento de volume cilíndrico de fluido em regime de escoamento permanente. A força motriz, gerada pela queda de pressão ao longo do capilar, é equilibrada pela força de atrito viscoso na parede. Isolando a tensão de cisalhamento, obtém-se a equação dada por \cite{barnes1989}:
 
 \begin{equation}
     \tau_w = \frac{P \cdot R}{2 \cdot L}
@@ -108,8 +149,7 @@ No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de g
 Esta equação mostra que a tensão de cisalhamento é diretamente proporcional à pressão aplicada e ao raio do capilar, e inversamente proporcional ao seu comprimento.
 
 \vspace{1em}
-
-\textbf{Taxa de Cisalhamento Aparente:} O segundo parâmetro é a taxa de cisalhamento aparente na parede ($\dot{\gamma}_{aw}$). Ela é calculada a partir da vazão volumétrica ($Q$), que por sua vez é determinada pela massa extrudada, o tempo e a densidade da pasta. A equação para a taxa de cisalhamento aparente é dada por \citeonline{reed1995}:
+\textbf{Taxa de Cisalhamento Aparente:} O segundo parâmetro é a taxa de cisalhamento aparente na parede ($\dot{\gamma}_{aw}$). Ela é calculada a partir da vazão volumétrica ($Q$), que por sua vez é determinada pela massa extrudada, o tempo e a densidade da pasta. A equação para a taxa de cisalhamento aparente é dada por \cite{reed1995}:
 
 \begin{equation}
     \dot{\gamma}_{aw} = \frac{4 \cdot Q}{\pi \cdot R^3}
@@ -138,7 +178,6 @@ A vazão volumétrica $Q$ é calculada a partir das medidas experimentais direta
 \textbf{Importante:} Ressalta-se o termo \textit{aparente}. Esta equação é derivada sob a premissa de um perfil de velocidade parabólico no interior do capilar, o que é estritamente válido apenas para fluidos Newtonianos. Como as suspensões cerâmicas são fluidos não-Newtonianos, seu perfil de velocidade não é parabólico, o que torna este valor uma aproximação inicial que será corrigida posteriormente.
 
 \vspace{1em}
-
 \textbf{Viscosidade Aparente:} A partir dos dois parâmetros anteriores, a viscosidade aparente ($\eta_a$) é calculada como a simples razão entre eles:
 
 \begin{equation}
@@ -154,27 +193,27 @@ A vazão volumétrica $Q$ é calculada a partir das medidas experimentais direta
 
 Esta viscosidade também é chamada de \textit{aparente} porque é calculada usando valores não corrigidos da taxa de cisalhamento. Para fluidos não-Newtonianos como pastas cerâmicas, são necessárias correções adicionais para obter a viscosidade verdadeira.
 
-
 \subsubsection*{Correções para Fluidos Não-Newtonianos}
 Para uma análise rigorosa de fluidos não-Newtonianos, o uso de valores aparentes exige a aplicação de correções.
 
-\textbf{Weissenberg-Rabinowitsch:} A mais importante delas para este estudo é a correção de Weissenberg-Rabinowitsch, que converte a taxa de cisalhamento aparente ($\dot{\gamma}_{aw}$) na taxa de cisalhamento verdadeira na parede ($\dot{\gamma}_w$). Esta correção é necessária porque, em fluidos pseudoplásticos, o perfil de velocidade do escoamento é mais achatado do que o perfil parabólico Newtoniano. A equação é dada por \citeonline{barnes1989}:
+\textbf{Weissenberg-Rabinowitsch:} A mais importante delas para este estudo é a correção de Weissenberg-Rabinowitsch, que converte a taxa de cisalhamento aparente ($\dot{\gamma}_{aw}$) na taxa de cisalhamento verdadeira na parede ($\dot{\gamma}_w$). Esta correção é necessária porque, em fluidos pseudoplásticos, o perfil de velocidade do escoamento é mais achatado do que o perfil parabólico Newtoniano. A equação é dada por \cite{barnes1989}:
+
 \begin{equation}
     \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right)
 \end{equation}
 
-\textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \citeonline{barnes1989}. A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$):
+\textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \cite{barnes1989}. A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$):
 \begin{equation}
 P = 2 \tau_w \left( \frac{L}{R} \right) + P_e
 \end{equation}
 
-\textbf{Mooney:} Em suspensões concentradas, pode ocorrer deslizamento na parede (\textit{wall slip}) \citeonline{barnes1989}. A taxa de cisalhamento aparente é relacionada com a taxa de cisalhamento verdadeira do fluido ($\dot{\gamma}_{s,f}$) e a velocidade de deslizamento ($C$) pela equação:
+\textbf{Mooney:} Em suspensões concentradas, pode ocorrer deslizamento na parede (\textit{wall slip}) \cite{barnes1989}. A taxa de cisalhamento aparente é relacionada com a taxa de cisalhamento verdadeira do fluido ($\dot{\gamma}_{s,f}$) e a velocidade de deslizamento ($C$) pela equação:
 \begin{equation}
 \dot{\gamma}_{aw} = \dot{\gamma}_{s,f} + \frac{C}{R}
 \end{equation}
 
 \subsection*{1.3 Validação Experimental}
-As versões anteriores do reômetro capilar foram validadas experimentalmente por meio de comparação direta com um reômetro comercial de referência (\textbf{Anton Paar MCR 102}), equipado com geometria de placas paralelas. Os ensaios comparativos, realizados com suspensões de caulim a 60\% de sólidos, demonstraram boa concordância entre os equipamentos, especialmente para taxas de cisalhamento elevadas (acima de \SI{100}{s^{-1}}), confirmando a confiabilidade do dispositivo de baixo custo para análises reológicas.
+As versões anteriores do reômetro capilar foram validadas experimentalmente por meio de comparação direta com um reômetro comercial de referência (\textbf{Anton Paar MCR 102}), equipado com geometria de placas paralelas. Os ensaios comparativos, realizados com suspensões de caulim a \SI{60}{\percent} de sólidos, demonstraram boa concordância entre os equipamentos, especialmente para taxas de cisalhamento elevadas (acima de \SI{100}{s^{-1}}), confirmando a confiabilidade do dispositivo de baixo custo para análises reológicas.
 
 \subsection*{1.4 Dicas Práticas de Preparação de Amostras}
 Com base na experiência acumulada durante o desenvolvimento do equipamento, recomenda-se:
@@ -182,11 +221,15 @@ Com base na experiência acumulada durante o desenvolvimento do equipamento, rec
 \begin{itemize}
   \item \textbf{Homogeneização:} Utilizar sacos plásticos resistentes para misturar caulim e água por agitação manual vigorosa. Este método facilita a homogeneização e permite transferência direta da pasta para o reômetro (cortando uma das extremidades do saco).
   
-  \item \textbf{Limites de Concentração:} Para suspensões puras de caulim-água (sem aditivos), o limite prático de concentração é de aproximadamente 65\% de sólidos. Acima deste valor, a pasta torna-se excessivamente rígida e quebradiça ("aspecto de farofa"), inviabilizando a extrusão sem o uso de modificadores reológicos (plastificantes ou defloculantes).
+  \item \textbf{Limites de Concentração:} Para suspensões puras de caulim-água (sem aditivos), o limite prático de concentração é de aproximadamente \SI{65}{\percent} de sólidos. Acima deste valor, a pasta torna-se excessivamente rígida e quebradiça ("aspecto de farofa"), inviabilizando a extrusão sem o uso de modificadores reológicos (plastificantes ou defloculantes).
 \end{itemize}
 
 \section*{2. Variáveis e Nomenclatura Utilizada}
-\begin{tabular}{@{}ll@{}}
+\begin{center}
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{Símbolo} & \textbf{Descrição e Unidade} \\
+\midrule
 $R$ & Raio interno do capilar (\si{m}) \\
 $D$ & Diâmetro interno do capilar (\si{mm}) \\
 $L$ & Comprimento do capilar (\si{m}) \\
@@ -204,12 +247,15 @@ $n'$ & Índice de pseudoplasticidade estimado (adimensional) \\
 $K'$ & Coeficiente de consistência estimado (\si{Pa.s^n}) \\
 $\tau_0$ & Tensão de escoamento (\si{Pa}) \\
 $\eta_p$ & Viscosidade plástica (\si{Pa.s}) \\
+\bottomrule
 \end{tabular}
+\end{center}
 
 \section*{3. Fluxo de Trabalho e Arquitetura do Sistema}
 
 O sistema de análise reológica foi reestruturado em módulos independentes para garantir maior robustez, rastreabilidade e facilidade de manutenção. Cada script desempenha uma função específica no ciclo de vida dos dados, desde a coleta até a análise comparativa.
 
+\noindent
 \href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo Atualizado}}
 
 \subsection*{3.0 Launcher (Script 0: Launcher.py)}
@@ -299,12 +345,15 @@ Integração com reômetros comerciais.
   \item \textbf{Aplicação:} Permite comparação direta entre o reômetro capilar DIY e equipamentos comerciais de referência.
 \end{itemize}
 
-\section*{Referências}
+% --- Referências Bibliográficas (Manual) ---
+\begin{thebibliography}{9}
 
-\noindent
-\textbf{barnes1989}: Barnes, H. A., Hutton, J. F., \& Walters, K. (1989). \textit{An Introduction to Rheology}. Amsterdam: Elsevier.
+\bibitem{barnes1989}
+BARNES, H. A.; HUTTON, J. F.; WALTERS, K. \textbf{An Introduction to Rheology}. Amsterdam: Elsevier, 1989.
 
-\noindent
-\textbf{reed1995}: Reed, J. S. (1995). \textit{Principles of Ceramics Processing} (2nd ed.). New York: John Wiley \& Sons.
+\bibitem{reed1995}
+REED, J. S. \textbf{Principles of Ceramics Processing}. 2. ed. New York: John Wiley \& Sons, 1995.
+
+\end{thebibliography}
 
 \end{document}
