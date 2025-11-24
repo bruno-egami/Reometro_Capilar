@@ -1,6 +1,6 @@
 # 🔬 Sistema de Controle e Análise - Reômetro Capilar
 
-Sistema completo para controle de reômetro capilar com **dual sensor de pressão** (Linha & Pasta), análise reológica avançada, correções de Bagley e Mooney, e comparação de dados.
+Sistema completo para controle de reômetro capilar com **dois sensores de pressão** (Linha & Pasta), análise reológica, correções de Bagley e Mooney, e comparação de dados.
 
 ---
 
@@ -20,7 +20,7 @@ Sistema completo para controle de reômetro capilar com **dual sensor de pressã
 ### **Hardware**
 - Arduino com Firmware v3.0+ (dual sensor)
 - 2x Sensores de pressão (Transdutor 1: Linha, Transdutor 2: Pasta)
-- Balança de precisão conectada
+- Balança de precisão
 - Reômetro capilar com capilares intercambiáveis
 
 ### **Software**
@@ -58,7 +58,7 @@ pip install numpy>=1.20.0 pandas>=1.3.0 matplotlib>=3.4.0 scipy>=1.7.0 pyserial>
 
 ### **1. Clone ou Baixe o Repositório**
 ```bash
-git clone https://github.com/[seu-usuario]/Reometro_Capilar.git
+git clone https://github.com/bruno-egami/Reometro_Capilar.git
 cd Reometro_Capilar
 ```
 
@@ -203,8 +203,8 @@ Reometro_Capilar/
   1. Curva de fluxo (τ vs γ̇)
   2. n' vs γ̇
   3. Viscosidade vs γ̇
-  4. Pressão vs Viscosidade **(com curva do modelo)**
-  5. Comparativo aparente vs real **(com curva do modelo)**
+  4. Pressão vs Viscosidade 
+  5. Comparativo aparente vs real 
 - **Saída:** 
   - CSV com resultados
   - JSON com parâmetros dos modelos
@@ -250,7 +250,7 @@ Reometro_Capilar/
   - ✅ Cálculo de Fcal (fator de calibração)
   - ✅ Análise de discrepância (MAPE)
   - ✅ Média interpolada
-  - ✅ **Nome personalizado para saída**
+  - ✅ Nome personalizado para saída
   - ✅ Relatórios compilados
 - **Entrada:** Múltiplas sessões
 - **Saída:** Pasta com gráficos + CSVs comparativos
@@ -260,7 +260,7 @@ Reometro_Capilar/
 ### **🟣 Reômetro Rotacional**
 
 #### **Script 5: Processador Rotacional**
-- **Função:** Processa dados de reômetros rotacionais (Brookfield, Haake, etc)
+- **Função:** Processa dados de reômetros rotacionais comerciais(Anton Paar, etc)
 - **Features:**
   - ✅ Importação de formatos variados
   - ✅ Conversão para formato padrão
