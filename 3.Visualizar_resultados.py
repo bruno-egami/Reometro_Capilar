@@ -11,54 +11,23 @@ import numpy as np
 import pandas as pd
 import matplotlib
 import re
-try:
-    # Tenta usar um backend mais moderno para melhor performance de visualização
-    matplotlib.use('QtAgg') 
-except ImportError:
-    print("Aviso: Backend QtAgg não encontrado, usando o padrão do sistema.")
-import matplotlib.pyplot as plt
+import utils_reologia
+utils_reologia.setup_graficos()
+from modelos_reologicos import MODELS
+models = MODELS
 
-# --- Definições dos Modelos Reológicos ---
-def model_newtonian(gd,eta): return eta*gd
-def model_power_law(gd,K_pl,n_pl): return K_pl*np.power(np.maximum(gd, 1e-9),n_pl)
-def model_bingham(gd,t0,ep): return t0+ep*gd
-def model_hb(gd,t0,K_hb,n_hb): return t0+K_hb*np.power(np.maximum(gd, 1e-9),n_hb)
-def model_casson(gd, tau0_cas, eta_cas): 
-    sqrt_tau0 = np.sqrt(np.maximum(tau0_cas, 0))
-    sqrt_eta_cas_val = np.sqrt(np.maximum(eta_cas, 1e-9))
-    sqrt_gd_val = np.sqrt(np.maximum(gd, 1e-9))
-    return (sqrt_tau0 + sqrt_eta_cas_val * sqrt_gd_val)**2
-
-models = {
-    "Newtoniano": model_newtonian, "Lei da Potência": model_power_law, 
-    "Bingham": model_bingham, "Herschel-Bulkley": model_hb, "Casson": model_casson
-}
-
-# --- Definição de Cores Otimizadas (tab10) ---
-# Usaremos cores sólidas e contrastantes
-CORES = plt.get_cmap('tab10')
-COR_DADOS_FLUXO = CORES(0) # Azul Escuro
+CORES = matplotlib.colormaps['tab10']
 COR_DADOS_VISCOSIDADE = CORES(2) # Verde Sólido
+COR_DADOS_FLUXO = CORES(0) # Azul
 COR_ERRO = CORES(7) # Cinza Chumbo ou Magenta (para contraste)
 COR_RESIDUO = CORES(4) # Roxo
-COR_MELHOR_MODELO = 'red' 
-
-# --- Função Auxiliar para Adicionar Texto ---
+COR_MELHOR_MODELO = 'red'
 def adicionar_texto_explicativo(fig, texto):
     fig.subplots_adjust(bottom=0.25)
     fig.text(0.5, 0.01, texto, ha='center', va='bottom', fontsize=9, wrap=True,
              bbox=dict(boxstyle='round,pad=0.5', fc='wheat', alpha=0.5))
 
-def verificar_arquivos_na_sessao(caminho_sessao):
-    """Verifica se a sessão contém algum CSV de resultados individual ou estatístico, usando busca recursiva."""
-    # Busca por arquivos CSV em qualquer nível de subpasta (busca recursiva)
-    search_pattern_indiv = os.path.join(caminho_sessao, '**', '*_resultados_reologicos.csv')
-    arquivos_indiv = glob.glob(search_pattern_indiv, recursive=True)
-    
-    search_pattern_stat = os.path.join(caminho_sessao, '**', '*_resultados_estatisticos.csv')
-    arquivos_stat = glob.glob(search_pattern_stat, recursive=True)
-    
-    return arquivos_indiv, arquivos_stat
+
 
 def ler_e_preparar_dados(caminho_csv, tipo_arquivo):
     """Lê o CSV, identifica o tipo de dado e prepara as variáveis."""
@@ -136,97 +105,31 @@ def ler_e_preparar_dados(caminho_csv, tipo_arquivo):
 
 
 def visualizador_principal():
-    base_folder = "resultados_analise_reologica"
-    base_folder_stat = "resultados_analise_estatistica"
-
-    # Garante que as pastas existam
-    if not os.path.exists(base_folder): os.makedirs(base_folder)
-    if not os.path.exists(base_folder_stat): os.makedirs(base_folder_stat)
-
-    # Dicionário para mapear o nome da sessão para o caminho e tipo
-    sessoes_validas = {}
-
-    # --- 1. Busca e Valida Sessões Individuais ---
-    sessoes_indiv = sorted([d for d in os.listdir(base_folder) if os.path.isdir(os.path.join(base_folder, d))], reverse=True)
-    for nome_sessao in sessoes_indiv:
-        caminho_sessao = os.path.join(base_folder, nome_sessao)
-        arquivos_indiv, _ = verificar_arquivos_na_sessao(caminho_sessao)
-        if arquivos_indiv:
-             if nome_sessao not in sessoes_validas:
-                 sessoes_validas[nome_sessao] = {'caminho': caminho_sessao, 'tipo': 'Individual'}
+    print("\n--- Visualizador de Resultados ---")
+    print("1. Visualizar Resultados Individuais")
+    print("2. Visualizar Resultados Estatísticos")
     
-    # --- 2. Busca e Valida Sessões Estatísticas ---
-    sessoes_stat = sorted([d for d in os.listdir(base_folder_stat) if os.path.isdir(os.path.join(base_folder_stat, d))], reverse=True)
-    for nome_sessao in sessoes_stat:
-        caminho_sessao = os.path.join(base_folder_stat, nome_sessao)
-        _, arquivos_stat = verificar_arquivos_na_sessao(caminho_sessao)
-        if arquivos_stat:
-             sessoes_validas[nome_sessao] = {'caminho': caminho_sessao, 'tipo': 'Estatístico'}
-
-    sessoes_ordenadas = sorted(sessoes_validas.keys(), reverse=True)
+    while True:
+        choice = input("Escolha (1 ou 2, ou 0 para sair): ").strip()
+        if choice == '0': return
+        if choice in ['1', '2']: break
+        print("Opção inválida.")
     
-    if not sessoes_ordenadas:
-        print(f"Nenhuma sessão de análise (com arquivos CSV) encontrada nas pastas '{base_folder}' ou '{base_folder_stat}'."); return
-
-    print("\n--- Sessões de Análise Disponíveis ---")
-    for i, nome_sessao in enumerate(sessoes_ordenadas): 
-        tipo = sessoes_validas[nome_sessao]['tipo']
-        print(f"  {i+1}: {nome_sessao} ({tipo})")
-
-    escolha_sessao = -1
-    while escolha_sessao < 1 or escolha_sessao > len(sessoes_ordenadas):
-        try:
-            escolha_sessao = int(input(f"Escolha o número da sessão que deseja visualizar (1-{len(sessoes_ordenadas)}): "))
-        except ValueError: print("Entrada inválida.")
-    
-    nome_sessao = sessoes_ordenadas[escolha_sessao - 1]
-    
-    # 3. Busca os arquivos CSV disponíveis na sessão selecionada
-    arquivos_disponiveis = []
-    
-    # Extrai o prefixo do projeto (tudo antes do último timestamp, ex: '19-10-25_Caulim40H2OCap3x64')
-    project_prefix = nome_sessao.rsplit('_202', 1)[0]
-    
-    # --- 1. Busca na pasta Estatística (prioridade) ---
-    caminho_sessao_stat = os.path.join(base_folder_stat, nome_sessao)
-    _, arquivos_stat = verificar_arquivos_na_sessao(caminho_sessao_stat)
-    for arq in arquivos_stat:
-        arquivos_disponiveis.append({'caminho': arq, 'nome': os.path.basename(arq), 'tipo': 'Estatístico'})
-    
-    # --- 2. Busca na pasta Individual (BUSCA AMPLA POR PREFIXO) ---
-    
-    # Caminho de busca ampla: procura em qualquer pasta em 'resultados_analise_reologica' 
-    # que comece com o prefixo do projeto
-    search_pattern_broad = os.path.join(base_folder, f"{project_prefix}*", '**', '*_resultados_reologicos.csv')
-    arquivos_indiv_broad = glob.glob(search_pattern_broad, recursive=True)
-    
-    for arq in arquivos_indiv_broad:
-        # Garante que não sejam duplicatas (o nome do arquivo individual não deve ser listado como estatístico)
-        if not any(a['caminho'] == arq for a in arquivos_disponiveis):
-            arquivos_disponiveis.append({'caminho': arq, 'nome': os.path.basename(arq), 'tipo': 'Individual'})
-
-    # Garante que não haja duplicatas
-    arquivos_disponiveis = list({v['caminho']:v for v in arquivos_disponiveis}.values())
+    if choice == '1':
+        folder = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
+        pattern = "*_resultados_reologicos.csv"
+        tipo_arquivo = "Individual"
+    else:
+        folder = utils_reologia.CONSTANTS['STATISTICAL_OUTPUT_FOLDER']
+        pattern = "*_resultados_estatisticos.csv"
+        tipo_arquivo = "Estatístico"
         
-    if not arquivos_disponiveis:
-        print(f"ERRO: Nenhum arquivo CSV de resultados encontrado na sessão '{nome_sessao}'."); return
-
-    print("\n--- Arquivos de Resultados Disponíveis na Sessão ---")
-    for i, arq in enumerate(arquivos_disponiveis):
-        print(f"  {i+1}: {arq['nome']} (Tipo: {arq['tipo']})")
-        
-    escolha_csv = -1
-    while escolha_csv < 1 or escolha_csv > len(arquivos_disponiveis):
-        try:
-            escolha_csv = int(input(f"Escolha o número do arquivo para plotagem (1-{len(arquivos_disponiveis)}): "))
-        except ValueError: print("Entrada inválida.")
-
-    # 4. Carrega e prepara os dados
-    # A variável is_statistical é o 10º item retornado
-    arquivo_selecionado = arquivos_disponiveis[escolha_csv - 1]
+    caminho_csv = utils_reologia.selecionar_arquivo(folder, pattern, f"Selecione o arquivo {tipo_arquivo}", ".csv", recursivo=True)
+    
+    if not caminho_csv: return
     
     tau_w_data, gamma_dot_data, eta_true_data, tau_std, gd_std, model_results, titulo_sufixo, plot_type, df_res, is_statistical = \
-        ler_e_preparar_dados(arquivo_selecionado['caminho'], arquivo_selecionado['tipo'])
+        ler_e_preparar_dados(caminho_csv, tipo_arquivo)
 
     if tau_w_data is None: return
 
@@ -242,7 +145,7 @@ def visualizador_principal():
     print("Gerando e SALVANDO gráficos...") # Alerta de que salvará
     
     # --- DEFINIÇÃO DOS NOMES DE ARQUIVO E PASTA DE SAÍDA ---
-    caminho_csv_completo = arquivo_selecionado['caminho']
+    caminho_csv_completo = caminho_csv
     pasta_saida_graficos = os.path.dirname(caminho_csv_completo)
     nome_base_arquivo = os.path.basename(caminho_csv_completo).replace('.csv', '')
     

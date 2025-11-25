@@ -20,191 +20,13 @@ from datetime import datetime
 import os
 import glob
 import json
-import re
-from sklearn.metrics import r2_score
+import utils_reologia
+from modelos_reologicos import MODELS
+
+OUTPUT_BASE_FOLDER = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
+JSON_INPUT_DIR = utils_reologia.CONSTANTS['JSON_INPUT_DIR']
 
 
-# --- CONFIGURAÇÃO DE PASTAS ---
-OUTPUT_BASE_FOLDER = "resultados_analise_reologica"
-JSON_INPUT_DIR = "resultados_testes_reometro"
-
-
-# -----------------------------------------------------------------------------
-# --- DEFINIÇÕES DOS MODELOS REOLÓGICOS ---
-# -----------------------------------------------------------------------------
-
-def model_newtonian(gd, eta): return eta * gd
-def model_power_law(gd, K_pl, n_pl): return K_pl * np.power(np.maximum(gd, 1e-9), n_pl)
-def model_bingham(gd, t0, ep): return t0 + ep * gd
-def model_hb(gd, t0, K_hb, n_hb): return t0 + K_hb * np.power(np.maximum(gd, 1e-9), n_hb)
-def model_casson(gd, tau0_cas, eta_cas):
-    sqrt_tau0 = np.sqrt(np.maximum(tau0_cas, 0))
-    sqrt_eta_cas_val = np.sqrt(np.maximum(eta_cas, 1e-9))
-    sqrt_gd_val = np.sqrt(np.maximum(gd, 1e-9))
-    return (sqrt_tau0 + sqrt_eta_cas_val * sqrt_gd_val)**2
-
-MODELS = {
-    "Newtoniano": (model_newtonian, ([1e-9], [np.inf])),
-    "Lei da Potência": (model_power_law, ([1e-9, 1e-9], [np.inf, 5.0])),
-    "Bingham": (model_bingham, ([0, 1e-9], [np.inf, np.inf])),
-    "Herschel-Bulkley": (model_hb, ([0, 1e-9, 1e-9], [np.inf, np.inf, 5.0])),
-    "Casson": (model_casson, ([0, 1e-9], [np.inf, np.inf]))
-}
-
-
-# -----------------------------------------------------------------------------
-# --- FUNÇÕES AUXILIARES ---
-# -----------------------------------------------------------------------------
-
-def selecionar_sessao(caminho_base):
-    print("=" * 70)
-    print("--- SELECIONAR SESSÃO DE ANÁLISE PARA FILTRO POR RESÍDUOS ---")
-    print("=" * 70)
-
-    try:
-        pastas = sorted(
-            [d for d in os.listdir(caminho_base) if os.path.isdir(os.path.join(caminho_base, d))],
-            key=lambda x: (os.path.getmtime(os.path.join(caminho_base, x))),
-            reverse=True
-        )
-    except FileNotFoundError:
-        print(f"ERRO: A pasta base '{caminho_base}' não foi encontrada.")
-        return None, None
-
-    if not pastas:
-        print(f"ERRO: Nenhuma sessão de análise encontrada em '{caminho_base}'.")
-        return None, None
-
-    print("Sessões de Análise disponíveis:")
-    for i, nome_sessao in enumerate(pastas):
-        print(f"  {i + 1}: {nome_sessao}")
-
-    while True:
-        try:
-
-            escolha_str = input("\nDigite o NÚMERO da sessão (pasta) cujos dados você deseja filtrar: ").strip()
-            if not escolha_str.isdigit(): continue
-            escolha = int(escolha_str) - 1
-            if 0 <= escolha < len(pastas):
-                nome_sessao = pastas[escolha]
-                caminho_sessao = os.path.join(caminho_base, nome_sessao)
-                
-                # 2. Busca os arquivos necessários dentro da sessão
-                csv_path = glob.glob(os.path.join(caminho_sessao, '*_resultados_reologicos.csv'))
-                json_params_path = glob.glob(os.path.join(caminho_sessao, '*_parametros_modelos.json'))
-                
-                if not csv_path:
-                    print(f"ERRO: Arquivo CSV de resultados não encontrado na sessão '{nome_sessao}'.")
-                    continue
-                if not json_params_path:
-                    print(f"ERRO: Arquivo JSON de parâmetros de modelo não encontrado na sessão '{nome_sessao}'.")
-                    continue
-                    
-                # 3. Encontra o JSON BRUTO correspondente (necessário para gerar versão limpa)
-                # Extrai o ID da amostra do nome da sessão, removendo timestamp e prefixos
-                
-                # Remove o timestamp final _YYYYMMDD_HHMMSS
-                nome_sem_timestamp = re.sub(r'_20\d{6}_\d{6}$', '', nome_sessao)
-                
-                # Remove prefixos comuns
-                nome_base_id = nome_sem_timestamp.replace('FC', '').replace('residuos_', '').replace('F0.', '')
-                
-                # Remove números de calibração no início (ex: "0.5326")
-                nome_base_id = re.sub(r'^\d+\.\d+', '', nome_base_id).lstrip('-_')
-                
-                print(f"INFO: Procurando JSON bruto com ID: '{nome_base_id}'")
-                
-                # 3.1. Pesquisa por JSONs contendo o ID base
-                json_caminhos = glob.glob(os.path.join(JSON_INPUT_DIR, f"*{nome_base_id}*.json"))
-                
-                # 3.2. Filtra arquivos indesejados
-                json_caminhos = [p for p in json_caminhos 
-                                if 'parametros_modelos' not in os.path.basename(p) 
-                                and not os.path.basename(p).startswith('edit_')
-                                and not os.path.basename(p).startswith('residuos_')]
-                
-                if not json_caminhos:
-                    print(f"\n" + "!"*70)
-                    print("DETECÇÃO AUTOMÁTICA DE JSON FALHOU")
-                    print("!"*70)
-                    print(f"\nO script não encontrou automaticamente o JSON bruto correspondente")
-                    print(f"à sessão de análise: '{nome_sessao}'")
-                    print(f"\nID extraído da sessão: '{nome_base_id}'")
-                    print(f"\nPOR QUÊ ISSO ACONTECE?")
-                    print(f"  • O nome da sessão de análise não corresponde ao nome do JSON original")
-                    print(f"  • Isso ocorre quando você usa um nome personalizado no Script 2")
-                    print(f"  • Exemplo: JSON original 'Caulim40%...' → Sessão 'teste-qualquer'")
-                    print(f"\nO QUE FAZER?")
-                    print(f"  1. Lembre-se qual JSON você usou no Script 2 (Análise Reológica)")
-                    print(f"  2. Selecione-o manualmente na lista abaixo")
-                    print(f"  3. O script continuará normalmente após a seleção")
-                    print(f"\nDICA: Para evitar seleção manual no futuro:")
-                    print(f"  → Use o nome original do JSON ao executar o Script 2")
-                    print("="*70)
-                    print(f"\nPor favor, selecione manualmente o JSON de entrada:")
-                    json_selecionado = selecionar_arquivo_json(JSON_INPUT_DIR, "Escolha o JSON bruto")
-                    if json_selecionado:
-                        json_bruto_caminho = os.path.join(JSON_INPUT_DIR, json_selecionado)
-                        return caminho_sessao, nome_sessao # Retorna apenas sessão e nome, main vai lidar com JSON
-                    else:
-                        return None, None
-                
-                # 3.3. Se encontrou múltiplos, mostra e permite escolha
-                if len(json_caminhos) > 1:
-                    print(f"\nENCONTRADOS {len(json_caminhos)} JSONs candidatos:")
-                    for idx, jpath in enumerate(json_caminhos, 1):
-                        tamanho_kb = os.path.getsize(jpath) / 1024
-                        mod_time = datetime.fromtimestamp(os.path.getmtime(jpath)).strftime('%d/%m/%Y %H:%M')
-                        print(f"  {idx}: {os.path.basename(jpath):<50} ({tamanho_kb:.1f} KB, {mod_time})")
-                    
-                    # Seleciona o mais recente por padrão
-                    json_caminhos.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-                # Melhor: Vamos implementar a função auxiliar 'selecionar_arquivo_json' primeiro.
-                return caminho_sessao, nome_sessao
-
-            else:
-                print("ERRO: Número fora do intervalo. Tente novamente.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Digite apenas o número.")
-        except Exception as e:
-            print(f"Ocorreu um erro inesperado: {e}")
-            return None, None
-
-def selecionar_arquivo_json(diretorio, mensagem_prompt):
-    """Lista arquivos JSON em um diretório e permite seleção manual."""
-    try:
-        arquivos = sorted(
-            [f for f in os.listdir(diretorio) if f.endswith('.json')],
-            key=lambda x: os.path.getmtime(os.path.join(diretorio, x)),
-            reverse=True
-        )
-        
-        # Filtra arquivos de sistema/auxiliares
-        arquivos = [f for f in arquivos 
-                   if 'parametros_modelos' not in f 
-                   and not f.startswith('limpo_') 
-                   and not f.startswith('residuos_')]
-        
-        if not arquivos:
-            print("Nenhum arquivo JSON válido encontrado.")
-            return None
-            
-        print(f"\n{mensagem_prompt}:")
-        for i, arq in enumerate(arquivos):
-            print(f"  {i+1}: {arq}")
-            
-        while True:
-            escolha = input("\nDigite o número do arquivo (ou 0 para cancelar): ").strip()
-            if escolha == '0': return None
-            if escolha.isdigit():
-                idx = int(escolha) - 1
-                if 0 <= idx < len(arquivos):
-                    return arquivos[idx]
-            print("Escolha inválida.")
-            
-    except Exception as e:
-        print(f"Erro ao listar arquivos: {e}")
-        return None
 
 
 def carregar_dados_sessao(caminho_sessao):
@@ -272,9 +94,12 @@ def carregar_json_bruto(caminho_json_bruto):
 # -----------------------------------------------------------------------------
 
 def main():
-    caminho_sessao_selecionada, nome_sessao = selecionar_sessao(OUTPUT_BASE_FOLDER)
-    if not caminho_sessao_selecionada:
+    caminho_csv = utils_reologia.selecionar_arquivo(OUTPUT_BASE_FOLDER, "*_resultados_reologicos.csv", "Selecione o arquivo de resultados para filtrar", ".csv", recursivo=True)
+    if not caminho_csv:
         return
+
+    caminho_sessao_selecionada = os.path.dirname(caminho_csv)
+    nome_sessao = os.path.basename(caminho_sessao_selecionada)
 
     nome_base_sem_ts = re.sub(r'_\d{8}_\d{6}$', '', nome_sessao)
     id_sessao_match = re.search(r'^(?:FC[\d\.]+-?)?(.*)', nome_base_sem_ts)

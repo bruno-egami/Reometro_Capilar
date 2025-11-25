@@ -10,29 +10,28 @@ from scipy.optimize import curve_fit
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
 import matplotlib # <-- CORREÇÃO: Esta linha foi readicionada
+import utils_reologia
+utils_reologia.setup_graficos()
 import pandas as pd
 from datetime import datetime
 import os 
 import glob
 import re
 import json
-
-# Configura o backend para visualização
-try:
-    matplotlib.use('QtAgg') 
-except ImportError:
-    print("Aviso: Backend QtAgg não encontrado, usando o padrão do sistema.")
+from modelos_reologicos import MODELS
+from utils_reologia import format_float_for_table
 
 
 # -----------------------------------------------------------------------------
 # --- CONFIGURAÇÃO INICIAL ---
 # -----------------------------------------------------------------------------
 # Pasta onde os resultados do 2.Analise_reologica.py (CSV) estão localizados
-INPUT_BASE_FOLDER = "resultados_analise_reologica"
+# Pasta onde os resultados do 2.Analise_reologica.py (CSV) estão localizados
+INPUT_BASE_FOLDER = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
 # Pasta onde os resultados estatísticos serão salvos
-STATISTICAL_OUTPUT_FOLDER = "resultados_analise_estatistica"
+STATISTICAL_OUTPUT_FOLDER = utils_reologia.CONSTANTS['STATISTICAL_OUTPUT_FOLDER']
 # Pasta onde os JSONs de origem (do script 1a) estão
-JSON_COMPANHEIRO_DIR = "resultados_testes_reometro" 
+JSON_COMPANHEIRO_DIR = utils_reologia.CONSTANTS['JSON_COMPANHEIRO_DIR'] 
 
 # --- NOVO: Fator de agrupamento de pressão ---
 # Altere este valor para agrupar os pontos.
@@ -48,83 +47,12 @@ if not os.path.exists(STATISTICAL_OUTPUT_FOLDER):
 # -----------------------------------------------------------------------------
 # --- FUNÇÕES AUXILIARES DE FORMATAÇÃO E SELEÇÃO ---
 # -----------------------------------------------------------------------------
-def format_float_for_table(value, decimal_places=4):
-    """Formata um número float para exibição em tabelas, usando notação científica para valores muito pequenos."""
-    if isinstance(value, (float, np.floating)):
-        if np.isnan(value): return "NaN"
-        if abs(value) < 10**(-decimal_places) and value != 0 and abs(value) > 1e-12 :
-             return f"{value:.{max(1,decimal_places)}g}"
-        return f"{value:.{decimal_places}f}"
-    return str(value)
 
-def selecionar_arquivo_csv(pasta_base):
-    """Lista e permite ao usuário selecionar um arquivo CSV de resultados."""
-    print("\n--- Seleção de Arquivo CSV de Resultados (Individual) ---")
-    
-    # Busca por CSVs de resultados na pasta base e em todas as suas subpastas
-    caminho_busca = os.path.join(pasta_base, '**', '*_resultados_reologicos.csv')
-    arquivos_csv = glob.glob(caminho_busca, recursive=True)
-    
-    if not arquivos_csv:
-        print(f"ERRO: Nenhum arquivo '*_resultados_reologicos.csv' encontrado na pasta '{pasta_base}'.")
-        print("Certifique-se de que o script '2.Analise_reologica.py' foi executado primeiro.")
-        return None, None, None
-
-    print("Arquivos de resultados disponíveis:")
-    
-    # Cria uma lista de exibição mais amigável, mostrando apenas o nome da pasta e o arquivo
-    arquivos_para_selecao = []
-    for i, caminho_completo in enumerate(arquivos_csv):
-        # O nome da sessão é o nome da pasta pai
-        nome_sessao = os.path.basename(os.path.dirname(caminho_completo))
-        arquivos_para_selecao.append({'caminho': caminho_completo, 'nome': nome_sessao})
-        print(f"  {i+1}: {nome_sessao}")
-
-    while True:
-        try:
-            escolha_str = input("\nDigite o NÚMERO da sessão (pasta) que contém o CSV que deseja analisar: ")
-            if escolha_str == '0':
-                return None, None, None
-            
-            escolha = int(escolha_str)
-            if 1 <= escolha <= len(arquivos_para_selecao):
-                caminho_selecionado = arquivos_para_selecao[escolha - 1]['caminho']
-                nome_base = arquivos_para_selecao[escolha - 1]['nome']
-                
-                # O caminho de saída é a pasta de estatística + o nome da sessão base
-                sessao_output_folder = os.path.join(STATISTICAL_OUTPUT_FOLDER, nome_base)
-                if not os.path.exists(sessao_output_folder):
-                    os.makedirs(sessao_output_folder)
-                
-                return caminho_selecionado, nome_base, sessao_output_folder
-            else:
-                print("ERRO: Escolha inválida.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Digite um número.")
-        except Exception as e:
-            print(f"Ocorreu um erro inesperado: {e}")
-            return None, None, None
 
 # -----------------------------------------------------------------------------
 # --- DEFINIÇÕES DOS MODELOS REOLÓGICOS (Consistentes com 2.Analise_reologica.py) ---
 # -----------------------------------------------------------------------------
-def model_newtonian(gd,eta): return eta*gd
-def model_power_law(gd,K_pl,n_pl): return K_pl*np.power(np.maximum(gd, 1e-9),n_pl)
-def model_bingham(gd,t0,ep): return t0+ep*gd
-def model_hb(gd,t0,K_hb,n_hb): return t0+K_hb*np.power(np.maximum(gd, 1e-9),n_hb)
-def model_casson(gd, tau0_cas, eta_cas):
-    sqrt_tau0 = np.sqrt(np.maximum(tau0_cas, 0))
-    sqrt_eta_cas_val = np.sqrt(np.maximum(eta_cas, 1e-9))
-    sqrt_gd_val = np.sqrt(np.maximum(gd, 1e-9))
-    return (sqrt_tau0 + sqrt_eta_cas_val * sqrt_gd_val)**2
-
-MODELS = {
-    "Newtoniano": (model_newtonian, ([1e-9], [np.inf])),
-    "Lei da Potência": (model_power_law, ([1e-9, 1e-9], [np.inf, 5.0])),
-    "Bingham": (model_bingham, ([0, 1e-9], [np.inf, np.inf])),
-    "Herschel-Bulkley": (model_hb, ([0, 1e-9, 1e-9], [np.inf, np.inf, 5.0])),
-    "Casson": (model_casson, ([0, 1e-9], [np.inf, np.inf]))
-}
+# (Importados de modelos_reologicos.py)
 
 # -----------------------------------------------------------------------------
 # --- FUNÇÕES DE ANÁLISE DE VARIAÇÃO E RELATÓRIO (INTEGRADO DO SCRIPT 2C) ---
@@ -806,12 +734,13 @@ def processar_estatisticamente(caminho_csv, nome_base_sessao, output_folder):
 # --- INÍCIO DA EXECUÇÃO ---
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    caminho_csv_input, nome_base, output_f = selecionar_arquivo_csv(INPUT_BASE_FOLDER)
+    caminho_csv_input = utils_reologia.selecionar_arquivo(INPUT_BASE_FOLDER, "*_resultados_reologicos.csv", "Seleção de Arquivo CSV de Resultados", ".csv", recursivo=True)
     
     if caminho_csv_input:
+        nome_base = os.path.basename(os.path.dirname(caminho_csv_input))
+        output_f = os.path.join(STATISTICAL_OUTPUT_FOLDER, nome_base)
+        if not os.path.exists(output_f): os.makedirs(output_f)
         processar_estatisticamente(caminho_csv_input, nome_base, output_f)
     
     print("\n--- FIM DO SCRIPT DE TRATAMENTO ESTATÍSTICO ---")
-
-" from the Canvas document above.
 

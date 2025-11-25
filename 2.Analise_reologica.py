@@ -10,19 +10,23 @@ from scipy.optimize import curve_fit
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('QtAgg') 
+import utils_reologia
+utils_reologia.setup_graficos() 
+from utils_reologia import format_float_for_table 
 import pandas as pd
 from datetime import datetime
 import os 
 import json 
 from scipy.interpolate import interp1d
+from modelos_reologicos import MODELS
 
 # -----------------------------------------------------------------------------
 # --- CONFIGURAÇÃO INICIAL ---
 # -----------------------------------------------------------------------------
 # Define os nomes das pastas de saída e de calibrações
-main_output_base_folder = "resultados_analise_reologica"
-calibrations_folder = "correcoes_bagley_mooney" 
+# Define os nomes das pastas de saída e de calibrações
+main_output_base_folder = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
+calibrations_folder = utils_reologia.CONSTANTS['CALIBRATIONS_FOLDER'] 
 
 # --- CONFIGURAÇÕES GERAIS ---
 # Fator de calibração empírico padrão (multiplicador final da tensão).
@@ -72,14 +76,7 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False):
             print(f"Ocorreu um erro: {e}")
 
 
-def format_float_for_table(value, decimal_places=4):
-    """Formata um número float para exibição em tabelas, usando notação científica para valores muito pequenos."""
-    if isinstance(value, (float, np.floating)):
-        if np.isnan(value): return "NaN"
-        if abs(value) < 10**(-decimal_places) and value != 0 and abs(value) > 1e-12 :
-             return f"{value:.{max(1,decimal_places)}g}"
-        return f"{value:.{decimal_places}f}"
-    return str(value)
+
 
 # --- FUNÇÃO PARA LER DADOS JSON (MODIFICADA PARA TEMPO VARIÁVEL) ---
 def ler_dados_json(json_filepath):
@@ -154,58 +151,7 @@ def ler_dados_json(json_filepath):
 
 
 # --- FUNÇÕES PARA LISTAR E SELECIONAR ARQUIVO JSON ---
-def listar_arquivos_json_numerados(pasta_json):
-    """Lista todos os arquivos .json em uma pasta para que o usuário possa escolher pelo número."""
-    if not os.path.exists(pasta_json):
-        print(f"AVISO: A pasta '{pasta_json}' não existe. Não foi possível listar arquivos JSON.")
-        return []
-    arquivos = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and os.path.isfile(os.path.join(pasta_json, f))])
-    if not arquivos:
-        print(f"Nenhum arquivo .json encontrado na pasta '{pasta_json}'.")
-    else:
-        print(f"\nArquivos JSON disponíveis em '{pasta_json}':")
-        for i, arq in enumerate(arquivos):
-            print(f"  {i+1}: {arq}")
-    return arquivos
 
-def selecionar_arquivo_json(pasta_json, mensagem_prompt):
-    """Gerencia o menu para o usuário escolher um arquivo JSON da lista."""
-    arquivos_disponiveis = listar_arquivos_json_numerados(pasta_json)
-    if not arquivos_disponiveis:
-        return None 
-    while True:
-        try:
-            escolha_str = input(f"{mensagem_prompt} (digite o número ou '0' para nome completo): ").strip()
-            if escolha_str == '0':
-                 nome_manual = input("  Digite o nome completo do arquivo JSON (ex: dados.json): ").strip()
-                 if not nome_manual: 
-                     print("  Nome manual não pode ser vazio. Tente novamente.")
-                     continue
-                 if not nome_manual.lower().endswith(".json"):
-                     nome_manual_original = nome_manual
-                     nome_manual += ".json"
-                     print(f"  ALERTA: Nome '{nome_manual_original}' não termina com .json. Usando '{nome_manual}'.")
-                 
-                 if os.path.exists(os.path.join(pasta_json, nome_manual)):
-                     print(f"  Selecionado manualmente: {nome_manual}")
-                     return nome_manual
-                 else:
-                     print(f"  ERRO: Arquivo '{nome_manual}' digitado manualmente não foi encontrado na pasta '{pasta_json}'.")
-                     print(f"  Por favor, escolha um número da lista ou digite '0' para um nome válido.")
-                     continue 
-            
-            escolha_num = int(escolha_str)
-            if 1 <= escolha_num <= len(arquivos_disponiveis):
-                arquivo_selecionado = arquivos_disponiveis[escolha_num - 1]
-                print(f"  Selecionado: {arquivo_selecionado}")
-                return arquivo_selecionado
-            else:
-                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_disponiveis)}, ou '0'.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite um número ou '0'.")
-        except Exception as e:
-            print(f"Ocorreu um erro inesperado na seleção: {e}")
-            return None
 # -----------------------------------------------------------------------------
 # --- FUNÇÕES PARA SALVAR E CARREGAR CALIBRAÇÕES ---
 # -----------------------------------------------------------------------------
@@ -246,36 +192,7 @@ def listar_e_selecionar_calibracao(pasta_calibracao):
     Lista os arquivos de calibração .json disponíveis na pasta de calibrações
     e permite ao usuário selecionar um para aplicar em um novo ensaio.
     """
-    print(f"\nBuscando calibrações salvas em '{pasta_calibracao}'...")
-    if not os.path.exists(pasta_calibracao):
-        print(f"AVISO: A pasta de calibrações '{pasta_calibracao}' não existe.")
-        return None
-
-    arquivos_cal = sorted([f for f in os.listdir(pasta_calibracao) if f.startswith('cal_') and f.endswith('.json')])
-    
-    if not arquivos_cal:
-        print("Nenhuma calibração encontrada.")
-        return None
-
-    print("\nCalibrações disponíveis:")
-    for i, arq in enumerate(arquivos_cal):
-        print(f"  {i+1}: {arq}")
-    
-    while True:
-        try:
-            escolha = input(f"Escolha o número da calibração a ser aplicada (ou '0' para cancelar): ").strip()
-            escolha_num = int(escolha)
-            if escolha_num == 0:
-                print("  Nenhuma calibração será aplicada.")
-                return None
-            if 1 <= escolha_num <= len(arquivos_cal):
-                arquivo_selecionado = arquivos_cal[escolha_num - 1]
-                print(f"  Calibração selecionada: {arquivo_selecionado}")
-                return os.path.join(pasta_calibracao, arquivo_selecionado)
-            else:
-                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_cal)} ou 0.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite um número.")
+    return utils_reologia.selecionar_arquivo(pasta_calibracao, "cal_*.json", "Escolha a calibração a ser aplicada", ".json")
 
 def carregar_e_aplicar_calibracao(caminho_calibracao, tau_w_nao_corrigido):
     """
@@ -666,10 +583,10 @@ while not dados_confirmados:
         if not os.path.exists(json_base_path):
             print(f"ERRO: Pasta '{json_base_path}' não encontrada."); continue
 
-        json_filename_unico = selecionar_arquivo_json(json_base_path, "Escolha o arquivo JSON para o capilar único")
-        if json_filename_unico is None: continue
+        json_filepath_unico = utils_reologia.selecionar_arquivo(json_base_path, "*.json", "Escolha o arquivo JSON para o capilar único", ".json")
+        if json_filepath_unico is None: continue
 
-        json_filepath_unico = os.path.join(json_base_path, json_filename_unico)
+        json_filename_unico = os.path.basename(json_filepath_unico)
         json_data = ler_dados_json(json_filepath_unico)
 
         if json_data is None: continue
@@ -740,9 +657,10 @@ while not dados_confirmados:
                 if num_L_bagley < 2: print("ERRO: Mínimo 2.")
 
             for i in range(num_L_bagley):
-                json_filename = selecionar_arquivo_json(json_base_path, f"Escolha o JSON para capilar Bagley {i+1}")
-                if not json_filename: erro_na_leitura = True; break
-                json_data = ler_dados_json(os.path.join(json_base_path, json_filename))
+                json_filepath = utils_reologia.selecionar_arquivo(json_base_path, "*.json", f"Escolha o JSON para capilar Bagley {i+1}", ".json")
+                if not json_filepath: erro_na_leitura = True; break
+                json_filename = os.path.basename(json_filepath)
+                json_data = ler_dados_json(json_filepath)
                 if not json_data: erro_na_leitura = True; break
                 
                 # O tempo agora vem do array de durações, seja fixo ou variável
@@ -798,9 +716,10 @@ while not dados_confirmados:
                 if num_D_mooney < 2: print("ERRO: Mínimo 2.")
 
             for i in range(num_D_mooney):
-                json_filename = selecionar_arquivo_json(json_base_path, f"Escolha o JSON para capilar Mooney {i+1}")
-                if not json_filename: erro_na_leitura = True; break
-                json_data = ler_dados_json(os.path.join(json_base_path, json_filename))
+                json_filepath = utils_reologia.selecionar_arquivo(json_base_path, "*.json", f"Escolha o JSON para capilar Mooney {i+1}", ".json")
+                if not json_filepath: erro_na_leitura = True; break
+                json_filename = os.path.basename(json_filepath)
+                json_data = ler_dados_json(json_filepath)
                 if not json_data: erro_na_leitura = True; break
                 
                 duracoes_array = json_data.get('duracoes_s_list', [])
@@ -1313,19 +1232,10 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0:
 # -----------------------------------------------------------------------------
 if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_an)) > 0:
     print("\n--- Ajustando Modelos Reológicos ---")
-    def model_newtonian(gd,eta): return eta*gd
-    def model_power_law(gd,K_pl,n_pl): return K_pl*np.power(np.maximum(gd, 1e-9),n_pl)
-    def model_bingham(gd,t0,ep): return t0+ep*gd
-    def model_hb(gd,t0,K_hb,n_hb): return t0+K_hb*np.power(np.maximum(gd, 1e-9),n_hb)
-    def model_casson(gd, tau0_cas, eta_cas):
-        sqrt_tau0 = np.sqrt(np.maximum(tau0_cas, 0))
-        sqrt_eta_cas_val = np.sqrt(np.maximum(eta_cas, 1e-9))
-        sqrt_gd_val = np.sqrt(np.maximum(gd, 1e-9))
-        return (sqrt_tau0 + sqrt_eta_cas_val * sqrt_gd_val)**2
-
-    models = {"Newtoniano":model_newtonian, "Lei da Potência":model_power_law,
-              "Bingham":model_bingham, "Herschel-Bulkley":model_hb,
-              "Casson": model_casson}
+    # Modelos importados de modelos_reologicos.py
+    # Cria dicionário apenas com funções para compatibilidade com o restante do script
+    models = {k: v[0] for k, v in MODELS.items()}
+    
     model_results = {}
     valid_fit = (tau_w_an > 0) & (gamma_dot_w_an_wr > 0) & (~np.isnan(tau_w_an)) & (~np.isnan(gamma_dot_w_an_wr)) & (np.isfinite(tau_w_an)) & (np.isfinite(gamma_dot_w_an_wr))
 
@@ -1337,22 +1247,28 @@ if num_testes_para_analise > 0 and len(tau_w_an) > 0 and np.sum(~np.isnan(tau_w_
         tau0_initial_guess_generic = np.min(tau_fit)/2 if len(tau_fit)>0 else 0.1
         tau0_initial_guess_generic = max(tau0_initial_guess_generic, 1e-3)
 
-        for name,func in models.items():
+        for name, (func, model_bounds) in MODELS.items():
             print(f"\nAjustando: {name}")
             n_p = func.__code__.co_argcount-1
             if len(gd_fit)<n_p: print(f"  Dados insuficientes para {name} (requer {n_p} params, {len(gd_fit)} pontos)."); continue
-            p0,bnds = None,(-np.inf, np.inf)
+            p0 = None
+            bnds = model_bounds
+            
             n_g = n_prime if (n_prime > 0 and not np.isnan(n_prime) and 0.1 < n_prime < 2.5) else 0.5
             K_g = K_prime if (K_prime > 1e-9 and not np.isnan(K_prime)) else 1.0
 
-            if name=="Newtoniano": bnds=(1e-9,np.inf); p0=[max(1e-3,np.mean(tau_fit/(gd_fit+1e-9)) if len(gd_fit)>0 else 1.0)]
-            elif name=="Lei da Potência": p0,bnds = [K_g,n_g],([1e-9,1e-9],[np.inf,5.0])
-            elif name=="Bingham": p0,bnds = [tau0_initial_guess_generic,max(1e-3,np.mean(eta_a_an[valid_fit & np.isfinite(eta_a_an)]) if np.any(valid_fit & np.isfinite(eta_a_an)) else 0.1)],([0,1e-9],[np.inf,np.inf])
-            elif name=="Herschel-Bulkley": p0,bnds = [tau0_initial_guess_generic,K_g,n_g],([0,1e-9,1e-9],[np.inf,np.inf,5.0])
+            if name=="Newtoniano": 
+                p0=[max(1e-3,np.mean(tau_fit/(gd_fit+1e-9)) if len(gd_fit)>0 else 1.0)]
+            elif name=="Lei da Potência": 
+                p0 = [K_g,n_g]
+            elif name=="Bingham": 
+                p0 = [tau0_initial_guess_generic,max(1e-3,np.mean(eta_a_an[valid_fit & np.isfinite(eta_a_an)]) if np.any(valid_fit & np.isfinite(eta_a_an)) else 0.1)]
+            elif name=="Herschel-Bulkley": 
+                p0 = [tau0_initial_guess_generic,K_g,n_g]
             elif name=="Casson":
                 eta_cas_initial_guess = np.mean(eta_a_an[valid_fit & np.isfinite(eta_a_an)]) if np.any(valid_fit & np.isfinite(eta_a_an)) else 0.1
                 eta_cas_initial_guess = max(eta_cas_initial_guess, 1e-3)
-                p0,bnds = [tau0_initial_guess_generic, eta_cas_initial_guess], ([0, 1e-9],[np.inf,np.inf])
+                p0 = [tau0_initial_guess_generic, eta_cas_initial_guess]
 
             try:
                 params_fit,cov = curve_fit(func,gd_fit,tau_fit,p0=p0,bounds=bnds,maxfev=20000,method='trf', ftol=1e-8, xtol=1e-8, gtol=1e-8)
@@ -1552,7 +1468,7 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
 
     # --- Gráfico 1: Curva de Fluxo (com destaque) ---
     fig1,ax1=plt.subplots(figsize=(10,7))
-    ax1.scatter(gamma_dot_w_an_wr[valid_fit],tau_w_an[valid_fit],label='Dados Experimentais Processados',c='k',marker='o',s=60,zorder=10)
+    ax1.plot(gamma_dot_w_an_wr[valid_fit],tau_w_an[valid_fit],label='Dados Experimentais Processados',c='k',marker='o',linestyle='-',linewidth=1.5,markersize=8,zorder=10)
     if len(gd_plot)>0:
         for n_model_name,d_model_data in model_results.items():
             try:
@@ -1600,7 +1516,7 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
     # --- Gráfico 3: Curva de Viscosidade ---
     fig3,ax3=plt.subplots(figsize=(10,7))
     valid_eta = ~np.isnan(eta_true_an) & (gamma_dot_w_an_wr > 0) & (eta_true_an > 0) & (~np.isinf(eta_true_an))
-    if np.any(valid_eta): ax3.scatter(gamma_dot_w_an_wr[valid_eta],eta_true_an[valid_eta],label='Viscosidade Real Experimental (η)',c='g',marker='s',s=60,zorder=10)
+    if np.any(valid_eta): ax3.plot(gamma_dot_w_an_wr[valid_eta],eta_true_an[valid_eta],label='Viscosidade Real Experimental (η)',c='g',marker='s',linestyle='-',linewidth=1.5,markersize=8,zorder=10)
     if len(gd_plot)>0:
         for n_model_name,d_model_data in model_results.items():
             try:
@@ -1625,7 +1541,7 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
             if np.any(valid_pv):
                 P_Pa_plot, eta_plot = pressoes_bar_np_plot[valid_pv]*1e5, eta_true_an[valid_pv]
                 fig4,ax4=plt.subplots(figsize=(10,7))
-                ax4.plot(P_Pa_plot,eta_plot,label='Viscosidade Real Experimental', color='purple',marker='D', linestyle='', linewidth=0, markersize=8, zorder=10)
+                ax4.plot(P_Pa_plot,eta_plot,label='Viscosidade Real Experimental', color='purple',marker='D', linestyle='-', linewidth=1.5, markersize=8, zorder=10)
                 
                 # NOVA ADIÇÃO: Curva do melhor modelo para comparação
                 if model_results and best_model_nome and len(gd_plot) > 0:
@@ -1674,7 +1590,7 @@ if num_testes_para_analise > 0 and len(gd_fit)>0 and model_results:
     if np.any(valid_eta):
          ax5.plot(gamma_dot_w_an_wr[valid_eta],eta_true_an[valid_eta],
                      label=r'Viscosidade Real ($\eta$ vs $\dot{\gamma}_w$)',
-                     marker='s', linestyle='', color='green', alpha=0.7, linewidth=0, markersize=6, zorder=5)
+                     marker='s', linestyle='-', color='green', alpha=0.7, linewidth=1.5, markersize=6, zorder=5)
     
     # NOVA ADIÇÃO: Curva do melhor modelo para comparação
     if model_results and best_model_nome and len(gd_plot) > 0:

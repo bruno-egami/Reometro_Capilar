@@ -14,9 +14,12 @@ import inspect # <--- ADICIONADO
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import utils_reologia
+utils_reologia.setup_graficos()
 from datetime import datetime
 from scipy.interpolate import interp1d
 from scipy.stats import linregress 
+from modelos_reologicos import MODELS, PARAM_NAMES_MAP
 
 # Tenta importar as bibliotecas necessárias para o ajuste de curvas.
 try:
@@ -30,10 +33,10 @@ except ImportError:
 
 
 # --- CONFIGURAÇÃO DE PASTAS ---
-CAMINHO_BASE_INDIVIDUAL = "resultados_analise_reologica"
-CAMINHO_BASE_ESTATISTICO = "resultados_analise_estatistica"
-CAMINHO_BASE_COMPARATIVOS = "comparativo_analises"
-CAMINHO_BASE_ROTACIONAL = "resultados_processados_interativo"
+CAMINHO_BASE_INDIVIDUAL = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
+CAMINHO_BASE_ESTATISTICO = utils_reologia.CONSTANTS['STATISTICAL_OUTPUT_FOLDER']
+CAMINHO_BASE_COMPARATIVOS = utils_reologia.CONSTANTS['CAMINHO_BASE_COMPARATIVOS']
+CAMINHO_BASE_ROTACIONAL = utils_reologia.CONSTANTS['CAMINHO_BASE_ROTACIONAL']
 
 # --- PADRÕES DE NOMES DE ARQUIVOS ---
 STATISTICAL_CSV_PATTERN = '*_resultados_estatisticos.csv'
@@ -45,33 +48,7 @@ ROTACIONAL_CSV_PATTERN = '*_processado.csv'
 # -----------------------------------------------------------------------------
 # --- DEFINIÇÕES DOS MODELOS REOLÓGICOS (Consistentes com o Script 2) ---
 # -----------------------------------------------------------------------------
-
-def model_newtonian(gd, eta): return eta * gd
-def model_power_law(gd, K_pl, n_pl): return K_pl * np.power(np.maximum(gd, 1e-9), n_pl)
-def model_bingham(gd, t0, ep): return t0 + ep * gd
-def model_hb(gd, t0, K_hb, n_hb): return t0 + K_hb * np.power(np.maximum(gd, 1e-9), n_hb)
-def model_casson(gd, tau0_cas, eta_cas):
-    sqrt_tau0 = np.sqrt(np.maximum(tau0_cas, 0))
-    sqrt_eta_cas_val = np.sqrt(np.maximum(eta_cas, 1e-9))
-    sqrt_gd_val = np.sqrt(np.maximum(gd, 1e-9))
-    return (sqrt_tau0 + sqrt_eta_cas_val * sqrt_gd_val)**2
-
-MODELS = {
-    "Newtoniano": (model_newtonian, ([1e-9], [np.inf])),
-    "Lei da Potência": (model_power_law, ([1e-9, 1e-9], [np.inf, 5.0])),
-    "Bingham": (model_bingham, ([0, 1e-9], [np.inf, np.inf])),
-    "Herschel-Bulkley": (model_hb, ([0, 1e-9, 1e-9], [np.inf, np.inf, 5.0])),
-    "Casson": (model_casson, ([0, 1e-9], [np.inf, np.inf]))
-}
-
-# (NOVO) Mapeamento de nomes de parâmetros para o relatório de modelos
-PARAM_NAMES_MAP = {
-    "Newtoniano": ["eta (Pa.s)"],
-    "Lei da Potência": ["K (Pa.s^n)", "n (-)"],
-    "Bingham": ["t0 (Pa)", "ep (Pa.s)"],
-    "Herschel-Bulkley": ["t0 (Pa)", "K (Pa.s^n)", "n (-)"],
-    "Casson": ["t0 (Pa)", "eta_cas (Pa.s)"]
-}
+# (Importados de modelos_reologicos.py)
 
 
 # -----------------------------------------------------------------------------

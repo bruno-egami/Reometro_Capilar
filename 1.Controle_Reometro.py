@@ -14,12 +14,14 @@ import os
 from datetime import datetime
 import numpy as np
 import glob
+import utils_reologia
 
 # Tenta importar msvcrt para input não bloqueante no Windows
 try:
     import msvcrt
     WINDOWS_OS = True
 except ImportError:
+
     WINDOWS_OS = False
 
 # --- Configurações ---
@@ -28,7 +30,7 @@ BAUD_RATE = 115200
 TIMEOUT_SERIAL = 2
 # [MODIFICADO] Arquivos de calibração separados
 CALIBRATION_FILE = 'calibracao_reometro_dual.json' 
-RESULTS_JSON_DIR = "resultados_testes_reometro"
+RESULTS_JSON_DIR = utils_reologia.CONSTANTS['RESULTS_JSON_DIR']
 
 # --- NOVAS CONFIGURAÇÕES DE GATILHO DE PRESSÃO ---
 PRESSURE_THRESHOLD_START = 0.15 # Pressão em [bar] para iniciar o cronômetro
@@ -555,35 +557,6 @@ def realizar_coleta_de_teste_py(ser, data_bateria=None, json_filename=None):
         
     salvar_resultados_json_individual_py(data_bateria, json_filename)
 
-def selecionar_json_existente(pasta_json):
-    """Lista JSONs para continuação."""
-    print("\n" + "="*60)
-    print("--- SELECIONAR ARQUIVO JSON PARA CONTINUIDADE ---")
-    print("="*60)
-    if not os.path.exists(pasta_json):
-        print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
-        return None, None
-        
-    arquivos_raw = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and not f.startswith('edit_')], reverse=True)
-    
-    if not arquivos_raw:
-        print(f"Nenhum arquivo encontrado."); return None, None
-    
-    for i, arq in enumerate(arquivos_raw):
-        print(f"  {i+1}: {arq}")
-    
-    while True:
-        try:
-            escolha_str = input("\nEscolha o NÚMERO (ou '0'): ").strip()
-            if escolha_str == '0': return None, None
-            escolha_num = int(escolha_str)
-            if 1 <= escolha_num <= len(arquivos_raw):
-                arq = arquivos_raw[escolha_num - 1]
-                with open(os.path.join(pasta_json, arq), 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                return data, arq
-        except: pass
-
 def realizar_coleta_de_continuacao(ser, data_existente, nome_arquivo_existente):
     realizar_coleta_de_teste_py(ser, data_bateria=data_existente, json_filename=nome_arquivo_existente)
 
@@ -614,8 +587,15 @@ def menu_principal_py(ser):
             else: print("Sem conexão.")
         elif escolha == '2':
             if ser:
-                data, nome = selecionar_json_existente(RESULTS_JSON_DIR)
-                if data: realizar_coleta_de_continuacao(ser, data, nome)
+                caminho = utils_reologia.selecionar_arquivo(RESULTS_JSON_DIR, "*.json", "Selecione o arquivo para continuar", ".json")
+                if caminho:
+                    try:
+                        with open(caminho, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        nome = os.path.basename(caminho)
+                        realizar_coleta_de_continuacao(ser, data, nome)
+                    except Exception as e:
+                        print(f"Erro ao carregar JSON: {e}")
             else: print("Sem conexão.")
         elif escolha == '3':
             if ser: realizar_calibracao_interativa_py(ser)

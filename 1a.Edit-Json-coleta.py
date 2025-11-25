@@ -1,15 +1,8 @@
 # -*- coding: utf-8 -*-
-<<<<<<< Updated upstream
 """
 SCRIPT PARA EDITAR ARQUIVOS JSON DE COLETA (Formato NOVO - 2 Sensores)
 Permite visualizar, modificar (massa/tempo) ou excluir pontos de um ensaio.
 Cria um novo arquivo 'edit_[nome_original].json' com as modificações.
-=======
-# -----------------------------------------------------------------------------
-# SCRIPT 1a.EDIT-JSON-COLETA.PY
-# Ferramenta para visualizar, excluir pontos e reordenar o JSON de testes brutos.
-# -----------------------------------------------------------------------------
->>>>>>> Stashed changes
 
 VERSÃO 2.0 (Simplificada - Apenas 2 Sensores)
 Autor: Bruno Egami (Modificado por Gemini)
@@ -20,9 +13,10 @@ import json
 import os
 import glob
 from datetime import datetime
+import utils_reologia
 
 # --- Configurações ---
-RESULTS_JSON_DIR = "resultados_testes_reometro"
+RESULTS_JSON_DIR = utils_reologia.CONSTANTS['RESULTS_JSON_DIR']
 # [NOVO] Chave de pressão principal para este script (Sensor de Sistema)
 CHAVE_PRESSAO_PRINCIPAL = "media_pressao_sistema_bar"
 
@@ -33,7 +27,6 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=N
             if isinstance(default_val, (int, float)):
                 default_str = f"{default_val:.3f}".replace('.', ',') if default_val > 0.1 else f"{default_val:.4f}".replace('.', ',')
             else:
-<<<<<<< Updated upstream
                 default_str = str(default_val)
             
             prompt = f"{mensagem_prompt} (Atual: {default_str}) [ENTER para manter]: "
@@ -44,81 +37,6 @@ def input_float_com_virgula(mensagem_prompt, permitir_vazio=False, default_val=N
         
         if permitir_vazio and entrada == "":
             return default_val if default_val is not None else None
-=======
-                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_disponiveis)}, ou '0'.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite um número ou '0'.")
-        except Exception as e:
-            print(f"Ocorreu um erro inesperado na seleção: {e}")
-            return None
-
-def processar_limpeza():
-    """Função principal de limpeza e reordenação."""
-    caminho_arquivo_original = selecionar_arquivo_json(JSON_INPUT_DIR)
-    
-    if not caminho_arquivo_original:
-        print("\nProcessamento cancelado.")
-        return
-
-    nome_arquivo_original = os.path.basename(caminho_arquivo_original)
-    print(f"\nCarregando arquivo: {nome_arquivo_original}")
-
-    # 1. Carregar o JSON
-    try:
-        with open(caminho_arquivo_original, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        print(f"ERRO: Arquivo não encontrado.")
-        return
-    except json.JSONDecodeError:
-        print("ERRO: Falha ao decodificar o arquivo JSON. Verifique o formato.")
-        return
-    except Exception as e:
-        print(f"ERRO ao carregar o arquivo: {e}")
-        return
-
-    testes_originais = data.get("testes", [])
-    
-    # 2. EXIBIR DADOS DO ENSAIO PARA O USUÁRIO
-    print("\n" + "="*80)
-    print("DADOS DO ENSAIO SELECIONADO")
-    print("="*80)
-    print(f"Amostra: {data.get('id_amostra', 'N/A')}")
-    print(f"Descrição: {data.get('descricao', 'N/A')}")
-    print(f"Total de Pontos: {len(testes_originais)}")
-    print("-"*80)
-    
-    if testes_originais:
-        # Cabeçalho da tabela
-        print(f"{'Ponto':<8} | {'P. Linha (bar)':<15} | {'P. Pasta (bar)':<15} | {'Massa (g)':<12} | {'Tempo (s)':<10}")
-        print("-"*80)
-        
-        # Dados de cada ponto
-        for teste in testes_originais:
-            ponto_n = teste.get('ponto_n', 'N/A')
-            
-            # Tenta ler pressão Linha (novo) ou Barril (antigo)
-            p_linha = teste.get('media_pressao_linha_bar', 
-                                teste.get('media_pressao_barril_bar', 
-                                          teste.get('media_pressao_final_ponto_bar', 0.0)))
-            
-            # Tenta ler pressão Pasta (novo) ou Entrada (antigo)
-            p_pasta = teste.get('media_pressao_pasta_bar', 
-                                teste.get('media_pressao_entrada_bar', 0.0))
-            
-            massa = teste.get('massa_g_registrada', 0.0)
-            tempo = teste.get('duracao_real_s', 0.0)
-            
-            print(f"{ponto_n:<8} | {p_linha:<15.3f} | {p_pasta:<15.3f} | {massa:<12.3f} | {tempo:<10.2f}")
-        
-        print("="*80)
-    else:
-        print("AVISO: Nenhum teste encontrado neste arquivo.")
-    
-    # 3. Solicitar Pontos a Excluir
-    while True:
-        pontos_str = input("\nDigite os NÚMEROS de 'Ponto No.' a EXCLUIR, separados por vírgula (ex: 4, 36). Pressione Enter para NÃO excluir nenhum: ").strip()
->>>>>>> Stashed changes
         
         try:
             return float(entrada.replace(',', '.'))
@@ -126,64 +44,6 @@ def processar_limpeza():
             print("ERRO: Entrada inválida. Insira um número.")
         except Exception as e:
             print(f"Ocorreu um erro: {e}")
-
-def selecionar_json_para_edicao(pasta_json):
-    """
-    [MODIFICADO] Lista e seleciona arquivos JSON.
-    Valida se o arquivo selecionado é do NOVO formato (2 sensores).
-    """
-    print("\n" + "="*60)
-    print("--- SELECIONAR ARQUIVO JSON PARA EDIÇÃO ---")
-    print(f"(Atenção: Este script aceita apenas o novo formato de 2 sensores)")
-    print("="*60)
-    if not os.path.exists(pasta_json):
-        print(f"ERRO: Pasta '{pasta_json}' não encontrada.")
-        return None, None
-        
-    arquivos_json = sorted([f for f in os.listdir(pasta_json) if f.endswith('.json') and os.path.isfile(os.path.join(pasta_json, f))], reverse=True)
-    
-    if not arquivos_json:
-        print(f"Nenhum arquivo .json encontrado na pasta '{pasta_json}'.")
-        return None, None
-    
-    print("Ensaios disponíveis (do mais recente ao mais antigo):")
-    for i, arq in enumerate(arquivos_json):
-        print(f"  {i+1}: {arq}")
-    
-    while True:
-        try:
-            escolha_str = input("\nEscolha o NÚMERO do ensaio para editar (ou '0' para cancelar): ").strip()
-            if escolha_str == '0': return None, None
-            
-            escolha_num = int(escolha_str)
-            if 1 <= escolha_num <= len(arquivos_json):
-                arquivo_selecionado = arquivos_json[escolha_num - 1]
-                caminho_completo = os.path.join(pasta_json, arquivo_selecionado)
-                
-                with open(caminho_completo, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                # --- [NOVO] Validação do Formato ---
-                if (not data.get('testes') or len(data['testes']) == 0 or 
-                    CHAVE_PRESSAO_PRINCIPAL not in data['testes'][0]):
-                    
-                    print(f"\nERRO: O arquivo '{arquivo_selecionado}' não é do formato novo (2 sensores).")
-                    print(f"      Faltando a chave '{CHAVE_PRESSAO_PRINCIPAL}' no primeiro ponto.")
-                    print("      Por favor, use a versão antiga (V1.0) deste script para arquivos antigos.")
-                    return None, None
-                
-                print(f"  -> Selecionado: {arquivo_selecionado}")
-                print(f"  -> Amostra: {data.get('id_amostra', 'N/A')}")
-                print(f"  -> Formato: NOVO (2 Sensores) validado.")
-                print(f"  -> Pontos existentes: {len(data.get('testes', []))}")
-                return data, arquivo_selecionado
-            else:
-                print(f"ERRO: Escolha inválida. Digite um número entre 1 e {len(arquivos_json)}, ou '0'.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Por favor, digite um número.")
-        except Exception as e:
-            print(f"ERRO ao carregar o arquivo: {e}")
-            return None, None
 
 def listar_pontos_do_ensaio(data):
     """
@@ -396,12 +256,30 @@ def main():
     if not os.path.exists(RESULTS_JSON_DIR):
         os.makedirs(RESULTS_JSON_DIR)
         
-    data, nome_arquivo = selecionar_json_para_edicao(RESULTS_JSON_DIR)
+    caminho_arquivo = utils_reologia.selecionar_arquivo(RESULTS_JSON_DIR, "*.json", "SELECIONAR ARQUIVO JSON PARA EDIÇÃO", ".json")
     
-    if data and nome_arquivo:
+    if not caminho_arquivo:
+        print("Nenhum arquivo selecionado. Saindo.")
+        return
+
+    nome_arquivo = os.path.basename(caminho_arquivo)
+    
+    try:
+        with open(caminho_arquivo, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+        # Validation
+        if (not data.get('testes') or len(data['testes']) == 0 or 
+            CHAVE_PRESSAO_PRINCIPAL not in data['testes'][0]):
+            
+            print(f"\nERRO: O arquivo '{nome_arquivo}' não é do formato novo (2 sensores).")
+            print(f"      Faltando a chave '{CHAVE_PRESSAO_PRINCIPAL}' no primeiro ponto.")
+            return
+
         menu_edicao(data, nome_arquivo)
-    else:
-        print("Nenhum arquivo selecionado ou formato inválido. Saindo.")
+        
+    except Exception as e:
+        print(f"ERRO ao carregar o arquivo: {e}")
 
 if __name__ == "__main__":
     main()

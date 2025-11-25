@@ -9,48 +9,13 @@ import os
 import glob
 import pandas as pd
 import matplotlib.pyplot as plt
+import utils_reologia
 
 # --- Configurações ---
 # Pasta onde os arquivos .txt de origem estão localizados.
 PASTA_DADOS_BRUTOS = "dados_reometro_rotacional"
 # Pasta onde os resultados processados (.csv) serão salvos.
-PASTA_RESULTADOS = "resultados_processados_interativo"
-
-def selecionar_arquivo_dados_brutos():
-    """Permite ao usuário selecionar um arquivo de texto para processar."""
-    print("-" * 60)
-    print(f"Passo 1: Selecione o arquivo de dados da pasta '{PASTA_DADOS_BRUTOS}'")
-    print("-" * 60)
-    
-    if not os.path.isdir(PASTA_DADOS_BRUTOS):
-        print(f"ERRO: A pasta '{PASTA_DADOS_BRUTOS}' não foi encontrada.")
-        return None, None
-
-    caminho_busca = os.path.join(PASTA_DADOS_BRUTOS, '*.txt')
-    arquivos_txt = glob.glob(caminho_busca)
-    
-    if not arquivos_txt:
-        print(f"ERRO: Nenhum arquivo .txt encontrado na pasta '{PASTA_DADOS_BRUTOS}'.")
-        return None, None
-    
-    print("Arquivos .txt disponíveis:")
-    for i, arq in enumerate(arquivos_txt):
-        print(f"  {i+1}: {os.path.basename(arq)}")
-        
-    while True:
-        try:
-            escolha_str = input("\nDigite o NÚMERO do arquivo que deseja processar (ou '0' para sair): ")
-            if escolha_str == '0':
-                return None, None
-            escolha = int(escolha_str)
-            if 1 <= escolha <= len(arquivos_txt):
-                caminho_arquivo = arquivos_txt[escolha - 1]
-                nome_base = os.path.basename(caminho_arquivo).replace('.txt', '')
-                return caminho_arquivo, nome_base
-            else:
-                print("ERRO: Escolha inválida.")
-        except ValueError:
-            print("ERRO: Entrada inválida. Digite um número.")
+PASTA_RESULTADOS = utils_reologia.CONSTANTS['CAMINHO_BASE_ROTACIONAL']
 
 def processar_dados_iniciais(caminho_arquivo):
     """Lê e faz a limpeza inicial dos dados do arquivo de texto."""
@@ -156,12 +121,20 @@ def salvar_csv_final(df_processado, nome_base_saida, pasta_destino):
 
 # --- Bloco Principal ---
 if __name__ == "__main__":
+    utils_reologia.setup_graficos()
+    
+    if not os.path.exists(PASTA_DADOS_BRUTOS):
+        print(f"AVISO: Pasta '{PASTA_DADOS_BRUTOS}' não encontrada. Criando...")
+        os.makedirs(PASTA_DADOS_BRUTOS)
+    
     while True:
-        caminho_arquivo, nome_base = selecionar_arquivo_dados_brutos()
+        caminho_arquivo = utils_reologia.selecionar_arquivo(PASTA_DADOS_BRUTOS, "*.txt", "Selecione o arquivo de dados brutos", ".txt")
         
         if not caminho_arquivo:
-            break # Sai do loop se o usuário digitar 0
+            break 
             
+        nome_base = os.path.basename(caminho_arquivo).replace('.txt', '')
+        
         df_bruto = processar_dados_iniciais(caminho_arquivo)
         
         if df_bruto is not None:
@@ -175,5 +148,7 @@ if __name__ == "__main__":
                     print("Operação cancelada. Nenhum arquivo foi salvo.")
         
         print("\n" + "="*60)
+        if input("Processar outro arquivo? (s/n): ").lower() != 's':
+            break
 
     print("\n--- FIM DO SCRIPT ---")
