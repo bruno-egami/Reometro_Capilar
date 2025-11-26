@@ -1,403 +1,262 @@
+# -*- coding: utf-8 -*-
 # -----------------------------------------------------------------------------
-# SCRIPT 3.VISUALIZAR_RESULTADOS.PY (Versão Corrigida FINAL e Robusta)
-# Permite visualizar o conjunto completo de gráficos de dados individuais ou a 
-# curva média com barras de erro (Estatístico).
+# SCRIPT 3.VISUALIZAR_RESULTADOS.PY (MODULARIZADO)
 # -----------------------------------------------------------------------------
-
 import os
 import glob
-import json
-import numpy as np
 import pandas as pd
-import matplotlib
-import re
+import numpy as np
+import matplotlib.pyplot as plt
 import utils_reologia
-utils_reologia.setup_graficos()
-from modelos_reologicos import MODELS
-models = MODELS
+import reologia_io
+import reologia_fitting
+import reologia_plot
 
-CORES = matplotlib.colormaps['tab10']
-COR_DADOS_VISCOSIDADE = CORES(2) # Verde Sólido
-COR_DADOS_FLUXO = CORES(0) # Azul
-COR_ERRO = CORES(7) # Cinza Chumbo ou Magenta (para contraste)
-COR_RESIDUO = CORES(4) # Roxo
-COR_MELHOR_MODELO = 'red'
-def adicionar_texto_explicativo(fig, texto):
-    fig.subplots_adjust(bottom=0.25)
-    fig.text(0.5, 0.01, texto, ha='center', va='bottom', fontsize=9, wrap=True,
-             bbox=dict(boxstyle='round,pad=0.5', fc='wheat', alpha=0.5))
-
-
-
-def ler_e_preparar_dados(caminho_csv, tipo_arquivo):
-    """Lê o CSV, identifica o tipo de dado e prepara as variáveis."""
-    
-    is_statistical = (tipo_arquivo == 'Estatístico') # Define o flag booleano corretamente
-    
-    try:
-        # Tenta a codificação comum primeiro
-        df_res = pd.read_csv(caminho_csv, sep=';', decimal=',')
-    except Exception:
-        # Tenta codificação sig (para CSVs gerados pelo Python com sep=; e decimal=,)
-        df_res = pd.read_csv(caminho_csv, sep=';', decimal=',', encoding='utf-8-sig')
-        
-    # --- Colunas de Dados ---
-    if is_statistical:
-        print("INFO: Modo Estatístico ativado (plotando médias com barras de erro).")
-        # Colunas Médias
-        tau_col = 'τw_MEDIA(Pa)'
-        gd_col = 'γ̇w_MEDIA(s⁻¹)'
-        eta_col = 'η_MEDIA(Pa·s)'
-        # Colunas de Erro
-        tau_std_col = 'STD_τw (Pa)'
-        gd_std_col = 'STD_γ̇w (s⁻¹)'
-        
-        # Extração de dados (STD = 0 se não houver coluna de STD)
-        tau_data = df_res[tau_col].values
-        gamma_dot_data = df_res[gd_col].values
-        eta_data = df_res[eta_col].values
-        tau_std = df_res.get(tau_std_col, np.zeros_like(tau_data)).values
-        gd_std = df_res.get(gd_std_col, np.zeros_like(gamma_dot_data)).values
-        
-        titulo_sufixo = " (Dados Estatísticos: Média $\\pm$ $\\sigma$)"
-        plot_type = 'errorbar'
-        
-    else: # Modo Individual
-        print("INFO: Modo Individual ativado (plotando pontos brutos processados).")
-        # Colunas Individuais
-        tau_col = 'τw (Pa)'
-        gd_col = 'γ̇w (s⁻¹)'
-        eta_col = 'η (Pa·s)'
-        
-        # Correção do problema de Key Error: 
-        # Acessa as colunas esperadas para o CSV individual.
-        tau_data = df_res[tau_col].values
-        gamma_dot_data = df_res[gd_col].values
-        eta_data = df_res[eta_col].values
-        tau_std, gd_std = None, None # Desvio padrão não se aplica
-        
-        titulo_sufixo = " (Dados Individuais Processados)"
-        plot_type = 'scatter'
-        
-    # --- Carregamento dos Parâmetros do Modelo ---
-    
-    # Nomes base dos arquivos de parâmetros (sem a extensão csv)
-    arquivo_base_nome = os.path.basename(caminho_csv).replace('.csv', '').replace('_resultados_reologicos', '').replace('_resultados_estatisticos', '')
-    
-    # Busca por JSON de parâmetros na mesma pasta do CSV (seja indiv ou stat)
-    pasta_do_csv = os.path.dirname(caminho_csv)
-    path_parametros = os.path.join(pasta_do_csv, f"{arquivo_base_nome}_parametros_modelos.json")
-    
-    dados_modelos_completos = {}
-    if os.path.exists(path_parametros):
-        try:
-            # Tenta ler com a codificação correta
-            with open(path_parametros, 'r', encoding='utf-8') as f:
-                dados_modelos_completos = json.load(f)
-            print(f"INFO: Parâmetros do modelo carregados de: {os.path.basename(path_parametros)}")
-        except Exception as e:
-            print(f"AVISO: Falha ao carregar parâmetros do modelo: {e}")
-            
-    model_results = dados_modelos_completos.get("modelos_ajustados", {})
-    
-    # Retorna o status 'is_statistical' junto com os dados
-    return tau_data, gamma_dot_data, eta_data, tau_std, gd_std, model_results, titulo_sufixo, plot_type, df_res, is_statistical
-
+# --- CONFIGURAÇÃO DE PASTAS ---
+INPUT_BASE_FOLDER = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
 
 def visualizador_principal():
-    print("\n--- Visualizador de Resultados ---")
-    print("1. Visualizar Resultados Individuais")
-    print("2. Visualizar Resultados Estatísticos")
+    print("\n--- VISUALIZADOR DE RESULTADOS REOLÓGICOS (MODULARIZADO) ---")
     
-    while True:
-        choice = input("Escolha (1 ou 2, ou 0 para sair): ").strip()
-        if choice == '0': return
-        if choice in ['1', '2']: break
-        print("Opção inválida.")
+    # 1. Seleciona Arquivo (Busca em múltiplas pastas)
+    print("Buscando arquivos de resultados...")
     
-    if choice == '1':
-        folder = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
-        pattern = "*_resultados_reologicos.csv"
-        tipo_arquivo = "Individual"
-    else:
-        folder = utils_reologia.CONSTANTS['STATISTICAL_OUTPUT_FOLDER']
-        pattern = "*_resultados_estatisticos.csv"
-        tipo_arquivo = "Estatístico"
+    # Define padrões de busca
+    search_patterns = [
+        (utils_reologia.CONSTANTS['INPUT_BASE_FOLDER'], "**/*resultados*.csv"),
+        ("resultados_estatisticos", "**/*estatisticas*.csv"),
+        (utils_reologia.CONSTANTS['CAMINHO_BASE_ROTACIONAL'], "**/*processado.csv")
+    ]
+    
+    all_files = []
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    
+    for folder, pattern in search_patterns:
+        search_path = os.path.join(project_root, folder, pattern)
+        found = glob.glob(search_path, recursive=True)
+        all_files.extend(found)
         
-    caminho_csv = utils_reologia.selecionar_arquivo(folder, pattern, f"Selecione o arquivo {tipo_arquivo}", ".csv", recursivo=True)
+    # Remove duplicatas e ordena
+    all_files = sorted(list(set(all_files)), key=os.path.getmtime, reverse=True)
     
-    if not caminho_csv: return
+    if not all_files:
+        print("Nenhum arquivo de resultados encontrado.")
+        return
+
+    # Separa em grupos para exibição
+    files_stat = []
+    files_rot = []
+    files_indiv = []
     
-    tau_w_data, gamma_dot_data, eta_true_data, tau_std, gd_std, model_results, titulo_sufixo, plot_type, df_res, is_statistical = \
-        ler_e_preparar_dados(caminho_csv, tipo_arquivo)
-
-    if tau_w_data is None: return
-
-    # 5. Preparação Final
-    best_model_nome = ""
-    if model_results:
-        best_model_nome = max(model_results, key=lambda name: model_results[name]['R2'])
+    for f in all_files:
+        fname = os.path.basename(f)
+        if "estatisticas" in fname:
+            files_stat.append(f)
+        elif "processado" in fname:
+            files_rot.append(f)
+        else:
+            files_indiv.append(f)
+            
+    print(f"\n--- Selecione um arquivo de resultados ---")
     
-    valid_fit = ~np.isnan(tau_w_data) & ~np.isnan(gamma_dot_data) & (gamma_dot_data > 0)
-    gd_fit = gamma_dot_data[valid_fit]
-    if len(gd_fit) == 0: print("Não há dados válidos para gerar gráficos."); return
-
-    print("Gerando e SALVANDO gráficos...") # Alerta de que salvará
+    current_idx = 1
+    mapa_escolha = {}
     
-    # --- DEFINIÇÃO DOS NOMES DE ARQUIVO E PASTA DE SAÍDA ---
-    caminho_csv_completo = caminho_csv
-    pasta_saida_graficos = os.path.dirname(caminho_csv_completo)
-    nome_base_arquivo = os.path.basename(caminho_csv_completo).replace('.csv', '')
-    
-    min_gp_val = np.min(gd_fit) if np.any(gd_fit) else 1e-3
-    max_gp_val = np.max(gd_fit) if np.any(gd_fit) else 1.0
-    min_gp, max_gp = max(1e-9, min_gp_val * 0.5), max_gp_val * 1.5
-    gd_plot = np.geomspace(min_gp, max_gp, 200)
+    if files_stat:
+        print("\n[RESULTADOS ESTATÍSTICOS (MÉDIAS)]")
+        for f in files_stat:
+            parent = os.path.basename(os.path.dirname(f))
+            fname = os.path.basename(f)
+            # Tenta simplificar o nome exibido
+            display_name = fname.replace("_estatisticas_", " -> ").replace(".csv", "")
+            print(f"  {current_idx}: {display_name}  (Pasta: {parent})")
+            mapa_escolha[current_idx] = f
+            current_idx += 1
 
-    # --- INÍCIO DA GERAÇÃO DAS FIGURAS (ESTRUTURA COMPLETA) ---
-
-    # --- Figura 1: Curva de Fluxo (Todos Modelos) ---
-    fig1, ax1 = plt.subplots(figsize=(10, 7))
-
-    # Plota os dados com ou sem barra de erro
-    if plot_type == 'errorbar':
-         # CORES ALTERADAS: COR_DADOS_FLUXO (Azul), COR_ERRO (Cinza Chumbo)
-         ax1.errorbar(gamma_dot_data[valid_fit], tau_w_data[valid_fit], 
-                           yerr=tau_std[valid_fit], xerr=gd_std[valid_fit], 
-                           fmt='o', color=COR_DADOS_FLUXO, ecolor=COR_ERRO, capsize=5, elinewidth=1.5,
-                           label='Dados Médios $\\pm$ $\\sigma$', zorder=10)
-    else:
-        ax1.scatter(gamma_dot_data[valid_fit], tau_w_data[valid_fit], c=COR_DADOS_FLUXO, marker='o', label='Dados Processados', s=60, zorder=10)
-
-    # Plota todos os modelos (destacando o melhor)
-    model_keys = list(models.keys())
-    for idx, n_model_name in enumerate(model_keys):
-        d_model_data = model_results.get(n_model_name)
-        if d_model_data:
-            try:
-                tau_plot_model = models[n_model_name](gd_plot, *d_model_data['params'])
-                
-                line_style = '--'
-                line_width = 2
-                z_order = 5
-                model_color = CORES(idx % 10) # Usa cores sequenciais do tab10 para modelos
-                
-                if n_model_name == best_model_nome:
-                    line_style = '-'
-                    line_width = 3.5
-                    z_order = 20
-                    model_color = COR_MELHOR_MODELO # Red
-                    label = fr'**Melhor Modelo: {n_model_name}** (R²={d_model_data["R2"]:.4f})'
-                else:
-                    label = fr'Modelo {n_model_name} (R²={d_model_data["R2"]:.4f})'
-                    
-                ax1.plot(gd_plot, tau_plot_model, 
-                         label=label, 
-                         linewidth=line_width, 
-                         linestyle=line_style, 
-                         color=model_color,
-                         alpha=0.8,
-                         zorder=z_order)
-            except Exception as e:
-                print(f"  Aviso ao plotar modelo {n_model_name} na Fig 1: {e}")
-
-    ax1.set_title(f"Curva de Fluxo (Comparativo de Modelos){titulo_sufixo}\nSessão: {nome_sessao}")
-    ax1.set_xlabel(r"Taxa de Cisalhamento Corrigida ($\dot{\gamma}_w$, s⁻¹)"); ax1.set_ylabel(r"Tensão de Cisalhamento ($\tau_w$, Pa)")
-    ax1.legend(); ax1.grid(True,which="both",ls="--"); ax1.set_xscale('log'); ax1.set_yscale('log')
-    fig1.tight_layout()
-    # --- SALVAMENTO FIGURA 1 ---
-    filename_fig1 = os.path.join(pasta_saida_graficos, f"{nome_base_arquivo}_curva_fluxo.png")
+    if files_rot:
+        print("\n[RESULTADOS ROTACIONAL (SCRIPT 5)]")
+        for f in files_rot:
+            parent = os.path.basename(os.path.dirname(f))
+            fname = os.path.basename(f)
+            display_name = fname.replace("_processado", "").replace(".csv", "")
+            print(f"  {current_idx}: {display_name}  (Pasta: {parent})")
+            mapa_escolha[current_idx] = f
+            current_idx += 1
+            
+    if files_indiv:
+        print("\n[RESULTADOS INDIVIDUAIS (BRUTOS/PROCESSADOS)]")
+        for f in files_indiv:
+            parent = os.path.basename(os.path.dirname(f))
+            fname = os.path.basename(f)
+            display_name = fname.replace("_resultados_reologicos", "").replace(".csv", "")
+            print(f"  {current_idx}: {display_name}  (Pasta: {parent})")
+            mapa_escolha[current_idx] = f
+            current_idx += 1
+        
     try:
-        fig1.savefig(filename_fig1, dpi=300, bbox_inches='tight')
-        print(f"-> Salvo: {os.path.basename(filename_fig1)}")
-    except Exception as e:
-        print(f"ERRO ao salvar {os.path.basename(filename_fig1)}: {e}")
+        escolha = int(input("\nDigite o número do arquivo: "))
+        if escolha in mapa_escolha:
+            caminho_arquivo = mapa_escolha[escolha]
+        else:
+            print("Opção inválida.")
+            return
+    except ValueError:
+        return
 
-
-    # --- Figura 2: Curva de Viscosidade (Todos Modelos) ---
-    fig2, ax2 = plt.subplots(figsize=(10, 7))
-    valid_eta = ~np.isnan(eta_true_data) & (gamma_dot_data > 0) & (eta_true_data > 0)
+    print(f"\nCarregando: {os.path.basename(caminho_arquivo)}")
     
-    # Plota os dados com ou sem barra de erro
-    if plot_type == 'errorbar' and tau_std is not None and gd_std is not None:
-         # *** INICIALIZAÇÃO CORRIGIDA ***
-         std_eta = np.zeros_like(eta_true_data)
-         
-         # Estimativa simplificada do erro de viscosidade (usando a aproximação diferencial)
-         valid_std = (gamma_dot_data > 1e-9) & (tau_std >= 0) & (gd_std >= 0)
-         if np.any(valid_std):
-            std_tau_valid = tau_std[valid_std]
-            std_gd_valid = gd_std[valid_std]
-            eta_valid = eta_true_data[valid_std]
-            tau_w_valid = tau_w_data[valid_std]
-            gd_valid = gamma_dot_data[valid_std]
+    # 2. Carrega Dados
+    df = reologia_io.carregar_csv_resultados(caminho_arquivo)
+    if df is None: return
+    
+    # Padroniza colunas (tenta adivinhar se é individual ou estatístico)
+    is_stat = False
+    # Normaliza nomes de colunas (lowercase)
+    df.columns = [c.lower() for c in df.columns]
+    
+    # Inicializa variáveis de colunas
+    col_gamma = None
+    col_gamma_aw = None  # Taxa de cisalhamento aparente
+    col_tau = None
+    col_tau_std = None
+    col_eta_a = None  # Viscosidade aparente
+    col_eta_true = None # Viscosidade real (direta do CSV)
+    col_eta_std = None # Desvio da viscosidade
+    
+    # --- Lógica de Detecção de Colunas ---
+    
+    # Caso 1: Estatístico (Script 2b - Novo Formato)
+    if 'gamma_dot_w_mean' in df.columns:
+        is_stat = True
+        col_gamma = 'gamma_dot_w_mean'
+        col_tau = 'tau_w_mean'
+        col_tau_std = 'tau_w_std'
+        col_eta_true = 'eta_true_mean'
+        col_eta_std = 'eta_true_std'
+        
+        # Dados Aparentes (se disponíveis)
+        if 'gamma_dot_aw_mean' in df.columns:
+            col_gamma_aw = 'gamma_dot_aw_mean'
+        if 'eta_a_mean' in df.columns:
+            col_eta_a = 'eta_a_mean'
+        
+    # Caso 2: Estatístico (Formato Antigo/Intermediário)
+    elif 'mean_gamma' in df.columns: 
+        is_stat = True
+        col_gamma = 'mean_gamma'
+        col_tau = 'mean_tau_w'
+        col_tau_std = 'std_tau_w'
+        
+    # Caso 3: Rotacional (Script 5)
+    elif 'taxa de cisalhamento (s-1)' in df.columns:
+        col_gamma = 'taxa de cisalhamento (s-1)'
+        col_tau = 'tensao de cisalhamento (pa)'
+        if 'viscosidade (pa.s)' in df.columns:
+            col_eta_true = 'viscosidade (pa.s)'
+        if 'viscosidade (pa.s)' in df.columns: # Usa como aparente também para plots
+            col_eta_a = 'viscosidade (pa.s)'
+        if 'viscosity_std (pa.s)' in df.columns:
+            col_eta_std = 'viscosity_std (pa.s)'
+        if 'tensao_std (pa)' in df.columns:
+            col_tau_std = 'tensao_std (pa)'
             
-            # Cálculo de propagação de erro para Viscosidade
-            std_eta_calc = eta_valid * np.sqrt(
-                        (std_tau_valid / tau_w_valid)**2 + 
-                        (std_gd_valid / gd_valid)**2
-                    )
-            std_eta[valid_std] = std_eta_calc # A linha que causava o NameError
+    # Caso 4: Individual (Script 2 - Novo Formato)
+    elif 'taxa de cisalhamento corrigida (s-1)' in df.columns: 
+        col_gamma = 'taxa de cisalhamento corrigida (s-1)'
+        col_tau = 'tensao de cisalhamento (pa)'
+        
+        if 'taxa de cisalhamento aparente (s-1)' in df.columns:
+            col_gamma_aw = 'taxa de cisalhamento aparente (s-1)'
+        if 'viscosidade aparente (pa.s)' in df.columns:
+            col_eta_a = 'viscosidade aparente (pa.s)'
+        if 'viscosidade real (pa.s)' in df.columns:
+            col_eta_true = 'viscosidade real (pa.s)'
+            
+    # Caso 5: Individual (Formatos Antigos)
+    elif 'γ̇w (s⁻¹)' in df.columns: 
+        col_gamma = 'γ̇w (s⁻¹)'
+        if 'τw (pa)' in df.columns: col_tau = 'τw (pa)'
+        elif 'tensao de cisalhamento (pa)' in df.columns: col_tau = 'tensao de cisalhamento (pa)'
+    elif 'taxa_de_cisalhamento_corrigida_s1' in df.columns:
+        col_gamma = 'taxa_de_cisalhamento_corrigida_s1'
+        col_tau = 'tensao_de_cisalhamento_pa'
+        
+    if not col_gamma or not col_tau:
+        print("ERRO: Colunas de taxa de cisalhamento ou tensão não identificadas.")
+        print(f"Colunas encontradas: {df.columns.tolist()}")
+        return
 
-            # --- PREPARAÇÃO DAS BARRAS DE ERRO ASSIMÉTRICAS (CLIPPING) ---
-            # y_err_pos: distância do ponto (y_data) até o limite superior (y_data + std_eta)
-            y_data_valid = eta_true_data[valid_eta]
-            std_eta_valid = std_eta[valid_eta]
-            
-            # Garante que o erro negativo não seja plotado abaixo de 1e-9 (limite log)
-            y_err_neg = np.clip(std_eta_valid, 0, y_data_valid - 1e-9) 
-            y_err_pos = std_eta_valid 
-            
-            y_err_plot = np.array([y_err_neg, y_err_pos])
-            x_err = gd_std[valid_eta]
+    # 3. Ajusta Modelos (On-the-fly para visualização)
+    print("  Ajustando modelos para visualização...")
+    model_results, best_model_nome, df_sum = reologia_fitting.ajustar_modelos(
+        df[col_gamma].values, df[col_tau].values
+    )
+    
+    print(f"  Melhor modelo: {best_model_nome}")
+    if not df_sum.empty:
+        print(df_sum.to_string(index=False))
 
-         # Plotagem com cor otimizada (COR_DADOS_VISCOSIDADE e COR_ERRO)
-         ax2.errorbar(gamma_dot_data[valid_eta], eta_true_data[valid_eta], 
-                          yerr=y_err_plot, xerr=x_err, 
-                          fmt='s', color=COR_DADOS_VISCOSIDADE, ecolor=COR_ERRO, capsize=5, elinewidth=1.5,
-                          label='Viscosidade Média $\\pm$ $\\sigma$', zorder=10)
+    # 4. Plota
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_folder = os.path.dirname(caminho_arquivo)
+    
+    # Prepara dados para plotagem
+    gamma_dot_w = df[col_gamma].values
+    tau_w = df[col_tau].values
+    
+    # Viscosidade Real
+    if col_eta_true:
+        eta_true = df[col_eta_true].values
     else:
-        ax2.scatter(gamma_dot_data[valid_eta], eta_true_data[valid_eta], label='Viscosidade Real (η)', c=COR_DADOS_VISCOSIDADE, marker='s', s=60, zorder=10)
-
-    # Plota os modelos (cor sequencial do tab10)
-    for idx, n_model_name in enumerate(model_keys):
-        d_model_data = model_results.get(n_model_name)
-        if d_model_data:
-            try:
-                tau_m = models[n_model_name](gd_plot, *d_model_data['params'])
-                eta_m = tau_m / gd_plot
-                
-                line_style = '--'
-                line_width = 2
-                model_color = CORES(idx % 10)
-                
-                if n_model_name == best_model_nome:
-                    line_style = '-'
-                    line_width = 3.5
-                    model_color = COR_MELHOR_MODELO # Red
-                    
-                # Aplicar clipping visual para HB/Bingham/Casson
-                if n_model_name in ["Herschel-Bulkley", "Bingham", "Casson"]:
-                    min_gd_data = gamma_dot_data[valid_fit].min()
-                    clip_start_gamma = max(1e-4, min_gd_data * 0.1) 
-                    clip_start_index_safe = np.argmin(np.abs(gd_plot - clip_start_gamma))
-                    gd_plot_safe = gd_plot[clip_start_index_safe:]
-                    eta_m_safe = eta_m[clip_start_index_safe:]
-
-                    ax2.plot(gd_plot_safe, eta_m_safe, 
-                             label=fr'Modelo {n_model_name} ($\eta$)', 
-                             lw=line_width, 
-                             alpha=0.8, 
-                             linestyle=line_style,
-                             color=model_color)
-                else:
-                    if n_model_name=="Newtoniano": eta_m = np.full_like(gd_plot, d_model_data['params'][0])
-                    ax2.plot(gd_plot, eta_m, 
-                             label=fr'Modelo {n_model_name} ($\eta$)', 
-                             lw=line_width, 
-                             alpha=0.8, 
-                             linestyle=line_style,
-                             color=model_color)
-                             
-            except Exception as e: 
-                print(f"  Aviso ao plotar modelo {n_model_name} na Fig 2: {e}")
-
-    ax2.set_title(f"Curva de Viscosidade (Comparativo de Modelos){titulo_sufixo}\nSessão: {nome_sessao}")
-    ax2.set_xlabel(r"Taxa de Cisalhamento Corrigida ($\dot{\gamma}_w$, s⁻¹)"); ax2.set_ylabel(r"Viscosidade Real ($\eta$, Pa·s)")
-    ax2.legend(); ax2.grid(True,which="both",ls="--"); ax2.set_xscale('log'); ax2.set_yscale('log')
-    fig2.tight_layout()
-    # --- SALVAMENTO FIGURA 2 ---
-    filename_fig2 = os.path.join(pasta_saida_graficos, f"{nome_base_arquivo}_curva_viscosidade.png")
-    try:
-        fig2.savefig(filename_fig2, dpi=300, bbox_inches='tight')
-        print(f"-> Salvo: {os.path.basename(filename_fig2)}")
-    except Exception as e:
-        print(f"ERRO ao salvar {os.path.basename(filename_fig2)}: {e}")
-
-    # --- Figura 3: Comparativo de Viscosidades Aparente vs. Real (SOMENTE INDIVIDUAL) ---
-    fig_aparente, ax_aparente = None, None
-    if not is_statistical:
-        fig_aparente, ax_aparente = plt.subplots(figsize=(10, 7))
-        valid_apparent_idx = ~np.isnan(df_res['ηa (Pa·s)'].values)
-        if np.any(valid_apparent_idx):
-            ax_aparente.plot(df_res['γ̇aw (s⁻¹)'][valid_apparent_idx], df_res['ηa (Pa·s)'][valid_apparent_idx], 
-                         label=r'Aparente ($\eta_a$ vs $\dot{\gamma}_{aw}$)', marker='o', linestyle='--', color=CORES(6)) # Cor Magenta
-            
-            # Real (corrigida)
-            ax_aparente.plot(gamma_dot_data[valid_eta], eta_true_data[valid_eta], 
-                         label=r'Real ($\eta$ vs $\dot{\gamma}_w$)', marker='s', linestyle='-', color=COR_DADOS_VISCOSIDADE) # Cor Verde Sólido
-
-            ax_aparente.set_title(f"Comparativo de Viscosidades (Aparente vs. Real)\nSessão: {nome_sessao}")
-            ax_aparente.set_xlabel(r"Taxa de Cisalhamento ($\dot{\gamma}$, s⁻¹)"); ax_aparente.set_ylabel(r"Viscosidade ($\eta$, Pa·s)")
-            ax_aparente.legend(); ax_aparente.grid(True, which="both", ls="--"); ax_aparente.set_xscale('log'); ax_aparente.set_yscale('log')
-            fig_aparente.tight_layout()
-            
-            # --- SALVAMENTO FIGURA 3 ---
-            filename_fig3 = os.path.join(pasta_saida_graficos, f"{nome_base_arquivo}_comparativo_viscosidades.png")
-            try:
-                fig_aparente.savefig(filename_fig3, dpi=300, bbox_inches='tight')
-                print(f"-> Salvo: {os.path.basename(filename_fig3)}")
-            except Exception as e:
-                print(f"ERRO ao salvar {os.path.basename(filename_fig3)}: {e}")
-
-    # --- Figura 4: Gráfico de Resíduos (Melhor Modelo) ---
-    fig4, ax4 = None, None
-    if best_model_nome and model_results:
-        fig4, ax4 = plt.subplots(figsize=(10, 7))
-        tau_w_exp_fit = tau_w_data[valid_fit]
-        tau_w_predito = models[best_model_nome](gd_fit, *model_results[best_model_nome]['params'])
-        residuos = tau_w_exp_fit - tau_w_predito
-        ax4.scatter(gd_fit, residuos, c=COR_RESIDUO, marker='x') # Cor Roxo Sólido
-        ax4.axhline(y=0, color='k', linestyle='--')
-        ax4.set_title(f"Gráfico de Resíduos do Melhor Modelo ({best_model_nome}){titulo_sufixo}\nSessão: {nome_sessao}")
-        ax4.set_xlabel(r"Taxa de Cisalhamento Corrigida ($\dot{\gamma}_w$, s⁻¹)"); ax4.set_ylabel(r"Resíduo ($\tau_{exp} - \tau_{mod}$) [Pa]")
-        ax4.set_xscale('log'); ax4.grid(True)
-        fig4.tight_layout()
+        eta_true = tau_w / gamma_dot_w
         
-        # --- SALVAMENTO FIGURA 4 (GRÁFICO DE RESÍDUOS) ---
-        filename_fig4 = os.path.join(pasta_saida_graficos, f"{nome_base_arquivo}_grafico_residuos.png")
-        try:
-            fig4.savefig(filename_fig4, dpi=300, bbox_inches='tight')
-            print(f"-> Salvo: {os.path.basename(filename_fig4)}")
-        except Exception as e:
-            print(f"ERRO ao salvar {os.path.basename(filename_fig4)}: {e}")
-        
-    # --- Figura 5: P vs. Viscosidade (CONDICIONAL - SOMENTE Capilar Único/Individual) ---
-    fig5, ax5 = None, None
-    # Verifica se a sessão está no modo Individual e se D/L são únicos (Capilar Único)
-    if not is_statistical and df_res['D_cap(mm)'].astype(str).unique().size == 1 and df_res['L_cap(mm)'].astype(str).unique().size == 1:
-        # Filtra NaNs e valores não positivos, e converte para float
-        p_bar_plot = pd.to_numeric(df_res['P_ext(bar)'], errors='coerce')
-        eta_plot = df_res['η (Pa·s)']
-        
-        valid_pv = (~p_bar_plot.isna()) & (~eta_plot.isna()) & (eta_plot > 0) & (p_bar_plot > 0)
-        
-        if np.any(valid_pv):
-            fig5, ax5 = plt.subplots(figsize=(10, 7))
-            
-            ax5.plot(p_bar_plot[valid_pv], eta_plot[valid_pv], 
-                     label='Viscosidade Real vs Pressão', 
-                     color=CORES(8), marker='D', linestyle='-', # Cor Marrom Sólida
-                     linewidth=1.5, markersize=7)
-            
-            ax5.set_xlabel("Pressão Total Aplicada (bar)")
-            ax5.set_ylabel(r"Viscosidade Real ($\eta$, Pa·s)")
-            ax5.set_title(f"Pressão Aplicada vs. Viscosidade Real (Capilar Único)\nSessão: {nome_sessao}")
-            ax5.legend(); ax5.grid(True, which="both", ls="--"); ax5.set_xscale('linear'); ax5.set_yscale('linear')
-            fig5.tight_layout()
-            
-            # --- SALVAMENTO FIGURA 5 ---
-            filename_fig5 = os.path.join(pasta_saida_graficos, f"{nome_base_arquivo}_pressao_vs_viscosidade.png")
-            try:
-                fig5.savefig(filename_fig5, dpi=300, bbox_inches='tight')
-                print(f"-> Salvo: {os.path.basename(filename_fig5)}")
-            except Exception as e:
-                print(f"ERRO ao salvar {os.path.basename(filename_fig5)}: {e}")
-
-
-    # --- EXIBIÇÃO ---
-    print("\nVisualização pronta. Feche as janelas dos gráficos para encerrar.")
-    plt.show()
+    # Desvios (se estatístico)
+    std_tau = df[col_tau_std].values if col_tau_std else None
+    std_eta = df[col_eta_std].values if col_eta_std else None
+    
+    # Dados Aparentes (para gráfico 5 e n')
+    if col_gamma_aw and col_gamma_aw in df.columns:
+        gamma_dot_aw = df[col_gamma_aw].values
+    else:
+        # Se não tem aparente, usa corrigida como aproximação para visualização
+        gamma_dot_aw = gamma_dot_w 
+        if not is_stat: print("  Aviso: Dados aparentes não disponíveis. Gráficos podem diferir.")
+    
+    if col_eta_a and col_eta_a in df.columns:
+        eta_a = df[col_eta_a].values
+    else:
+        eta_a = tau_w / gamma_dot_aw
+    
+    # Calcula n' e log(K')
+    import numpy as np
+    from scipy.stats import linregress
+    valid_log = (gamma_dot_aw > 0) & (tau_w > 0) & (~np.isnan(gamma_dot_aw)) & (~np.isnan(tau_w))
+    if np.sum(valid_log) > 1:
+        log_gamma = np.log(gamma_dot_aw[valid_log])
+        log_tau = np.log(tau_w[valid_log])
+        slope, intercept, _, _, _ = linregress(log_gamma, log_tau)
+        n_prime = slope
+        log_K_prime = intercept
+    else:
+        n_prime, log_K_prime = 1.0, 0.0
+    
+    # Gera gráficos interativos sem salvar arquivos
+    print("\n  Gerando gráficos interativos (modo visualização)...")
+    
+    reologia_plot.gerar_graficos_finais(
+        output_folder, timestamp,
+        gamma_dot_aw, tau_w,
+        gamma_dot_w, eta_true, eta_a,
+        n_prime, log_K_prime,
+        model_results, best_model_nome,
+        [], 0.0, 0.0,  # Sem dados de pressão/geometria
+        False, False, False,  # Sem correções
+        only_show=True,  # Modo visualização apenas!
+        std_tau_w=std_tau,
+        std_eta=std_eta,
+        show_plots=True
+    )
 
 if __name__ == "__main__":
     visualizador_principal()

@@ -9,6 +9,7 @@
 
 import os
 import numpy as np
+import json
 import pandas as pd
 from datetime import datetime
 from scipy.stats import linregress
@@ -19,6 +20,7 @@ import reologia_io
 import reologia_corrections
 import reologia_plot
 import reologia_report
+import reologia_fitting
 from modelos_reologicos import MODELS, PARAM_NAMES_MAP
 
 # Configuração de plotagem
@@ -471,61 +473,23 @@ else:
     eta_true_an = tau_w_an / gamma_dot_w_an_wr # Se não corrigiu, é o aparente
 
 # --- AJUSTE DE MODELOS ---
-model_results = {}
-best_model_nome = ""
-df_sum_modelo = pd.DataFrame()
-comportamento_fluido_relatorio = "N/A"
+# --- Ajuste de Modelos Reológicos ---
+print("\n--- Ajuste de Modelos Reológicos ---")
+model_results, best_model_nome, df_sum_modelo = reologia_fitting.ajustar_modelos(gamma_dot_w_an_wr, tau_w_an)
 
-if MODEL_FITTING_ENABLED and len(tau_w_an) > 2:
-    print("\n--- Ajuste de Modelos Reológicos ---")
-    valid_fit = (gamma_dot_w_an_wr > 0) & (tau_w_an > 0) & ~np.isnan(gamma_dot_w_an_wr) & ~np.isnan(tau_w_an)
-    gd_fit = gamma_dot_w_an_wr[valid_fit]
-    tau_fit = tau_w_an[valid_fit]
-    
-    best_r2 = -np.inf
-    
-    summary_list = []
-    
-    for nome_modelo, (func_modelo, param_names, initial_guess_func, bounds) in MODELS.items():
-        try:
-            p0 = initial_guess_func(gd_fit, tau_fit)
-            popt, pcov = curve_fit(func_modelo, gd_fit, tau_fit, p0=p0, bounds=bounds, maxfev=10000)
-            tau_pred = func_modelo(gd_fit, *popt)
-            r2 = r2_score(tau_fit, tau_pred)
-            
-            model_results[nome_modelo] = {'params': popt, 'R2': r2}
-            
-            # Formata parâmetros
-            params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, popt)])
-            summary_list.append({'Modelo': nome_modelo, 'R2': r2, 'Parametros': params_str})
-            
-            if r2 > best_r2:
-                best_r2 = r2
-                best_model_nome = nome_modelo
-                
-        except Exception as e:
-            print(f"  Falha ao ajustar {nome_modelo}: {e}")
-
-    df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
+# Infere comportamento
+comportamento_fluido = reologia_fitting.inferir_comportamento_fluido(best_model_nome, model_results)
+print(f"\nMelhor Modelo: {best_model_nome}")
+print(f"Comportamento Inferido: {comportamento_fluido}")
+if not df_sum_modelo.empty:
     print("\nResumo dos Ajustes:")
     print(df_sum_modelo.to_string(index=False))
-    print(f"\nMelhor Modelo: {best_model_nome} (R²={best_r2:.4f})")
-    
-    # Inferência de Comportamento
-    if best_model_nome == "Lei de Potencia":
-        n_val = model_results['Lei de Potencia']['params'][1]
-        if n_val < 1: comportamento_fluido_relatorio = "Pseudoplastico (Shear Thinning)"
-        elif n_val > 1: comportamento_fluido_relatorio = "Dilatante (Shear Thickening)"
-        else: comportamento_fluido_relatorio = "Newtoniano"
-    elif best_model_nome in ["Bingham", "Herschel-Bulkley", "Casson"]:
-        comportamento_fluido_relatorio = "Viscoplastico (Com Tensao de Escoamento)"
-    else:
-        comportamento_fluido_relatorio = "Newtoniano"
 
 # --- GERAÇÃO DE RESULTADOS (CSV/Gráficos/Relatório) ---
 
 # DataFrame Final
 df_res = pd.DataFrame({
+    'Pressao (bar)': pressoes_bar_display_tab,  # Adiciona pressão!
     'Taxa de Cisalhamento Aparente (s-1)': gamma_dot_aw_an,
     'Tensao de Cisalhamento (Pa)': tau_w_an,
     'Viscosidade Aparente (Pa.s)': eta_a_an,
@@ -539,13 +503,33 @@ df_res.to_csv(csv_name, sep=';', decimal=',', index=False)
 arquivos_gerados_lista.append(os.path.basename(csv_name))
 print(f"\nResultados salvos em: {csv_name}")
 
+# Salva JSON de Parâmetros e Geometria (Fundamental para script 2b)
+json_params_name = os.path.join(output_folder, f"{timestamp_str}_parametros_modelos.json")
+dados_json_export = {
+    "diametro_capilar_mm": D_cap_mm_unico_val,
+    "comprimento_capilar_mm": L_cap_mm_unico_val,
+    "densidade_pasta_g_cm3": rho_pasta_g_cm3_fixo if rho_pasta_g_cm3_fixo else 0.0,
+    "modelos_ajustados": model_results,
+    "melhor_modelo": best_model_nome,
+    "n_prime": n_prime,
+    "K_prime_log": log_K_prime
+}
+try:
+    with open(json_params_name, 'w', encoding='utf-8') as f:
+        json.dump(dados_json_export, f, indent=4, default=lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
+    print(f"Parâmetros salvos em: {json_params_name}")
+    arquivos_gerados_lista.append(os.path.basename(json_params_name))
+except Exception as e:
+    print(f"ERRO ao salvar JSON de parâmetros: {e}")
+
 # Gera Gráficos
 arquivos_graficos = reologia_plot.gerar_graficos_finais(
     output_folder, timestamp_str,
     gamma_dot_aw_an, tau_w_an, gamma_dot_w_an_wr, eta_true_an, eta_a_an,
     n_prime, log_K_prime, model_results, best_model_nome,
     pressoes_bar_display_tab, D_cap_mm_unico_val, L_cap_mm_unico_val,
-    realizar_bagley, realizar_mooney, calibracao_aplicada
+    realizar_bagley, realizar_mooney, calibracao_aplicada,
+    show_plots=True
 )
 arquivos_gerados_lista.extend(arquivos_graficos)
 
@@ -558,7 +542,7 @@ reologia_report.gerar_relatorio_texto(
     realizar_bagley, D_cap_mm_bagley_comum_val, bagley_capilares_L_mm_info,
     realizar_mooney, L_cap_mm_mooney_comum_val, mooney_capilares_D_mm_info,
     D_cap_mm_unico_val, L_cap_mm_unico_val, caminho_calibracao_usada,
-    df_res, df_sum_modelo, best_model_nome, comportamento_fluido_relatorio,
+    df_res, df_sum_modelo, best_model_nome, comportamento_fluido,
     arquivos_gerados_lista, output_folder, fator_calibracao_empirico
 )
 

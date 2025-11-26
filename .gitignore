@@ -11,6 +11,8 @@ comparativo_analises/
 correcoes_bagley_mooney/
 curvas-fluxo-viscosidade/
 resultados_processados_interativo/
+resultados_estatisticos/
+dados_reometro_rotacional/
 
 # Arquivos Temporários e de Sistema
 .DS_Store

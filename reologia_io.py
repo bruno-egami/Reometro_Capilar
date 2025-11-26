@@ -3,6 +3,7 @@ import os
 import json
 import glob
 import numpy as np
+import pandas as pd
 from scipy.interpolate import interp1d
 from datetime import datetime
 import utils_reologia
@@ -45,10 +46,6 @@ def ler_dados_json(json_filepath):
         if not duracoes:
             duracao_global = data.get('duracao_por_teste_s')
             if duracao_global is not None:
-                # Se tem duração global, precisamos saber quantos pontos são para replicar?
-                # Ou retornamos uma lista com um único valor e quem usa decide?
-                # O script original replicava baseado no número de pressões.
-                # Aqui vamos retornar o que achamos.
                 duracoes = [float(duracao_global)]
         
         # 3. Garante que temos listas de pressão e massa para retornar estrutura padronizada
@@ -148,13 +145,7 @@ def carregar_e_aplicar_calibracao(caminho_calibracao, tau_w_nao_corrigido):
             print("ERRO na calibração: Arquivo não contém pontos suficientes para interpolação.")
             return None
 
-        # Cria a função de interpolação. 'bounds_error=False' e 'fill_value="extrapolate"'
-        # permitem que o script estime valores mesmo que a nova tensão esteja um pouco fora
-        # da faixa original da calibração.
         funcao_calibracao = interp1d(tau_cal, gamma_cal, kind='linear', bounds_error=False, fill_value="extrapolate")
-        
-        # O passo chave: aplica a função de interpolação para encontrar a taxa de cisalhamento
-        # corrigida para cada valor de tensão de cisalhamento do novo ensaio.
         gamma_dot_aplicado = funcao_calibracao(tau_w_nao_corrigido)
         
         print("SUCESSO: Calibração aplicada aos dados.")
@@ -166,3 +157,41 @@ def carregar_e_aplicar_calibracao(caminho_calibracao, tau_w_nao_corrigido):
     except Exception as e:
         print(f"ERRO ao carregar ou aplicar calibração: {e}")
         return None
+
+def carregar_csv_resultados(filepath):
+    """
+    Carrega um arquivo CSV de resultados reológicos padrão.
+    Retorna um DataFrame pandas.
+    """
+    try:
+        # Tenta primeiro com ponto e vírgula (padrão Excel BR/Script 2)
+        df = pd.read_csv(filepath, sep=';', decimal=',', encoding='utf-8')
+        
+        # Se leu apenas 1 coluna, provavelmente o separador é vírgula
+        if len(df.columns) == 1:
+            # Tenta com vírgula (padrão Pandas/Script 2b)
+            df = pd.read_csv(filepath, sep=',', decimal='.', encoding='utf-8')
+            
+        # Limpeza básica de nomes de colunas (remove espaços extras)
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Erro ao carregar CSV {filepath}: {e}")
+        return None
+
+def carregar_dados_estatisticos(filepath):
+    """
+    Carrega um arquivo CSV de dados estatísticos.
+    """
+    return carregar_csv_resultados(filepath)
+
+def encontrar_arquivo_associado(base_path, pattern_glob):
+    """
+    Busca um arquivo associado em um diretório base usando um padrão glob.
+    Retorna o caminho completo do primeiro arquivo encontrado ou None.
+    """
+    busca = os.path.join(base_path, pattern_glob)
+    arquivos = glob.glob(busca)
+    if arquivos:
+        return arquivos[0]
+    return None

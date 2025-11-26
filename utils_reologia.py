@@ -3,6 +3,7 @@ import glob
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 # -----------------------------------------------------------------------------
 # --- CONSTANTES GERAIS ---
@@ -27,6 +28,10 @@ def setup_graficos():
         matplotlib.use('QtAgg')
     except ImportError:
         print("Aviso: Backend QtAgg não encontrado, usando o padrão do sistema.")
+
+def gerar_timestamp():
+    """Gera uma string de timestamp atual (YYYYMMDD_HHMMSS)."""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # -----------------------------------------------------------------------------
 # --- FORMATAÇÃO ---
