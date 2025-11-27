@@ -18,6 +18,212 @@ INPUT_BASE_FOLDER = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
 # Pasta correta para salvar comparativos
 OUTPUT_FOLDER = utils_reologia.CONSTANTS.get('CAMINHO_BASE_COMPARATIVOS', "comparativo_analises")
 
+# =============================================================================
+# FUNÇÕES AUXILIARES PARA CARREGAMENTO E NORMALIZAÇÃO
+# =============================================================================
+
+def mapear_colunas_para_padrao(df, cols_originais):
+    """
+    Mapeia colunas de diferentes formatos para o padrão unificado.
+    
+    Detecta automaticamente o tipo de arquivo e mapeia as colunas
+    sem usar chaves duplicadas no dicionário.
+    
+    Args:
+        df: DataFrame pandas com dados
+        cols_originais: Lista de nomes de colunas originais (lowercase)
+    
+    Returns:
+        tuple: (DataFrame com colunas padronizadas, tipo_arquivo)
+    """
+    # Detecta tipo de arquivo baseado nas colunas presentes
+    tipo_arquivo = None
+    
+    if 'gamma_dot_w_mean' in cols_originais:
+        tipo_arquivo = 'estatistico_novo'
+    elif 'mean_gamma' in cols_originais:
+        tipo_arquivo = 'estatistico_antigo'
+    elif 'taxa de cisalhamento corrigida (s-1)' in cols_originais:
+        tipo_arquivo = 'individual'
+    elif 'taxa de cisalhamento (s-1)' in cols_originais:
+        tipo_arquivo = 'rotacional'
+    elif 'γ̇w (s⁻¹)' in cols_originais:
+        tipo_arquivo = 'ja_padronizado'
+    else:
+        tipo_arquivo = 'desconhecido'
+    
+    # Cria cópia para não modificar df original durante detecção
+    df_result = df.copy()
+    
+    # Mapeia baseado no tipo (SEM DUPLICATAS!)
+    if tipo_arquivo == 'rotacional':
+        # Para rotacional, taxa é tanto real quanto aparente
+        df_result = df_result.rename(columns={
+            'taxa de cisalhamento (s-1)': 'γ̇w (s⁻¹)',
+            'tensao de cisalhamento (pa)': 'τw (Pa)',
+            'viscosidade (pa.s)': 'η (Pa·s)'
+        })
+        # Cria coluna aparente como cópia (para gráfico de n')
+        if 'γ̇w (s⁻¹)' in df_result.columns:
+            df_result['γ̇aw (s⁻¹)'] = df_result['γ̇w (s⁻¹)']
+        # Pressão (se disponível)
+        if 'tensao_std (pa)' in df_result.columns:
+            df_result = df_result.rename(columns={'tensao_std (pa)': 'τw_std (Pa)'})
+        if 'viscosity_std (pa.s)' in df_result.columns:
+            df_result = df_result.rename(columns={'viscosity_std (pa.s)': 'η_std (Pa·s)'})
+            
+    elif tipo_arquivo == 'individual':
+        df_result = df_result.rename(columns={
+            'taxa de cisalhamento corrigida (s-1)': 'γ̇w (s⁻¹)',
+            'taxa de cisalhamento aparente (s-1)': 'γ̇aw (s⁻¹)',
+            'tensao de cisalhamento (pa)': 'τw (Pa)',
+            'viscosidade real (pa.s)': 'η (Pa·s)',
+            'viscosidade aparente (pa.s)': 'η_a (Pa·s)',
+            'pressao (bar)': 'P (bar)'
+        })
+        
+    elif tipo_arquivo == 'estatistico_novo':
+        df_result = df_result.rename(columns={
+            'gamma_dot_w_mean': 'γ̇w (s⁻¹)',
+            'gamma_dot_aw_mean': 'γ̇aw (s⁻¹)',
+            'tau_w_mean': 'τw (Pa)',
+            'tau_w_std': 'τw_std (Pa)',
+            'eta_true_mean': 'η (Pa·s)',
+            'eta_true_std': 'η_std (Pa·s)',
+            'eta_a_mean': 'η_a (Pa·s)',
+            'pressao_mean_bar': 'P (bar)'
+        })
+        
+    elif tipo_arquivo == 'estatistico_antigo':
+        df_result = df_result.rename(columns={
+            'mean_gamma': 'γ̇w (s⁻¹)',
+            'mean_tau_w': 'τw (Pa)',
+            'std_tau_w': 'τw_std (Pa)'
+        })
+        
+    elif tipo_arquivo == 'ja_padronizado':
+        # Garante que as colunas (que estão em lowercase) sejam renomeadas para o padrão MixedCase
+        # Isso corrige o erro onde 'τw (pa)' não era reconhecido como 'τw (Pa)'
+        df_result = df_result.rename(columns={
+            'γ̇w (s⁻¹)': 'γ̇w (s⁻¹)',
+            'τw (pa)': 'τw (Pa)',
+            'η (pa·s)': 'η (Pa·s)',
+            'γ̇aw (s⁻¹)': 'γ̇aw (s⁻¹)',
+            'η_a (pa·s)': 'η_a (Pa·s)',
+            'p (bar)': 'P (bar)'
+        })
+    
+    return df_result, tipo_arquivo
+
+
+def carregar_modelo_associado(caminho_csv):
+    """
+    Carrega modelo associado a um arquivo CSV de resultados.
+    
+    Busca apenas arquivos JSON (mais confiável que parsing de CSV).
+    
+    Args:
+        caminho_csv: Caminho completo do arquivo CSV
+    
+    Returns:
+        dict: Dados do modelo {'Melhor Modelo': str, 'Parametros': list, 'R2': float}
+              ou None se não encontrar
+    """
+    pasta = os.path.dirname(caminho_csv)
+    nome_base = os.path.splitext(os.path.basename(caminho_csv))[0]
+    
+    # Remove sufixos comuns para tentar encontrar o JSON
+    nome_base_limpo = nome_base
+    nome_base_limpo = nome_base_limpo.replace('_resultados_reologicos', '')
+    nome_base_limpo = nome_base_limpo.replace('_estatisticas_', '_')
+    nome_base_limpo = nome_base_limpo.replace('_processado', '')
+    
+    # Lista de possíveis caminhos JSON
+    possiveis_jsons = [
+        os.path.join(pasta, f"{nome_base}_parametros_modelos.json"),
+        os.path.join(pasta, f"{nome_base_limpo}_parametros_modelos.json"),
+    ]
+    
+    # Tenta carregar JSON
+    for json_path in possiveis_jsons:
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                # Valida estrutura mínima
+                if "Melhor Modelo" in data and "Parametros" in data:
+                    return data
+                    
+            except Exception as e:
+                print(f"    ⚠️ Aviso: Erro ao ler modelo JSON '{os.path.basename(json_path)}': {e}")
+    
+    # --- FALLBACK: Tenta carregar CSV (para compatibilidade com Script 2 antigo) ---
+    possiveis_csvs = [
+        os.path.join(pasta, f"{nome_base}_resumo_melhor_modelo.csv"),
+        os.path.join(pasta, f"{nome_base_limpo}_resumo_melhor_modelo.csv")
+    ]
+    
+    for csv_path in possiveis_csvs:
+        if os.path.exists(csv_path):
+            try:
+                # Tenta ler CSV com encoding latin-1 (comum no Excel/Script 2)
+                df_mod = pd.read_csv(csv_path, sep=';', encoding='latin-1')
+                if not df_mod.empty:
+                    # Lógica de extração do CSV (adaptada do código original)
+                    nome_modelo = None
+                    r2 = 0.0
+                    params = []
+                    
+                    # Busca nome do modelo
+                    row_model = df_mod[df_mod.iloc[:, 0].astype(str).str.contains("Modelo Reológico", case=False, na=False)]
+                    if not row_model.empty:
+                        nome_modelo = str(row_model.iloc[0, 1]).strip()
+                    
+                    # Busca R2
+                    row_r2 = df_mod[df_mod.iloc[:, 0].astype(str).str.contains("R²", case=False, na=False)]
+                    if not row_r2.empty:
+                        try: r2 = float(str(row_r2.iloc[0, 1]).replace(',', '.'))
+                        except: pass
+                        
+                    # Se achou modelo, tenta extrair parâmetros
+                    if nome_modelo:
+                        # Importa definições de modelos para saber quais parâmetros buscar
+                        from modelos_reologicos import MODELS
+                        if nome_modelo in MODELS:
+                            param_names = MODELS[nome_modelo][1]
+                            
+                            for p_name in param_names:
+                                # Mapeia nomes comuns
+                                search_term = p_name
+                                if p_name == "tau0": search_term = "τ₀"
+                                elif p_name == "eta": search_term = "η"
+                                
+                                # Busca no CSV
+                                row_p = df_mod[df_mod.iloc[:, 0].astype(str).str.contains(search_term, regex=False, na=False)]
+                                if row_p.empty: # Tenta nome exato se falhar
+                                    row_p = df_mod[df_mod.iloc[:, 0].astype(str).str.contains(p_name, case=False, na=False)]
+                                    
+                                if not row_p.empty:
+                                    try: params.append(float(str(row_p.iloc[0, 1]).replace(',', '.')))
+                                    except: params.append(0.0)
+                                else:
+                                    params.append(0.0)
+                            
+                            return {
+                                "Melhor Modelo": nome_modelo,
+                                "R2": r2,
+                                "Parametros": params
+                            }
+            except Exception as e:
+                print(f"    ⚠️ Aviso: Erro ao ler modelo CSV '{os.path.basename(csv_path)}': {e}")
+
+    # Não encontrou modelo
+    print(f"    ℹ️ Modelo não encontrado para '{os.path.basename(caminho_csv)}'")
+    return None
+
+
+
 def calcular_mape(y_true, y_pred):
     """Calcula o Mean Absolute Percentage Error."""
     y_true, y_pred = np.array(y_true), np.array(y_pred)
@@ -214,158 +420,46 @@ def main():
                     nome_legenda = input(f"  Nome para legenda (Enter='{nome_padrao}'): ").strip()
                     if not nome_legenda: nome_legenda = nome_padrao
                     
-                    # Carrega e processa
+                    # === INÍCIO DA CORREÇÃO ===
+                    # Carrega CSV uma única vez
                     df = reologia_io.carregar_csv_resultados(caminho_csv)
-                    if df is not None:
-                        df.columns = [c.lower() for c in df.columns]
+                    if df is None:
+                        print(f"  ❌ ERRO: Não foi possível carregar '{os.path.basename(caminho_csv)}'")
+                        continue
+                    
+                    # Normaliza nomes das colunas (lowercase)
+                    df.columns = [c.lower() for c in df.columns]
+                    cols_originais = df.columns.tolist()  # SALVA ANTES de modificar
+                    
+                    # Usa função nova para mapear colunas (SEM duplicatas!)
+                    df, tipo_arquivo = mapear_colunas_para_padrao(df, cols_originais)
+                    
+                    print(f"  📄 Tipo detectado: {tipo_arquivo}")
+                    
+                    # === VALIDAÇÃO DETALHADA ===
+                    colunas_necessarias = ['γ̇w (s⁻¹)', 'τw (Pa)']
+                    colunas_presentes = [col for col in colunas_necessarias if col in df.columns]
+                    
+                    if len(colunas_presentes) == len(colunas_necessarias):
+                        # Sucesso! Adiciona aos dados
+                        dados_analises[nome_legenda] = df
+                        print(f"  ✅ '{nome_legenda}' adicionado com sucesso")
+                        print(f"     Colunas disponíveis: {sorted(df.columns.tolist())[:8]}...")
                         
-                        # Mapeamento Estendido (incluindo Rotacional)
-                        mapa_colunas = {
-                            # Real / Corrigido
-                            'taxa de cisalhamento corrigida (s-1)': 'γ̇w (s⁻¹)',
-                            'tensao de cisalhamento (pa)': 'τw (Pa)',
-                            'viscosidade real (pa.s)': 'η (Pa·s)',
-                            'gamma_dot_w_mean': 'γ̇w (s⁻¹)',
-                            'tau_w_mean': 'τw (Pa)',
-                            'eta_true_mean': 'η (Pa·s)',
-                            'γ̇w (s⁻¹)': 'γ̇w (s⁻¹)',
-                            'τw (pa)': 'τw (Pa)',
-                            'η (pa·s)': 'η (Pa·s)',
-                            
-                            # Rotacional (Script 5)
-                            'taxa de cisalhamento (s-1)': 'γ̇w (s⁻¹)',
-                            'tensao de cisalhamento (pa)': 'τw (Pa)',
-                            'viscosidade (pa.s)': 'η (Pa·s)',
-                            # Para n', usamos a taxa real como aparente (já que não há correção de Rabinowitsch para rotacional da mesma forma)
-                            # Isso permite que o gráfico de n' seja gerado
-                            'taxa de cisalhamento (s-1)': 'γ̇aw (s⁻¹)', 
-                            
-                            # Aparente (para n')
-                            'taxa de cisalhamento aparente (s-1)': 'γ̇aw (s⁻¹)',
-                            'viscosidade aparente (pa.s)': 'η_a (Pa·s)',
-                            'gamma_dot_aw_mean': 'γ̇aw (s⁻¹)',
-                            'eta_a_mean': 'η_a (Pa·s)',
-                            
-                            # Pressão (para P vs Eta)
-                            'pressao (bar)': 'P (bar)',
-                            'pressao_mean_bar': 'P (bar)',
-                            'p_ext(bar)': 'P (bar)'
-                        }
-                        df.rename(columns=mapa_colunas, inplace=True)
-                        
-                        # CORREÇÃO PÓS-RENAME:
-                        # Se for rotacional, 'taxa de cisalhamento (s-1)' foi renomeada para 'γ̇aw (s⁻¹)' (última chave vence no dict se duplicada?)
-                        # Não, dict não permite chaves duplicadas. A definição acima sobrescreve.
-                        # Precisamos garantir que tenhamos AMBAS: γ̇w (s⁻¹) e γ̇aw (s⁻¹)
-                        
-                        # Recarrega colunas originais para garantir
-                        cols_orig = [c.lower() for c in reologia_io.carregar_csv_resultados(caminho_csv).columns]
-                        
-                        # Se for arquivo do Script 5
-                        if 'taxa de cisalhamento (s-1)' in cols_orig:
-                            df['γ̇w (s⁻¹)'] = df['γ̇aw (s⁻¹)'] # Duplica para ter as duas
-                        
-                        # Guarda caminho original para referência futura (se precisar)
-                        df.attrs['path_source'] = caminho_csv
-                        
-                        if 'γ̇w (s⁻¹)' in df.columns and 'τw (Pa)' in df.columns:
-                            dados_analises[nome_legenda] = df
-                            print(f"  '{nome_legenda}' adicionado.")
-                            
-                            # Tenta carregar modelo associado (JSON ou CSV)
-                            pasta_arquivo = os.path.dirname(caminho_csv)
-                            nome_base = os.path.splitext(os.path.basename(caminho_csv))[0]
-                            
-                            # 1. Tenta JSON (Script 5 e Script 2B)
-                            possiveis_jsons = [
-                                # Script 5 (Rotacional)
-                                os.path.join(pasta_arquivo, f"{nome_base}_parametros_modelos.json"),
-                                os.path.join(pasta_arquivo, f"{nome_base.replace('_processado', '')}_parametros_modelos.json"),
-                                # Script 2B (Estatísticas)
-                                os.path.join(pasta_arquivo, f"{nome_base}_parametros_modelos.json"),
-                                # Padrão com "_estatisticas_" no meio
-                                os.path.join(pasta_arquivo, f"{nome_base.replace('_estatisticas_', '_estatisticas_X_')}_parametros_modelos.json".replace('_X_', '_'))
-                            ]
-                            
-                            json_carregado = False
-                            for json_path in possiveis_jsons:
-                                if os.path.exists(json_path):
-                                    try:
-                                        with open(json_path, 'r', encoding='utf-8') as f:
-                                            dados_json = json.load(f)
-                                            if "Melhor Modelo" in dados_json and "Parametros" in dados_json:
-                                                modelos_dict[nome_legenda] = dados_json
-                                                print(f"    -> Modelo (JSON) '{dados_json['Melhor Modelo']}' carregado.")
-                                                json_carregado = True
-                                                break
-                                    except Exception as e:
-                                        print(f"    -> Erro ao ler JSON: {e}")
-                            
-                            # 2. Tenta CSV (Script 2) se JSON não encontrado
-                            if not json_carregado:
-                                possiveis_csvs_modelo = [
-                                    os.path.join(pasta_arquivo, f"{nome_base}_resumo_melhor_modelo.csv"),
-                                    os.path.join(pasta_arquivo, f"{nome_base.replace('_resultados_reologicos', '')}_resumo_melhor_modelo.csv")
-                                ]
-                                
-                                for csv_model_path in possiveis_csvs_modelo:
-                                    if os.path.exists(csv_model_path):
-                                        try:
-                                            df_mod = pd.read_csv(csv_model_path, sep=';', encoding='latin-1')
-                                            if not df_mod.empty:
-                                                # Extrai nome do modelo
-                                                row_model = df_mod[df_mod.iloc[:, 0].astype(str).str.contains("Modelo Reológico", case=False, na=False)]
-                                                if not row_model.empty:
-                                                    nome_modelo = row_model.iloc[0, 1]
-                                                    
-                                                    # Extrai R2
-                                                    r2 = 0.0
-                                                    row_r2 = df_mod[df_mod.iloc[:, 0].astype(str).str.contains("R²", case=False, na=False)]
-                                                    if not row_r2.empty:
-                                                        try: r2 = float(row_r2.iloc[0, 1].replace(',', '.'))
-                                                        except: pass
-                                                    
-                                                    # Extrai Parâmetros
-                                                    params = []
-                                                    # Mapeia ordem dos parâmetros conforme modelos_reologicos.py
-                                                    from modelos_reologicos import MODELS
-                                                    if nome_modelo in MODELS:
-                                                        param_names_expected = MODELS[nome_modelo][1] # ex: ["tau0", "K", "n"]
-                                                        
-                                                        for p_name in param_names_expected:
-                                                            # Busca linha que contém o nome do parâmetro (simplificado)
-                                                            # Mapeamento de busca
-                                                            search_term = p_name
-                                                            if p_name == "tau0": search_term = "τ₀"
-                                                            elif p_name == "eta": search_term = "η"
-                                                            elif p_name == "eta_p": search_term = "η_p"
-                                                            elif p_name == "eta_c": search_term = "η_c"
-                                                            
-                                                            # Busca parcial
-                                                            row_p = df_mod[df_mod.iloc[:, 0].astype(str).str.contains(search_term, regex=False, na=False)]
-                                                            # Se não achar, tenta busca genérica pelo nome da variável
-                                                            if row_p.empty:
-                                                                 row_p = df_mod[df_mod.iloc[:, 0].astype(str).str.contains(p_name, case=False, na=False)]
-                                                            
-                                                            if not row_p.empty:
-                                                                val_str = str(row_p.iloc[0, 1]).replace(',', '.')
-                                                                try: params.append(float(val_str))
-                                                                except: params.append(0.0)
-                                                            else:
-                                                                params.append(0.0) # Valor default se não achar
-                                                        
-                                                        modelos_dict[nome_legenda] = {
-                                                            "Melhor Modelo": nome_modelo,
-                                                            "R2": r2,
-                                                            "Parametros": params
-                                                        }
-                                                        print(f"    -> Modelo (CSV) '{nome_modelo}' carregado.")
-                                                        break
-                                        except Exception as e:
-                                            print(f"    -> Erro ao ler CSV de modelo: {e}")
-
-                        else:
-                            print("  ERRO: Colunas essenciais não encontradas.")
+                        # === CARREGA MODELO ASSOCIADO ===
+                        modelo = carregar_modelo_associado(caminho_csv)
+                        if modelo:
+                            modelos_dict[nome_legenda] = modelo
+                            print(f"    📊 Modelo '{modelo['Melhor Modelo']}' carregado (R²={modelo.get('R2', 'N/A')})")
+                    
+                    else:
+                        # ERRO: Colunas faltando
+                        faltantes = set(colunas_necessarias) - set(colunas_presentes)
+                        print(f"  ❌ ERRO: '{os.path.basename(caminho_csv)}' não possui colunas essenciais")
+                        print(f"     Faltando: {faltantes}")
+                        print(f"     Presentes: {df.columns.tolist()[:10]}...")
+                        print(f"     Tipo detectado: {tipo_arquivo}")
+                    # === FIM DA CORREÇÃO ===
 
             
         except ValueError:
@@ -391,61 +485,116 @@ def main():
     
     # --- Geração dos Gráficos ---
     
-    # 1. Curva de Fluxo (Tensão vs Taxa)
-    reologia_plot.plotar_comparativo_multiplo(
-        dados_analises, 'γ̇w (s⁻¹)', 'τw (Pa)', 
-        "Comparativo: Curva de Fluxo", "Taxa de Cisalhamento (s⁻¹)", "Tensão de Cisalhamento (Pa)",
-        pasta_saida, timestamp, show_plots=True, modelos_dict=modelos_dict
-    )
+    # --- Geração dos Gráficos ---
     
-    # 2. Viscosidade (Visc vs Taxa)
-    reologia_plot.plotar_comparativo_multiplo(
-        dados_analises, 'γ̇w (s⁻¹)', 'η (Pa·s)', 
-        "Comparativo: Viscosidade Real", "Taxa de Cisalhamento (s⁻¹)", "Viscosidade Real (Pa·s)",
-        pasta_saida, timestamp, show_plots=True, modelos_dict=modelos_dict
-    )
+    # Lógica Híbrida: 
+    # - Se apenas 1 arquivo: Gera gráficos detalhados (estilo Script 3)
+    # - Se múltiplos arquivos: Gera gráficos comparativos (estilo Script 4)
     
-    # 3. Determinação de n' (ln(tau) vs ln(gamma_ap)) - NOVO
-    # Precisa criar colunas de log temporárias ou passar log=False para o plotador e passar os dados já logaritimizados?
-    # O plotador 'plotar_comparativo_multiplo' plota X vs Y. Se passarmos log(X) e log(Y), ele plota.
-    # Mas ele tem 'usar_log=True' que seta a escala do eixo para log.
-    # Para n', queremos eixos lineares mas com valores logarítmicos, OU eixos log-log dos valores originais?
-    # O gráfico de n' original é linear nos eixos, mas os dados são log.
-    # Vamos criar colunas ln temporárias nos dataframes.
-    
-    dados_n_prime = {}
-    for nome, df in dados_analises.items():
-        if 'γ̇aw (s⁻¹)' in df.columns and 'τw (Pa)' in df.columns:
-            df_n = df.copy()
-            # Filtra valores válidos para log
-            valid = (df_n['γ̇aw (s⁻¹)'] > 0) & (df_n['τw (Pa)'] > 0)
-            df_n = df_n[valid]
-            if not df_n.empty:
-                df_n['ln_gamma_aw'] = np.log(df_n['γ̇aw (s⁻¹)'])
-                df_n['ln_tau_w'] = np.log(df_n['τw (Pa)'])
-                dados_n_prime[nome] = df_n
-    
-    if dados_n_prime:
-        reologia_plot.plotar_comparativo_multiplo(
-            dados_n_prime, 'ln_gamma_aw', 'ln_tau_w',
-            "Comparativo: Determinação de n'", "ln(Taxa de Cisalhamento Aparente)", "ln(Tensão de Cisalhamento)",
-            pasta_saida, timestamp, usar_log=False, show_plots=True # Eixos lineares pois os dados já são log
+    if len(dados_analises) == 1:
+        print("\n--- Modo Detalhado (Arquivo Único) ---")
+        nome_unico = list(dados_analises.keys())[0]
+        df_unico = dados_analises[nome_unico]
+        
+        # Prepara dados para gerar_graficos_finais (Script 3)
+        # Extrai colunas necessárias
+        gamma_dot_aw = df_unico.get('γ̇aw (s⁻¹)', df_unico['γ̇w (s⁻¹)']).values # Fallback para real se não tiver aparente
+        tau_w = df_unico['τw (Pa)'].values
+        gamma_dot_w = df_unico['γ̇w (s⁻¹)'].values
+        eta_true = df_unico['η (Pa·s)'].values
+        
+        # Opcionais
+        eta_a = df_unico.get('η_a (Pa·s)', tau_w / gamma_dot_aw).values
+        std_tau = df_unico.get('τw_std (Pa)', None)
+        std_tau = std_tau.values if std_tau is not None else None
+        std_eta = df_unico.get('η_std (Pa·s)', None)
+        std_eta = std_eta.values if std_eta is not None else None
+        
+        # Calcula n' e K' on-the-fly para visualização
+        from scipy.stats import linregress
+        valid_log = (gamma_dot_aw > 0) & (tau_w > 0)
+        if np.sum(valid_log) > 1:
+            slope, intercept, _, _, _ = linregress(np.log(gamma_dot_aw[valid_log]), np.log(tau_w[valid_log]))
+            n_prime, log_K_prime = slope, intercept
+        else:
+            n_prime, log_K_prime = 1.0, 0.0
+            
+        # Pega modelo se existir
+        modelo_data = modelos_dict.get(nome_unico, {})
+        best_model_nome = modelo_data.get('Melhor Modelo', 'Nenhum')
+        model_results = {}
+        if best_model_nome != 'Nenhum':
+            model_results[best_model_nome] = {
+                'params': modelo_data['Parametros'],
+                'R2': modelo_data.get('R2', 0.0)
+            }
+            
+        print(f"  Gerando 5 gráficos detalhados para '{nome_unico}'...")
+        reologia_plot.gerar_graficos_finais(
+            pasta_saida, timestamp,
+            gamma_dot_aw, tau_w,
+            gamma_dot_w, eta_true, eta_a,
+            n_prime, log_K_prime,
+            model_results, best_model_nome,
+            [], 0.0, 0.0, # Sem dados de pressão/geometria específicos
+            False, False, False,
+            only_show=False, # Salva arquivos
+            std_tau_w=std_tau,
+            std_eta=std_eta,
+            show_plots=True
         )
         
-    # 4. Pressão vs Viscosidade (NOVO)
-    dados_pressao = {}
-    for nome, df in dados_analises.items():
-        if 'P (bar)' in df.columns and 'η (Pa·s)' in df.columns:
-            df_p = df.copy()
-            df_p['P (Pa)'] = df_p['P (bar)'] * 1e5
-            dados_pressao[nome] = df_p
-            
-    if dados_pressao:
+    else:
+        print(f"\n--- Modo Comparativo ({len(dados_analises)} Arquivos) ---")
+        
+        # 1. Curva de Fluxo (Tensão vs Taxa)
         reologia_plot.plotar_comparativo_multiplo(
-            dados_pressao, 'P (Pa)', 'η (Pa·s)',
-            "Comparativo: Pressão vs Viscosidade", "Pressão (Pa)", "Viscosidade Real (Pa·s)",
-            pasta_saida, timestamp, usar_log=False, show_plots=True # Geralmente linear ou log? Script 2 usa linear.
+            dados_analises, 'γ̇w (s⁻¹)', 'τw (Pa)', 
+            "Comparativo: Curva de Fluxo", "Taxa de Cisalhamento (s⁻¹)", "Tensão de Cisalhamento (Pa)",
+            pasta_saida, timestamp, show_plots=True, modelos_dict=modelos_dict
         )
+        
+        # 2. Viscosidade (Visc vs Taxa)
+        reologia_plot.plotar_comparativo_multiplo(
+            dados_analises, 'γ̇w (s⁻¹)', 'η (Pa·s)', 
+            "Comparativo: Viscosidade Real", "Taxa de Cisalhamento (s⁻¹)", "Viscosidade Real (Pa·s)",
+            pasta_saida, timestamp, show_plots=True, modelos_dict=modelos_dict
+        )
+        
+        # 3. Determinação de n' (ln(tau) vs ln(gamma_ap))
+        dados_n_prime = {}
+        for nome, df in dados_analises.items():
+            if 'γ̇aw (s⁻¹)' in df.columns and 'τw (Pa)' in df.columns:
+                df_n = df.copy()
+                valid = (df_n['γ̇aw (s⁻¹)'] > 0) & (df_n['τw (Pa)'] > 0)
+                df_n = df_n[valid]
+                if not df_n.empty:
+                    df_n['ln_gamma_aw'] = np.log(df_n['γ̇aw (s⁻¹)'])
+                    df_n['ln_tau_w'] = np.log(df_n['τw (Pa)'])
+                    dados_n_prime[nome] = df_n
+        
+        if dados_n_prime:
+            reologia_plot.plotar_comparativo_multiplo(
+                dados_n_prime, 'ln_gamma_aw', 'ln_tau_w',
+                "Comparativo: Determinação de n'", "ln(Taxa de Cisalhamento Aparente)", "ln(Tensão de Cisalhamento)",
+                pasta_saida, timestamp, usar_log=False, show_plots=True
+            )
+            
+        # 4. Pressão vs Viscosidade
+        dados_pressao = {}
+        for nome, df in dados_analises.items():
+            if 'P (bar)' in df.columns and 'η (Pa·s)' in df.columns:
+                df_p = df.copy()
+                df_p['P (Pa)'] = df_p['P (bar)'] * 1e5
+                dados_pressao[nome] = df_p
+                
+        if dados_pressao:
+            reologia_plot.plotar_comparativo_multiplo(
+                dados_pressao, 'P (Pa)', 'η (Pa·s)',
+                "Comparativo: Pressão vs Viscosidade", "Pressão (Pa)", "Viscosidade Real (Pa·s)",
+                pasta_saida, timestamp, usar_log=False, show_plots=True
+            )
+
 
     # 2. Análise MAPE (Opcional)
     analise_mape(dados_analises, pasta_saida, timestamp)

@@ -360,7 +360,7 @@ def plotar_comparativo_multiplo(dados_analises, coluna_x, coluna_y, titulo, xlab
                         
                         print(f"    [DEBUG] Modelo: {nome_modelo}, Params: {params}")
                         
-                        if nome_modelo and params and nome_modelo in MODELS:
+                        if nome_modelo and params is not None and len(params) > 0 and nome_modelo in MODELS:
                             func_modelo = MODELS[nome_modelo][0]
                             
                             # Gera pontos para a curva suave
@@ -402,6 +402,81 @@ def plotar_comparativo_multiplo(dados_analises, coluna_x, coluna_y, titulo, xlab
     if not only_show:
         safe_title = "".join([c if c.isalnum() else "_" for c in titulo])
         f_name = os.path.join(output_folder, f"{timestamp_str}_comparativo_{safe_title}.png")
+        try: 
+            fig.savefig(f_name, dpi=300)
+            print(f"  Gráfico salvo: {os.path.basename(f_name)}")
+        except Exception as e:
+            print(f"  Erro ao salvar gráfico: {e}")
+            
+    if show_plots or only_show:
+        plt.show()
+        
+    plt.close(fig)
+    return f_name
+
+def plotar_comparativo_real_vs_aparente(dados_analises, output_folder, timestamp_str, show_plots=False, only_show=False):
+    """
+    Plota comparativo de Viscosidade Real vs Aparente para múltiplas análises.
+    Sobrepõe ambas as curvas para cada arquivo.
+    """
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    marcadores = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+    cores = plt.cm.tab10(np.linspace(0, 1, len(dados_analises)))
+    
+    for i, (nome, df) in enumerate(dados_analises.items()):
+        cor = cores[i]
+        marcador = marcadores[i % len(marcadores)]
+        
+        # Verifica se tem colunas necessárias
+        col_gamma_w = 'γ̇w (s⁻¹)'
+        col_gamma_aw = 'γ̇aw (s⁻¹)'
+        col_eta = 'η (Pa·s)'
+        col_eta_a = 'η_a (Pa·s)'
+        
+        # Tenta encontrar colunas se nomes variarem (fallback simples)
+        if col_gamma_w not in df.columns and 'taxa de cisalhamento (s-1)' in df.columns: col_gamma_w = 'taxa de cisalhamento (s-1)'
+        if col_eta not in df.columns and 'viscosidade (pa.s)' in df.columns: col_eta = 'viscosidade (pa.s)'
+        
+        # Plota Viscosidade Real (Sólido)
+        if col_gamma_w in df.columns and col_eta in df.columns:
+            x = df[col_gamma_w]
+            y = df[col_eta]
+            valid = np.isfinite(x) & np.isfinite(y) & (x > 0) & (y > 0)
+            if np.any(valid):
+                ax.plot(x[valid], y[valid], marker=marcador, 
+                        color=cor, label=f"{nome} (Real)", linestyle='-', alpha=0.8, markersize=6)
+
+        # Plota Viscosidade Aparente (Tracejado)
+        # Se não tiver coluna explícita, tenta calcular (tau / gamma_aparente)
+        x_ap = None
+        y_ap = None
+        
+        if col_eta_a in df.columns and col_gamma_aw in df.columns:
+            x_ap = df[col_gamma_aw]
+            y_ap = df[col_eta_a]
+        elif col_gamma_aw in df.columns and 'τw (Pa)' in df.columns:
+             x_ap = df[col_gamma_aw]
+             y_ap = df['τw (Pa)'] / df[col_gamma_aw]
+             
+        if x_ap is not None and y_ap is not None:
+            valid_ap = np.isfinite(x_ap) & np.isfinite(y_ap) & (x_ap > 0) & (y_ap > 0)
+            if np.any(valid_ap):
+                ax.plot(x_ap[valid_ap], y_ap[valid_ap], marker=marcador, 
+                        color=cor, label=f"{nome} (Aparente)", linestyle='--', alpha=0.6, markersize=6, markerfacecolor='none')
+
+    ax.set_xlabel("Taxa de Cisalhamento (s⁻¹)")
+    ax.set_ylabel("Viscosidade (Pa·s)")
+    ax.set_title("Comparativo: Viscosidade Real vs. Aparente")
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+    ax.grid(True, which="both", ls="--")
+    ax.set_xscale('log'); ax.set_yscale('log')
+    
+    plt.tight_layout()
+    
+    f_name = None
+    if not only_show:
+        f_name = os.path.join(output_folder, f"{timestamp_str}_comparativo_visc_real_vs_aparente.png")
         try: 
             fig.savefig(f_name, dpi=300)
             print(f"  Gráfico salvo: {os.path.basename(f_name)}")

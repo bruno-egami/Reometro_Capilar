@@ -1,0 +1,262 @@
+# -*- coding: utf-8 -*-
+# -----------------------------------------------------------------------------
+# SCRIPT 3.VISUALIZAR_RESULTADOS.PY (MODULARIZADO)
+# -----------------------------------------------------------------------------
+import os
+import glob
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import utils_reologia
+import reologia_io
+import reologia_fitting
+import reologia_plot
+
+# --- CONFIGURAÇÃO DE PASTAS ---
+INPUT_BASE_FOLDER = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
+
+def visualizador_principal():
+    print("\n--- VISUALIZADOR DE RESULTADOS REOLÓGICOS (MODULARIZADO) ---")
+    
+    # 1. Seleciona Arquivo (Busca em múltiplas pastas)
+    print("Buscando arquivos de resultados...")
+    
+    # Define padrões de busca
+    search_patterns = [
+        (utils_reologia.CONSTANTS['INPUT_BASE_FOLDER'], "**/*resultados*.csv"),
+        ("resultados_estatisticos", "**/*estatisticas*.csv"),
+        (utils_reologia.CONSTANTS['CAMINHO_BASE_ROTACIONAL'], "**/*processado.csv")
+    ]
+    
+    all_files = []
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    
+    for folder, pattern in search_patterns:
+        search_path = os.path.join(project_root, folder, pattern)
+        found = glob.glob(search_path, recursive=True)
+        all_files.extend(found)
+        
+    # Remove duplicatas e ordena
+    all_files = sorted(list(set(all_files)), key=os.path.getmtime, reverse=True)
+    
+    if not all_files:
+        print("Nenhum arquivo de resultados encontrado.")
+        return
+
+    # Separa em grupos para exibição
+    files_stat = []
+    files_rot = []
+    files_indiv = []
+    
+    for f in all_files:
+        fname = os.path.basename(f)
+        if "estatisticas" in fname:
+            files_stat.append(f)
+        elif "processado" in fname:
+            files_rot.append(f)
+        else:
+            files_indiv.append(f)
+            
+    print(f"\n--- Selecione um arquivo de resultados ---")
+    
+    current_idx = 1
+    mapa_escolha = {}
+    
+    if files_stat:
+        print("\n[RESULTADOS ESTATÍSTICOS (MÉDIAS)]")
+        for f in files_stat:
+            parent = os.path.basename(os.path.dirname(f))
+            fname = os.path.basename(f)
+            # Tenta simplificar o nome exibido
+            display_name = fname.replace("_estatisticas_", " -> ").replace(".csv", "")
+            print(f"  {current_idx}: {display_name}  (Pasta: {parent})")
+            mapa_escolha[current_idx] = f
+            current_idx += 1
+
+    if files_rot:
+        print("\n[RESULTADOS ROTACIONAL (SCRIPT 5)]")
+        for f in files_rot:
+            parent = os.path.basename(os.path.dirname(f))
+            fname = os.path.basename(f)
+            display_name = fname.replace("_processado", "").replace(".csv", "")
+            print(f"  {current_idx}: {display_name}  (Pasta: {parent})")
+            mapa_escolha[current_idx] = f
+            current_idx += 1
+            
+    if files_indiv:
+        print("\n[RESULTADOS INDIVIDUAIS (BRUTOS/PROCESSADOS)]")
+        for f in files_indiv:
+            parent = os.path.basename(os.path.dirname(f))
+            fname = os.path.basename(f)
+            display_name = fname.replace("_resultados_reologicos", "").replace(".csv", "")
+            print(f"  {current_idx}: {display_name}  (Pasta: {parent})")
+            mapa_escolha[current_idx] = f
+            current_idx += 1
+        
+    try:
+        escolha = int(input("\nDigite o número do arquivo: "))
+        if escolha in mapa_escolha:
+            caminho_arquivo = mapa_escolha[escolha]
+        else:
+            print("Opção inválida.")
+            return
+    except ValueError:
+        return
+
+    print(f"\nCarregando: {os.path.basename(caminho_arquivo)}")
+    
+    # 2. Carrega Dados
+    df = reologia_io.carregar_csv_resultados(caminho_arquivo)
+    if df is None: return
+    
+    # Padroniza colunas (tenta adivinhar se é individual ou estatístico)
+    is_stat = False
+    # Normaliza nomes de colunas (lowercase)
+    df.columns = [c.lower() for c in df.columns]
+    
+    # Inicializa variáveis de colunas
+    col_gamma = None
+    col_gamma_aw = None  # Taxa de cisalhamento aparente
+    col_tau = None
+    col_tau_std = None
+    col_eta_a = None  # Viscosidade aparente
+    col_eta_true = None # Viscosidade real (direta do CSV)
+    col_eta_std = None # Desvio da viscosidade
+    
+    # --- Lógica de Detecção de Colunas ---
+    
+    # Caso 1: Estatístico (Script 2b - Novo Formato)
+    if 'gamma_dot_w_mean' in df.columns:
+        is_stat = True
+        col_gamma = 'gamma_dot_w_mean'
+        col_tau = 'tau_w_mean'
+        col_tau_std = 'tau_w_std'
+        col_eta_true = 'eta_true_mean'
+        col_eta_std = 'eta_true_std'
+        
+        # Dados Aparentes (se disponíveis)
+        if 'gamma_dot_aw_mean' in df.columns:
+            col_gamma_aw = 'gamma_dot_aw_mean'
+        if 'eta_a_mean' in df.columns:
+            col_eta_a = 'eta_a_mean'
+        
+    # Caso 2: Estatístico (Formato Antigo/Intermediário)
+    elif 'mean_gamma' in df.columns: 
+        is_stat = True
+        col_gamma = 'mean_gamma'
+        col_tau = 'mean_tau_w'
+        col_tau_std = 'std_tau_w'
+        
+    # Caso 3: Rotacional (Script 5)
+    elif 'taxa de cisalhamento (s-1)' in df.columns:
+        col_gamma = 'taxa de cisalhamento (s-1)'
+        col_tau = 'tensao de cisalhamento (pa)'
+        if 'viscosidade (pa.s)' in df.columns:
+            col_eta_true = 'viscosidade (pa.s)'
+        if 'viscosidade (pa.s)' in df.columns: # Usa como aparente também para plots
+            col_eta_a = 'viscosidade (pa.s)'
+        if 'viscosity_std (pa.s)' in df.columns:
+            col_eta_std = 'viscosity_std (pa.s)'
+        if 'tensao_std (pa)' in df.columns:
+            col_tau_std = 'tensao_std (pa)'
+            
+    # Caso 4: Individual (Script 2 - Novo Formato)
+    elif 'taxa de cisalhamento corrigida (s-1)' in df.columns: 
+        col_gamma = 'taxa de cisalhamento corrigida (s-1)'
+        col_tau = 'tensao de cisalhamento (pa)'
+        
+        if 'taxa de cisalhamento aparente (s-1)' in df.columns:
+            col_gamma_aw = 'taxa de cisalhamento aparente (s-1)'
+        if 'viscosidade aparente (pa.s)' in df.columns:
+            col_eta_a = 'viscosidade aparente (pa.s)'
+        if 'viscosidade real (pa.s)' in df.columns:
+            col_eta_true = 'viscosidade real (pa.s)'
+            
+    # Caso 5: Individual (Formatos Antigos)
+    elif 'γ̇w (s⁻¹)' in df.columns: 
+        col_gamma = 'γ̇w (s⁻¹)'
+        if 'τw (pa)' in df.columns: col_tau = 'τw (pa)'
+        elif 'tensao de cisalhamento (pa)' in df.columns: col_tau = 'tensao de cisalhamento (pa)'
+    elif 'taxa_de_cisalhamento_corrigida_s1' in df.columns:
+        col_gamma = 'taxa_de_cisalhamento_corrigida_s1'
+        col_tau = 'tensao_de_cisalhamento_pa'
+        
+    if not col_gamma or not col_tau:
+        print("ERRO: Colunas de taxa de cisalhamento ou tensão não identificadas.")
+        print(f"Colunas encontradas: {df.columns.tolist()}")
+        return
+
+    # 3. Ajusta Modelos (On-the-fly para visualização)
+    print("  Ajustando modelos para visualização...")
+    model_results, best_model_nome, df_sum = reologia_fitting.ajustar_modelos(
+        df[col_gamma].values, df[col_tau].values
+    )
+    
+    print(f"  Melhor modelo: {best_model_nome}")
+    if not df_sum.empty:
+        print(df_sum.to_string(index=False))
+
+    # 4. Plota
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_folder = os.path.dirname(caminho_arquivo)
+    
+    # Prepara dados para plotagem
+    gamma_dot_w = df[col_gamma].values
+    tau_w = df[col_tau].values
+    
+    # Viscosidade Real
+    if col_eta_true:
+        eta_true = df[col_eta_true].values
+    else:
+        eta_true = tau_w / gamma_dot_w
+        
+    # Desvios (se estatístico)
+    std_tau = df[col_tau_std].values if col_tau_std else None
+    std_eta = df[col_eta_std].values if col_eta_std else None
+    
+    # Dados Aparentes (para gráfico 5 e n')
+    if col_gamma_aw and col_gamma_aw in df.columns:
+        gamma_dot_aw = df[col_gamma_aw].values
+    else:
+        # Se não tem aparente, usa corrigida como aproximação para visualização
+        gamma_dot_aw = gamma_dot_w 
+        if not is_stat: print("  Aviso: Dados aparentes não disponíveis. Gráficos podem diferir.")
+    
+    if col_eta_a and col_eta_a in df.columns:
+        eta_a = df[col_eta_a].values
+    else:
+        eta_a = tau_w / gamma_dot_aw
+    
+    # Calcula n' e log(K')
+    import numpy as np
+    from scipy.stats import linregress
+    valid_log = (gamma_dot_aw > 0) & (tau_w > 0) & (~np.isnan(gamma_dot_aw)) & (~np.isnan(tau_w))
+    if np.sum(valid_log) > 1:
+        log_gamma = np.log(gamma_dot_aw[valid_log])
+        log_tau = np.log(tau_w[valid_log])
+        slope, intercept, _, _, _ = linregress(log_gamma, log_tau)
+        n_prime = slope
+        log_K_prime = intercept
+    else:
+        n_prime, log_K_prime = 1.0, 0.0
+    
+    # Gera gráficos interativos sem salvar arquivos
+    print("\n  Gerando gráficos interativos (modo visualização)...")
+    
+    reologia_plot.gerar_graficos_finais(
+        output_folder, timestamp,
+        gamma_dot_aw, tau_w,
+        gamma_dot_w, eta_true, eta_a,
+        n_prime, log_K_prime,
+        model_results, best_model_nome,
+        [], 0.0, 0.0,  # Sem dados de pressão/geometria
+        False, False, False,  # Sem correções
+        only_show=True,  # Modo visualização apenas!
+        std_tau_w=std_tau,
+        std_eta=std_eta,
+        show_plots=True
+    )
+
+if __name__ == "__main__":
+    visualizador_principal()
