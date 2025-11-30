@@ -106,7 +106,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                 log_err_y = std_tau_w[valid_log_np] / tau_w_an[valid_log_np]
                 ax2.errorbar(log_g_aw_p, log_t_p, yerr=log_err_y,
                            label='Dados Experimentais ln(γ̇aw) vs ln(τw)', 
-                           fmt='x', color='r', markersize=8, capsize=4,
+                           fmt='-x', color='r', markersize=8, capsize=4,
                            elinewidth=1.5, alpha=0.7)
             else:
                 ax2.scatter(log_g_aw_p, log_t_p, label='Dados Experimentais ln(γ̇aw) vs ln(τw)', c='r', marker='x', s=60)
@@ -136,7 +136,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
             ax3.errorbar(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta],
                         yerr=std_eta[valid_eta],
                         label='Viscosidade Real Experimental (η)',
-                        fmt='s', color='g', markersize=6, capsize=4,
+                        fmt='-s', color='g', markersize=6, capsize=4,
                         elinewidth=1.5, alpha=0.7, zorder=10)
         else:
             ax3.plot(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta], 
@@ -179,7 +179,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                 if std_eta is not None and len(std_eta) == len(eta_true_an):
                     ax4.errorbar(P_Pa_plot, eta_plot, yerr=std_eta[valid_pv],
                                  label='Viscosidade Real Experimental',
-                                 fmt='D', color='purple', markersize=6, capsize=4)
+                                 fmt='-D', color='purple', markersize=6, capsize=4)
                 else:
                     ax4.plot(P_Pa_plot, eta_plot,
                              label='Viscosidade Real Experimental',
@@ -242,7 +242,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
             ax5.errorbar(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta],
                         yerr=std_eta[valid_eta],
                         label='Viscosidade Real (η)',
-                        fmt='s', color='g', markersize=6, capsize=4, alpha=0.9)
+                        fmt='-s', color='g', markersize=6, capsize=4, alpha=0.9)
         else:
             ax5.plot(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta],
                     label='Viscosidade Real (η)',

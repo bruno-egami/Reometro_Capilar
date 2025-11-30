@@ -46,10 +46,11 @@ pip install numpy pandas matplotlib scipy pyserial scikit-learn openpyxl
 | `pyserial` | 3.5 | Comunicação com Arduino |
 | `scikit-learn` | 0.24.0 | Análise estatística |
 | `openpyxl` | 3.0.0 | Exportação para Excel (opcional) |
+| `fpdf2` | 2.0.0 | Geração de relatórios PDF |
 
 **Instalação rápida (copie e cole):**
 ```bash
-pip install numpy>=1.20.0 pandas>=1.3.0 matplotlib>=3.4.0 scipy>=1.7.0 pyserial>=3.5 scikit-learn>=0.24.0 openpyxl>=3.0.0
+pip install numpy>=1.20.0 pandas>=1.3.0 matplotlib>=3.4.0 scipy>=1.7.0 pyserial>=3.5 scikit-learn>=0.24.0 openpyxl>=3.0.0 fpdf2>=2.0.0
 ```
 
 ---

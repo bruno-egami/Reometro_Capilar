@@ -12,6 +12,7 @@ import reologia_io
 import reologia_fitting
 import reologia_plot
 import reologia_report
+import reologia_report_pdf
 
 # --- CONFIGURAÇÃO DE PASTAS ---
 INPUT_BASE_FOLDER = utils_reologia.CONSTANTS['INPUT_BASE_FOLDER']
@@ -91,7 +92,12 @@ def mapear_colunas_para_padrao(df, cols_originais):
             'eta_true_mean': 'η (Pa·s)',
             'eta_true_std': 'η_std (Pa·s)',
             'eta_a_mean': 'η_a (Pa·s)',
-            'pressao_mean_bar': 'P (bar)'
+            'eta_true_mean': 'η (Pa·s)',
+            'eta_true_std': 'η_std (Pa·s)',
+            'eta_a_mean': 'η_a (Pa·s)',
+            'pressao_mean_bar': 'P (bar)',
+            'tempo_mean': 'tempo_s',
+            'massa_mean': 'massa_g'
         })
         
     elif tipo_arquivo == 'estatistico_antigo':
@@ -110,8 +116,15 @@ def mapear_colunas_para_padrao(df, cols_originais):
             'η (pa·s)': 'η (Pa·s)',
             'γ̇aw (s⁻¹)': 'γ̇aw (s⁻¹)',
             'η_a (pa·s)': 'η_a (Pa·s)',
-            'p (bar)': 'P (bar)'
+            'η_a (pa·s)': 'η_a (Pa·s)',
+            'p (bar)': 'P (bar)',
+            'duracao_real_s': 'tempo_s',
+            'massa_g': 'massa_g'
         })
+        
+        # Fallback para nomes antigos
+        if 'tempo_extrusao_s' in df_result.columns and 'tempo_s' not in df_result.columns:
+             df_result = df_result.rename(columns={'tempo_extrusao_s': 'tempo_s'})
     
     return df_result, tipo_arquivo
 
@@ -491,6 +504,9 @@ def main():
     # - Se apenas 1 arquivo: Gera gráficos detalhados (estilo Script 3)
     # - Se múltiplos arquivos: Gera gráficos comparativos (estilo Script 4)
     
+    # Lista para armazenar imagens geradas
+    lista_imgs_geradas = []
+
     if len(dados_analises) == 1:
         print("\n--- Modo Detalhado (Arquivo Único) ---")
         nome_unico = list(dados_analises.keys())[0]
@@ -530,7 +546,7 @@ def main():
             }
             
         print(f"  Gerando 5 gráficos detalhados para '{nome_unico}'...")
-        reologia_plot.gerar_graficos_finais(
+        imgs = reologia_plot.gerar_graficos_finais(
             pasta_saida, timestamp,
             gamma_dot_aw, tau_w,
             gamma_dot_w, eta_true, eta_a,
@@ -543,23 +559,48 @@ def main():
             std_eta=std_eta,
             show_plots=True
         )
+        lista_imgs_geradas.extend(imgs)
+        
+        # Gera PDF Detalhado (reusa função do script 2)
+        # Cria DF resumo
+        df_res_pdf = pd.DataFrame({
+            'Taxa de Cisalhamento Corrigida (s-1)': gamma_dot_w,
+            'Tensao de Cisalhamento (Pa)': tau_w,
+            'Viscosidade Real (Pa.s)': eta_true
+        })
+        
+        # Adiciona opcionais se existirem
+        if 'tempo_s' in df_unico.columns:
+            df_res_pdf['duracao_real_s'] = df_unico['tempo_s'].values
+        if 'massa_g' in df_unico.columns:
+            df_res_pdf['massa_g'] = df_unico['massa_g'].values
+        if 'P (bar)' in df_unico.columns:
+            df_res_pdf['Pressao (bar)'] = df_unico['P (bar)'].values
+        reologia_report_pdf.gerar_pdf(
+            timestamp, 0.0, "N/A", "Comparativo Único", [nome_unico], "N/A",
+            False, 0, [], False, 0, [], 0, 0, None,
+            df_res_pdf, pd.DataFrame(), best_model_nome, "N/A",
+            lista_imgs_geradas, pasta_saida, 1.0
+        )
         
     else:
         print(f"\n--- Modo Comparativo ({len(dados_analises)} Arquivos) ---")
         
         # 1. Curva de Fluxo (Tensão vs Taxa)
-        reologia_plot.plotar_comparativo_multiplo(
+        f1 = reologia_plot.plotar_comparativo_multiplo(
             dados_analises, 'γ̇w (s⁻¹)', 'τw (Pa)', 
             "Comparativo: Curva de Fluxo", "Taxa de Cisalhamento (s⁻¹)", "Tensão de Cisalhamento (Pa)",
             pasta_saida, timestamp, show_plots=True, modelos_dict=modelos_dict
         )
+        if f1: lista_imgs_geradas.append(os.path.basename(f1))
         
         # 2. Viscosidade (Visc vs Taxa)
-        reologia_plot.plotar_comparativo_multiplo(
+        f2 = reologia_plot.plotar_comparativo_multiplo(
             dados_analises, 'γ̇w (s⁻¹)', 'η (Pa·s)', 
             "Comparativo: Viscosidade Real", "Taxa de Cisalhamento (s⁻¹)", "Viscosidade Real (Pa·s)",
             pasta_saida, timestamp, show_plots=True, modelos_dict=modelos_dict
         )
+        if f2: lista_imgs_geradas.append(os.path.basename(f2))
         
         # 3. Determinação de n' (ln(tau) vs ln(gamma_ap))
         dados_n_prime = {}
@@ -574,11 +615,12 @@ def main():
                     dados_n_prime[nome] = df_n
         
         if dados_n_prime:
-            reologia_plot.plotar_comparativo_multiplo(
+            f3 = reologia_plot.plotar_comparativo_multiplo(
                 dados_n_prime, 'ln_gamma_aw', 'ln_tau_w',
                 "Comparativo: Determinação de n'", "ln(Taxa de Cisalhamento Aparente)", "ln(Tensão de Cisalhamento)",
                 pasta_saida, timestamp, usar_log=False, show_plots=True
             )
+            if f3: lista_imgs_geradas.append(os.path.basename(f3))
             
         # 4. Pressão vs Viscosidade
         dados_pressao = {}
@@ -589,18 +631,30 @@ def main():
                 dados_pressao[nome] = df_p
                 
         if dados_pressao:
-            reologia_plot.plotar_comparativo_multiplo(
+            f4 = reologia_plot.plotar_comparativo_multiplo(
                 dados_pressao, 'P (Pa)', 'η (Pa·s)',
                 "Comparativo: Pressão vs Viscosidade", "Pressão (Pa)", "Viscosidade Real (Pa·s)",
                 pasta_saida, timestamp, usar_log=False, show_plots=True
             )
+            if f4: lista_imgs_geradas.append(os.path.basename(f4))
 
-
-    # 2. Análise MAPE (Opcional)
-    analise_mape(dados_analises, pasta_saida, timestamp)
-    
-    # 3. Relatório Texto
-    reologia_report.gerar_relatorio_comparativo(dados_analises, pasta_saida, timestamp)
+        # 2. Análise MAPE (Opcional)
+        # Precisa capturar o DF de MAPE se gerado. A função analise_mape original não retornava o DF.
+        # Vou modificar a chamada para ler o CSV gerado se existir, ou modificar a função analise_mape?
+        # A função analise_mape salva um CSV. Posso ler esse CSV.
+        analise_mape(dados_analises, pasta_saida, timestamp)
+        
+        df_mape = None
+        csv_mape = os.path.join(pasta_saida, f"{timestamp}_analise_mape.csv")
+        if os.path.exists(csv_mape):
+            try: df_mape = pd.read_csv(csv_mape)
+            except: pass
+            
+        # 3. Relatório Texto
+        reologia_report.gerar_relatorio_comparativo(dados_analises, pasta_saida, timestamp)
+        
+        # 4. Relatório PDF Comparativo
+        reologia_report_pdf.gerar_pdf_comparativo(pasta_saida, timestamp, dados_analises, lista_imgs_geradas, df_mape)
     
     print("\nProcesso concluído!")
 

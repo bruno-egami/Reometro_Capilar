@@ -21,6 +21,7 @@ import reologia_corrections
 import reologia_plot
 import reologia_report
 import reologia_fitting
+import reologia_report_pdf
 from modelos_reologicos import MODELS, PARAM_NAMES_MAP
 
 # Configuração de plotagem
@@ -376,8 +377,12 @@ if realizar_mooney:
             reologia_io.salvar_calibracao_json("mooney", tau_w_mooney, gamma_dot_true_mooney, _json_files_resumo, calibrations_folder)
 
 # 3. Consolidação dos Dados para Análise Final
+# 3. Consolidação dos Dados para Análise Final
 gamma_dot_aw_an = np.array([])
 tau_w_an = np.array([])
+tempos_s_an = np.array([]) # Inicializa array de tempos
+pressao_bar_an = np.array([]) # Inicializa array de pressões alinhado
+massa_g_an = np.array([]) # Inicializa array de massas
 calibracao_aplicada = False
 caminho_calibracao_usada = None
 
@@ -387,13 +392,11 @@ if realizar_bagley and realizar_mooney:
         print("\n--- Usando Resultados Completos (Bagley + Mooney) ---")
         # Interpola para alinhar
         tau_w_an = tau_w_mooney
-        gamma_dot_aw_an = gamma_dot_true_mooney # Aqui já é o 'true' do Mooney, mas tratamos como base para plotagem
-        # Nota: Mooney já dá o gamma_true, então Weissenberg seria redundante ou 1.0?
-        # Mooney corrige deslizamento. Weissenberg corrige não-newtonianidade. São independentes.
-        # Mas Mooney output é gamma_dot_true (na parede).
-        # Vamos assumir que o output de Mooney é gamma_dot_true_slip_corrected.
-        # Ainda precisa de Weissenberg? Geralmente Mooney corrige deslizamento, Weissenberg corrige perfil de velocidade.
-        # Sim, precisa.
+        gamma_dot_aw_an = gamma_dot_true_mooney 
+        # Nota: Bagley/Mooney podem alterar número de pontos ou ordem. 
+        # Tempo perde sentido direto se houver interpolação complexa, 
+        # mas se for ponto-a-ponto, poderíamos tentar recuperar.
+        # Por enquanto, deixamos vazio para evitar desalinhamento.
     else:
         print("ERRO: Falha nas correções conjuntas.")
 
@@ -442,6 +445,11 @@ else:
     gamma_dot_aw_an = (4 * vazoes_m3_s) / (np.pi * R_cap_m**3)
     tau_w_an = (pressoes_Pa * R_cap_m) / (2 * L_cap_m)
     
+    # Captura dados alinhados para o DataFrame final
+    tempos_s_an = tempos_s
+    pressao_bar_an = pressoes_Pa / 1e5
+    massa_g_an = massas_kg * 1000.0
+    
     # Aplica Calibração se selecionada
     if calibracao_aplicada:
         gamma_dot_corrigido_cal = reologia_io.carregar_e_aplicar_calibracao(caminho_calibracao_usada, tau_w_an)
@@ -487,14 +495,30 @@ if not df_sum_modelo.empty:
 
 # --- GERAÇÃO DE RESULTADOS (CSV/Gráficos/Relatório) ---
 
+# Garante que arrays auxiliares tenham o mesmo tamanho (preenche com NaN se necessário)
+if len(pressao_bar_an) != len(tau_w_an):
+    # Se não foi preenchido no bloco 'else' (Capilar Único), tenta usar o original se bater tamanho
+    if len(pressoes_bar_display_tab) == len(tau_w_an):
+        pressao_bar_an = np.array(pressoes_bar_display_tab)
+    else:
+        pressao_bar_an = np.full(len(tau_w_an), np.nan)
+
+if len(tempos_s_an) != len(tau_w_an):
+    tempos_s_an = np.full(len(tau_w_an), np.nan)
+
+if len(massa_g_an) != len(tau_w_an):
+    massa_g_an = np.full(len(tau_w_an), np.nan)
+
 # DataFrame Final
 df_res = pd.DataFrame({
-    'Pressao (bar)': pressoes_bar_display_tab,  # Adiciona pressão!
+    'Pressao (bar)': pressao_bar_an,
     'Taxa de Cisalhamento Aparente (s-1)': gamma_dot_aw_an,
     'Tensao de Cisalhamento (Pa)': tau_w_an,
     'Viscosidade Aparente (Pa.s)': eta_a_an,
     'Taxa de Cisalhamento Corrigida (s-1)': gamma_dot_w_an_wr,
-    'Viscosidade Real (Pa.s)': eta_true_an
+    'Viscosidade Real (Pa.s)': eta_true_an,
+    'duracao_real_s': tempos_s_an,
+    'massa_g': massa_g_an
 })
 
 # Salva CSV
@@ -538,6 +562,19 @@ reologia_report.gerar_relatorio_texto(
     timestamp_str, rho_pasta_g_cm3_fixo if rho_pasta_g_cm3_fixo else 0.0, 
     tempo_extrusao_fixo_s_val if tempo_extrusao_fixo_s_val else "Variável",
     "JSON" if metodo_entrada == "3" else "Manual/CSV", 
+    _json_files_resumo, _csv_path_resumo,
+    realizar_bagley, D_cap_mm_bagley_comum_val, bagley_capilares_L_mm_info,
+    realizar_mooney, L_cap_mm_mooney_comum_val, mooney_capilares_D_mm_info,
+    D_cap_mm_unico_val, L_cap_mm_unico_val, caminho_calibracao_usada,
+    df_res, df_sum_modelo, best_model_nome, comportamento_fluido,
+    arquivos_gerados_lista, output_folder, fator_calibracao_empirico
+)
+
+# Gera Relatório PDF
+reologia_report_pdf.gerar_pdf(
+    timestamp_str, rho_pasta_g_cm3_fixo if rho_pasta_g_cm3_fixo else 0.0,
+    tempo_extrusao_fixo_s_val if tempo_extrusao_fixo_s_val else "Variável",
+    "JSON" if metodo_entrada == "3" else "Manual/CSV",
     _json_files_resumo, _csv_path_resumo,
     realizar_bagley, D_cap_mm_bagley_comum_val, bagley_capilares_L_mm_info,
     realizar_mooney, L_cap_mm_mooney_comum_val, mooney_capilares_D_mm_info,
