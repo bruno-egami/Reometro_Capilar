@@ -3,34 +3,113 @@ import numpy as np
 # -----------------------------------------------------------------------------
 # --- DEFINIÇÕES DOS MODELOS REOLÓGICOS ---
 # -----------------------------------------------------------------------------
+"""
+Módulo contendo os modelos reológicos clássicos para reometria capilar.
+
+Fórmulas Fundamentais (Reometria Capilar):
+------------------------------------------
+- Taxa de cisalhamento aparente: γ̇_app = 4Q / (πR³)
+- Tensão de cisalhamento na parede: τ_w = (ΔP × R) / (2L)
+- Correção Weissenberg-Rabinowitsch: γ̇_true = γ̇_app × (3n' + 1) / (4n')
+  onde n' = d(log τ_w) / d(log γ̇_app)
+
+Referências:
+- Steffe, J.F. (1996). Rheological Methods in Food Process Engineering.
+- Mezger, T.G. (2014). The Rheology Handbook.
+"""
 
 def model_newtonian(gd, eta): 
     """
-    Modelo Newtoniano: tau = eta * gamma_dot
+    Modelo Newtoniano (fluido ideal).
+    
+    Fórmula:
+        τ = η × γ̇
+    
+    Parâmetros:
+        gd : array - Taxa de cisalhamento γ̇ (s⁻¹)
+        eta : float - Viscosidade dinâmica η (Pa.s)
+    
+    Comportamento:
+        - Viscosidade constante independente da taxa de cisalhamento
+        - Exemplos: água, óleos minerais, soluções diluídas
     """
     return eta * gd
 
 def model_power_law(gd, K_pl, n_pl): 
     """
-    Modelo Lei da Potência (Ostwald-de Waele): tau = K * (gamma_dot)^n
+    Modelo Lei da Potência (Ostwald-de Waele).
+    
+    Fórmula:
+        τ = K × γ̇ⁿ
+    
+    Parâmetros:
+        gd : array - Taxa de cisalhamento γ̇ (s⁻¹)
+        K_pl : float - Índice de consistência K (Pa.sⁿ)
+        n_pl : float - Índice de comportamento de fluxo n (adimensional)
+    
+    Comportamento:
+        - n < 1: Pseudoplástico (shear thinning) - maioria das pastas cerâmicas
+        - n = 1: Newtoniano
+        - n > 1: Dilatante (shear thickening) - suspensões concentradas
     """
     return K_pl * np.power(np.maximum(gd, 1e-9), n_pl)
 
 def model_bingham(gd, t0, ep): 
     """
-    Modelo de Bingham: tau = tau0 + eta_p * gamma_dot
+    Modelo de Bingham (viscoplástico ideal).
+    
+    Fórmula:
+        τ = τ₀ + ηₚ × γ̇    (para τ > τ₀)
+    
+    Parâmetros:
+        gd : array - Taxa de cisalhamento γ̇ (s⁻¹)
+        t0 : float - Tensão de escoamento τ₀ (Pa)
+        ep : float - Viscosidade plástica ηₚ (Pa.s)
+    
+    Comportamento:
+        - Não flui abaixo da tensão de escoamento
+        - Após escoamento, comportamento Newtoniano
+        - Exemplos: pasta de dentes, lamas, argamassas
     """
     return t0 + ep * gd
 
 def model_hb(gd, t0, K_hb, n_hb): 
     """
-    Modelo Herschel-Bulkley: tau = tau0 + K * (gamma_dot)^n
+    Modelo Herschel-Bulkley (viscoplástico generalizado).
+    
+    Fórmula:
+        τ = τ₀ + K × γ̇ⁿ    (para τ > τ₀)
+    
+    Parâmetros:
+        gd : array - Taxa de cisalhamento γ̇ (s⁻¹)
+        t0 : float - Tensão de escoamento τ₀ (Pa)
+        K_hb : float - Índice de consistência K (Pa.sⁿ)
+        n_hb : float - Índice de comportamento de fluxo n (adimensional)
+    
+    Comportamento:
+        - Combina tensão de escoamento (Bingham) com lei da potência
+        - Modelo mais versátil para pastas cerâmicas
+        - n < 1: pseudoplástico com tensão de escoamento
     """
     return t0 + K_hb * np.power(np.maximum(gd, 1e-9), n_hb)
 
 def model_casson(gd, tau0_cas, eta_cas):
     """
-    Modelo de Casson: sqrt(tau) = sqrt(tau0) + sqrt(eta_cas) * sqrt(gamma_dot)
+    Modelo de Casson (viscoplástico não-linear).
+    
+    Fórmula:
+        √τ = √τ₀ + √ηc × √γ̇
+        ou: τ = (√τ₀ + √ηc × √γ̇)²
+    
+    Parâmetros:
+        gd : array - Taxa de cisalhamento γ̇ (s⁻¹)
+        tau0_cas : float - Tensão de escoamento de Casson τ₀ (Pa)
+        eta_cas : float - Viscosidade de Casson ηc (Pa.s)
+    
+    Comportamento:
+        - Desenvolvido originalmente para chocolate
+        - Bom ajuste para suspensões com partículas floculadas
+        - Usado em tintas, sangue, e algumas pastas cerâmicas
     """
     sqrt_tau0 = np.sqrt(np.maximum(tau0_cas, 0))
     sqrt_eta_cas_val = np.sqrt(np.maximum(eta_cas, 1e-9))

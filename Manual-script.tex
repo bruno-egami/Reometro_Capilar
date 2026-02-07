@@ -266,6 +266,25 @@ Interface de menu para facilitar a execução dos scripts.
   \item \textbf{Benefício:} Simplifica o workflow eliminando a necessidade de executar cada script manualmente via linha de comando.
 \end{itemize}
 
+\subsection*{3.0.1 Interface Gráfica (gui\_main.py) -- NOVO v4.0}
+A partir da versão 4.0, o sistema oferece uma \textbf{interface gráfica moderna} desenvolvida com \textit{CustomTkinter}, que integra todas as funcionalidades em uma única aplicação.
+
+\begin{itemize}
+  \item \textbf{Aba Coleta:} Conexão com Arduino, visualização de pressão em tempo real, coleta de dados com validação automática e salvamento em banco de dados SQLite.
+  
+  \item \textbf{Aba Histórico:} Visualização de amostras e ensaios armazenados no banco local.
+  
+  \item \textbf{Aba Calibração:} Wizard simplificado de calibração. O sensor \textit{Pasta} utiliza calibração de fábrica ($P = 2{,}5V - 1{,}25$), enquanto o sensor \textit{Linha} é calibrado usando o sensor Pasta como referência.
+  
+  \item \textbf{Aba Análise:} Ajuste automático de 5 modelos reológicos (Newtoniano, Lei da Potência, Bingham, Herschel-Bulkley, Casson), correção Weissenberg-Rabinowitsch, cálculo de $R^2$, exportação de gráficos PNG e relatórios PDF.
+  
+  \item \textbf{Aba Correções:} Interface para correções avançadas de Bagley e Mooney com seleção múltipla de amostras.
+\end{itemize}
+
+\textbf{Execução:} \texttt{python gui\_main.py}
+
+\textbf{Dependências adicionais:} \texttt{customtkinter}, \texttt{fpdf2}, \texttt{pytest}
+
 \subsection*{3.1 Coleta de Dados (Script 1: Controle\_Reometro.py)}
 Responsável pela interface com o hardware (Arduino/Transdutores).
 \begin{itemize}
@@ -343,6 +362,21 @@ Integração com reômetros comerciais.
   \item \textbf{Função:} Processa dados exportados de reômetros rotacionais comerciais (ex: Anton Paar MCR 102).
   \item \textbf{Conversão:} Converte os dados para o formato compatível com os scripts de análise do sistema.
   \item \textbf{Aplicação:} Permite comparação direta entre o reômetro capilar DIY e equipamentos comerciais de referência.
+\end{itemize}
+
+\subsection*{3.10 Testes Unitários (test\_calculos.py) -- NOVO v4.0}
+Suíte de testes automatizados para validação dos cálculos reológicos.
+\begin{itemize}
+  \item \textbf{Framework:} pytest (21 testes automatizados)
+  \item \textbf{Cobertura:}
+  \begin{enumerate}
+      \item Modelos reológicos (7 testes): Validação das 5 equações com dados sintéticos.
+      \item Cálculos fundamentais (3 testes): $Q$, $\dot{\gamma}_{aw}$, $\tau_w$.
+      \item Weissenberg-Rabinowitsch (3 testes): Fator de correção para diferentes $n'$.
+      \item Ajuste de modelos (4 testes): Recuperação de parâmetros e seleção de melhor modelo.
+      \item Inferência de comportamento (4 testes): Pseudoplástico, Dilatante, Viscoplástico, Newtoniano.
+  \end{enumerate}
+  \item \textbf{Execução:} \texttt{python -m pytest test\_calculos.py -v}
 \end{itemize}
 
 % --- Referências Bibliográficas (Manual) ---

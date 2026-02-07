@@ -1,12 +1,65 @@
 # -*- coding: utf-8 -*-
+"""
+Módulo de Correções Avançadas para Reometria Capilar.
+
+Correção de Bagley:
+-------------------
+Elimina os efeitos de entrada/saída (end effects) do capilar.
+Usa capilares de mesmo diâmetro D e diferentes comprimentos L.
+
+Método:
+    Para cada γ̇, plota P vs L/D
+    τ_w_corrigido = slope / 2
+
+Fórmula:
+    P = 2τ_w × (L/D) + ΔP_entrada
+    onde ΔP_entrada é a perda de pressão na entrada
+
+Correção de Mooney:
+-------------------
+Corrige o efeito de deslizamento na parede (wall slip).
+Usa capilares de mesmo comprimento L e diferentes diâmetros D.
+
+Método:
+    Para cada τ_w, plota γ̇_app vs 1/R
+    γ̇_true = intercept (taxa sem deslizamento)
+    V_slip = slope / 4 (velocidade de deslizamento)
+
+Fórmula:
+    γ̇_app = γ̇_true + 4×V_slip/R
+
+Referências:
+- Bagley, E.B. (1957). J. Applied Physics, 28, 624-627.
+- Mooney, M. (1931). J. Rheology, 2, 210-222.
+"""
+
 import numpy as np
 import reologia_plot
 from scipy.stats import linregress
 
 def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si, t_ext_s_array_map, output_folder, timestamp, num_bagley_pts_final=15):
     """
-    Executa a correção de Bagley completa. Usa dados de capilares de diferentes comprimentos
-    para determinar a tensão de cisalhamento na parede corrigida.
+    Executa a correção de Bagley para eliminar efeitos de entrada.
+    
+    Teoria:
+        A pressão total inclui perdas na entrada/saída:
+        P_total = P_capilar + ΔP_entrada
+        
+        Plotando P vs L/D para γ̇ constante:
+        - Slope = 2×τ_w (tensão na parede)
+        - Intercept = ΔP_entrada (extrapolação para L/D=0)
+    
+    Parâmetros:
+        lista_cap_data_bagley : list - Dados de capilares (mesmo D, diferentes L)
+        common_D_mm_bagley : float - Diâmetro comum (mm)
+        rho_si : float - Densidade (kg/m³)
+        t_ext_s_array_map : dict - Mapa de tempos de extrusão
+        output_folder : str - Pasta para gráficos
+        timestamp : str - Identificador de tempo
+        num_bagley_pts_final : int - Número de pontos interpolados
+    
+    Retorna:
+        tuple: (tau_w_corrigido, gamma_targets) - Arrays de tensão corrigida e taxa
     """
     print("\n--- Iniciando Análise de Correção de Bagley ---")
     min_gamma_overall, max_gamma_overall = np.inf, -np.inf
@@ -67,7 +120,27 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
 
 def perform_mooney_correction(capilares_data, common_L_mm, rho_si, t_ext_s_array_map, output_folder, timestamp, tau_w_targets_ref=None):
     """
-    Executa a correção de Mooney completa (versão final com geração de alvos aprimorada).
+    Executa a correção de Mooney para corrigir deslizamento na parede.
+    
+    Teoria:
+        Em fluidos com partículas, pode haver deslizamento na parede:
+        γ̇_app = γ̇_true + 4×V_slip/R
+        
+        Plotando γ̇_app vs 1/R para τ_w constante:
+        - Intercept = γ̇_true (taxa real sem deslizamento)
+        - Slope = 4×V_slip (velocidade de deslizamento)
+    
+    Parâmetros:
+        capilares_data : list - Dados de capilares (mesmo L, diferentes D)
+        common_L_mm : float - Comprimento comum (mm)
+        rho_si : float - Densidade (kg/m³)
+        t_ext_s_array_map : dict - Mapa de tempos de extrusão
+        output_folder : str - Pasta para gráficos
+        timestamp : str - Identificador de tempo
+        tau_w_targets_ref : array - Alvos de τ_w (opcional, usa Bagley se disponível)
+    
+    Retorna:
+        tuple: (tau_w, gamma_dot_true) - Arrays de tensão e taxa corrigida
     """
     print("\n--- Iniciando Análise de Correção de Mooney ---")
     

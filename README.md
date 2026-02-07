@@ -82,11 +82,42 @@ Se abrir o menu principal, está tudo pronto! ✅
 
 ---
 
+## 🖥️ **Aplicação Gráfica (GUI)**
+
+A partir da versão 4.0, o sistema conta com uma **interface gráfica moderna** construída com CustomTkinter:
+
+### **Iniciar a GUI:**
+```bash
+python gui_main.py
+```
+
+### **Funcionalidades da GUI:**
+
+| Aba | Funcionalidades |
+|-----|-----------------|
+| **Coleta** | Conexão Arduino, gráfico tempo-real, coleta com validação |
+| **Histórico** | Visualização de amostras e ensaios salvos no SQLite |
+| **Calibração** | Wizard de calibração (sensor Pasta fixo, Linha por referência) |
+| **Análise** | 5 modelos reológicos, Weissenberg, R², export PNG/PDF |
+| **Correções** | Bagley e Mooney para análise avançada |
+
+### **Sensores de Pressão:**
+- **Pasta (Fábrica):** Calibração fixa (P = 2.5V - 1.25)
+- **Linha:** Calibrado usando Pasta como referência
+
+### **Dependências Adicionais (GUI):**
+```bash
+pip install customtkinter fpdf2 pytest
+```
+
+---
+
 ## 📁 **Estrutura do Sistema**
 
 ```
 Reometro_Capilar/
-├── 0.Launcher.py                    # Menu principal
+├── 0.Launcher.py                    # Menu principal (CLI)
+├── gui_main.py                      # Interface gráfica (GUI) ⭐ NOVO
 ├── 1.Controle_Reometro.py           # Coleta de dados (dual sensor)
 ├── 1a.Edit-Json-coleta.py           # Edição manual de dados
 ├── 1b.Pre-analise-filtro.py         # Pré-processamento
@@ -96,6 +127,14 @@ Reometro_Capilar/
 ├── 3.Visualizar_resultados.py       # Visualização de gráficos
 ├── 4.Comparativo-Analises.py        # Comparação capilar vs rotacional
 ├── 5.Processador_Rotacional_Completo.py  # Dados rotacionais
+│
+├── modelos_reologicos.py            # Definição dos 5 modelos ⭐ NOVO
+├── reologia_fitting.py              # Ajuste e R² ⭐ NOVO
+├── reologia_corrections.py          # Bagley/Mooney ⭐ NOVO
+├── reometer_controller.py           # Comunicação Arduino ⭐ NOVO
+├── database_manager.py              # SQLite manager ⭐ NOVO
+├── test_calculos.py                 # Testes unitários (pytest) ⭐ NOVO
+│
 ├── calibracoes_reometro/            # Calibrações salvas
 ├── resultados_testes_reometro/      # JSONs brutos
 ├── resultados_analise_reologica/    # CSVs, gráficos, relatórios
@@ -338,22 +377,30 @@ Use-o para testar o sistema completo sem hardware conectado.
 
 ---
 
-## 🔄 **Atualizações Recentes (v3.1)**
+## 🔄 **Atualizações Recentes (v4.0)**
 
-- ✅ **Dual Sensor Completo** (Linha & Pasta)
-- ✅ **Diagnóstico Delta P** em tempo real
-- ✅ **Gráficos com Modelo** (Figuras 4 e 5)
-- ✅ **Nome Personalizado** no Script 4
-- ✅ **Detecção Automática de JSON** melhorada (Script 2c)
-- ✅ **Tabela de Dados** antes de exclusão (Script 1a)
+### ⭐ Novas Funcionalidades:
+- ✅ **Interface Gráfica (GUI)** - CustomTkinter moderno
+- ✅ **Banco SQLite** - Persistência local de dados
+- ✅ **Calibração Inteligente** - Sensor Pasta como referência
+- ✅ **5 Modelos Reológicos** - Com ajuste automático e R²
+- ✅ **21 Testes Unitários** - pytest para validação
+- ✅ **Documentação de Fórmulas** - Docstrings completas
+- ✅ **Relatórios PDF** - Exportação profissional
+- ✅ **Tratamento de Erros** - Desconexão Arduino
+
+### v3.1 (Novembro 2025):
+- Dual Sensor Completo (Linha & Pasta)
+- Diagnóstico Delta P em tempo real
+- Gráficos com Modelo
 
 ---
 
 ## 📝 **Licença e Contato**
 
 **Desenvolvido por:** Bruno Egami  
-**Versão:** 3.1  
-**Última Atualização:** Novembro 2025
+**Versão:** 4.0  
+**Última Atualização:** Fevereiro 2026
 
 Para reportar bugs ou sugerir melhorias, entre em contato ou abra uma issue no repositório.
 
