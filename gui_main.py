@@ -17,6 +17,10 @@ import numpy as np
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+# Increase global font/widget scaling for better readability
+ctk.set_widget_scaling(1.3)  # 30% larger widgets
+ctk.set_window_scaling(1.2)  # 20% larger window
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -379,10 +383,65 @@ class HistoricoFrame(ctk.CTkFrame):
         vsb.pack(side="right", fill="y")
         self.tree.configure(yscrollcommand=vsb.set)
         
-        self.btn_refresh = ctk.CTkButton(self, text="Atualizar", command=self.refresh_list)
-        self.btn_refresh.pack(pady=10)
+        # Button frame
+        btn_frame = ctk.CTkFrame(self)
+        btn_frame.pack(pady=10)
+        
+        self.btn_refresh = ctk.CTkButton(btn_frame, text="Atualizar", command=self.refresh_list)
+        self.btn_refresh.pack(side="left", padx=5)
+        
+        self.btn_import_file = ctk.CTkButton(btn_frame, text="Importar JSON", 
+                                              command=self.import_single_json, fg_color="green")
+        self.btn_import_file.pack(side="left", padx=5)
+        
+        self.btn_import_folder = ctk.CTkButton(btn_frame, text="Importar Pasta", 
+                                                command=self.import_folder_json, fg_color="orange")
+        self.btn_import_folder.pack(side="left", padx=5)
         
         self.refresh_list()
+    
+    def import_single_json(self):
+        """Import a single JSON file."""
+        from tkinter import filedialog
+        
+        filepath = filedialog.askopenfilename(
+            title="Selecionar JSON",
+            initialdir="resultados_testes_reometro",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        
+        if filepath:
+            success, msg, _ = self.db.import_json_legado(filepath)
+            if success:
+                messagebox.showinfo("Sucesso", msg)
+                self.refresh_list()
+            else:
+                messagebox.showerror("Erro", msg)
+    
+    def import_folder_json(self):
+        """Import all JSON files from a folder."""
+        from tkinter import filedialog
+        
+        folder = filedialog.askdirectory(
+            title="Selecionar Pasta com JSONs",
+            initialdir="resultados_testes_reometro"
+        )
+        
+        if folder:
+            results = self.db.import_folder_json(folder)
+            
+            # Build summary
+            success_count = sum(1 for _, s, _ in results if s)
+            fail_count = len(results) - success_count
+            
+            # Build detailed message
+            details = "\n".join([f"{'✓' if s else '✗'} {f}: {m}" for f, s, m in results[:10]])
+            if len(results) > 10:
+                details += f"\n... e mais {len(results) - 10} arquivos"
+            
+            messagebox.showinfo("Importação Concluída", 
+                               f"Importados: {success_count}\nFalhas: {fail_count}\n\n{details}")
+            self.refresh_list()
 
     def refresh_list(self):
         # Clear
@@ -593,13 +652,11 @@ class AnaliseFrame(ctk.CTkFrame):
                                              command=self.export_pdf, state="disabled")
         self.btn_export_pdf.pack(side="left", padx=10)
         
-        # Results (Scrollable)
-        self.res_frame = ctk.CTkScrollableFrame(self, height=350)
-        self.res_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.lbl_result = ctk.CTkLabel(self.res_frame, text="Resultados aparecerão aqui.", 
-                                        justify="left", font=("Consolas", 12), wraplength=800)
-        self.lbl_result.pack(pady=10, padx=10, anchor="w")
+        # Results (Scrollable Textbox - allows text selection)
+        self.txt_result = ctk.CTkTextbox(self, height=350, font=("Consolas", 14), wrap="word")
+        self.txt_result.pack(fill="both", expand=True, padx=20, pady=10)
+        self.txt_result.insert("1.0", "Resultados aparecerão aqui.\n\nSelecione uma amostra e clique em 'Analisar'.")
+        self.txt_result.configure(state="disabled")  # Read-only but selectable
         
         # Store analysis data for export
         self.analysis_data = None
@@ -615,6 +672,13 @@ class AnaliseFrame(ctk.CTkFrame):
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
         self.refresh_combo()
+    
+    def _set_result(self, text):
+        """Update results textbox with text (selectable but read-only)."""
+        self.txt_result.configure(state="normal")
+        self.txt_result.delete("1.0", "end")
+        self.txt_result.insert("1.0", text)
+        self.txt_result.configure(state="disabled")
 
     def run_analysis(self):
         from scipy.stats import linregress
@@ -625,12 +689,12 @@ class AnaliseFrame(ctk.CTkFrame):
         
         amostra = self.db.get_amostra_by_name(nome)
         if not amostra: 
-            self.lbl_result.configure(text="Amostra não encontrada.")
+            self._set_result("Amostra não encontrada.")
             return
         
         df = self.db.get_ensaios_by_amostra(amostra['id'])
         if df.empty:
-            self.lbl_result.configure(text="Sem ensaios para esta amostra.")
+            self._set_result("Sem ensaios para esta amostra.")
             return
             
         try:
@@ -676,7 +740,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 taus.append(tau_w)
                 
             if len(gamma_dots_app) < 3:
-                self.lbl_result.configure(text="Pontos insuficientes para análise (mínimo 3).")
+                self._set_result("Pontos insuficientes para análise (mínimo 3).")
                 return
 
             gd_app_arr = np.array(gamma_dots_app)
@@ -709,7 +773,7 @@ class AnaliseFrame(ctk.CTkFrame):
             results_txt += f"Capilar: D={D_mm} mm, L={L_mm} mm\n"
             results_txt += f"Densidade: {Rho} g/cm³\n"
             results_txt += f"Ensaios analisados: {len(gd_true_arr)}\n"
-            results_txt += f"Sensor Pressão: {'Pasta' if usar_pasta else 'Linha'}\n"
+            results_txt += f"Sensor Pressão: Pasta (sensor na câmara)\n"
             results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime) if aplicar_weissenberg else 'Não'}\n\n"
             
             results_txt += "───────────────────────────────────────────\n"
@@ -788,7 +852,7 @@ class AnaliseFrame(ctk.CTkFrame):
             results_txt += f"  COMPORTAMENTO: {comportamento}\n"
             results_txt += "───────────────────────────────────────────\n"
             
-            self.lbl_result.configure(text=results_txt)
+            self._set_result(results_txt)
             
             # Store data for export
             self.analysis_data = {
@@ -810,7 +874,7 @@ class AnaliseFrame(ctk.CTkFrame):
             
         except Exception as e:
             import traceback
-            self.lbl_result.configure(text=f"Erro na análise:\n{traceback.format_exc()}")
+            self._set_result(f"Erro na análise:\n{traceback.format_exc()}")
     
     def export_graphs(self):
         """Export analysis graphs as PNG files."""
@@ -1105,13 +1169,11 @@ class CorrecoesFrame(ctk.CTkFrame):
                                           fg_color="green", state="disabled")
         self.btn_execute.pack(side="left", padx=10)
         
-        # Results
-        self.res_frame = ctk.CTkScrollableFrame(self, height=200)
-        self.res_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.lbl_result = ctk.CTkLabel(self.res_frame, text="Resultados aparecerão aqui.", 
-                                        justify="left", font=("Consolas", 11), wraplength=800)
-        self.lbl_result.pack(pady=10, padx=10, anchor="w")
+        # Results (Scrollable Textbox - allows text selection)
+        self.txt_result = ctk.CTkTextbox(self, height=200, font=("Consolas", 14), wrap="word")
+        self.txt_result.pack(fill="both", expand=True, padx=20, pady=10)
+        self.txt_result.insert("1.0", "Resultados aparecerão aqui.")
+        self.txt_result.configure(state="disabled")
         
         self.refresh_samples()
     
@@ -1133,6 +1195,13 @@ class CorrecoesFrame(ctk.CTkFrame):
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
         self.refresh_samples()
+    
+    def _set_result(self, text):
+        """Update results textbox with text (selectable but read-only)."""
+        self.txt_result.configure(state="normal")
+        self.txt_result.delete("1.0", "end")
+        self.txt_result.insert("1.0", text)
+        self.txt_result.configure(state="disabled")
     
     def on_tree_select(self, event):
         """Handle tree selection change."""
@@ -1336,7 +1405,7 @@ class CorrecoesFrame(ctk.CTkFrame):
                 results_txt += f"  ★ MELHOR MODELO: {best_model} (R²={best_r2:.4f})\n"
                 results_txt += f"───────────────────────────────────────────\n"
         
-        self.lbl_result.configure(text=results_txt)
+        self._set_result(results_txt)
 
 if __name__ == "__main__":
     app = App()

@@ -159,6 +159,109 @@ class DatabaseManager:
         self.close()
         return df
 
+    # --- Import Legacy JSON ---
+    
+    def import_json_legado(self, json_path):
+        """
+        Importa um arquivo JSON legado (do sistema de scripts) para o banco SQLite.
+        
+        Parâmetros:
+            json_path : str - Caminho completo para o arquivo JSON
+            
+        Retorna:
+            tuple: (sucesso: bool, mensagem: str, amostra_id: int ou None)
+        """
+        import json
+        
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            return False, f"Erro ao ler JSON: {e}", None
+        
+        # Extrair metadados da amostra
+        nome = data.get('id_amostra', os.path.basename(json_path).replace('.json', ''))
+        descricao = data.get('descricao', f"Importado de {os.path.basename(json_path)}")
+        d_capilar = data.get('diametro_capilar_mm', 1.0)
+        l_capilar = data.get('comprimento_capilar_mm', 43.0)
+        densidade = data.get('densidade_pasta_g_cm3', 1.5)
+        
+        # Verificar se amostra já existe
+        self.connect()
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT id FROM amostras WHERE nome = ?', (nome,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            self.close()
+            return False, f"Amostra '{nome}' já existe no banco", None
+        
+        # Criar amostra
+        try:
+            cursor.execute('''
+                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nome, descricao, d_capilar, l_capilar, densidade))
+            amostra_id = cursor.lastrowid
+        except Exception as e:
+            self.close()
+            return False, f"Erro ao criar amostra: {e}", None
+        
+        # Importar ensaios
+        testes = data.get('testes', [])
+        imported_count = 0
+        
+        for teste in testes:
+            ponto_n = teste.get('ponto_n', imported_count + 1)
+            
+            # Usar pressao específica (pasta ou linha) ou fallback para pressao geral
+            p_linha = teste.get('media_pressao_linha_bar', 
+                               teste.get('media_pressao_final_ponto_bar', 0))
+            p_pasta = teste.get('media_pressao_pasta_bar',
+                               teste.get('media_pressao_final_ponto_bar', 0))
+            
+            massa = teste.get('massa_g_registrada', teste.get('massa_g', 0))
+            duracao = teste.get('duracao_real_s', teste.get('duracao_s', 30.0))
+            
+            v_linha = teste.get('media_tensao_linha_V', 0)
+            v_pasta = teste.get('media_tensao_pasta_V', 0)
+            
+            try:
+                cursor.execute('''
+                    INSERT INTO ensaios (amostra_id, ponto_n, pressao_linha_bar, pressao_pasta_bar,
+                                        massa_g, duracao_s, tensao_linha_v, tensao_pasta_v)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (amostra_id, ponto_n, p_linha, p_pasta, massa, duracao, v_linha, v_pasta))
+                imported_count += 1
+            except Exception as e:
+                print(f"Erro ao importar ponto {ponto_n}: {e}")
+        
+        self.conn.commit()
+        self.close()
+        
+        return True, f"Importado: {nome} ({imported_count} pontos)", amostra_id
+    
+    def import_folder_json(self, folder_path):
+        """
+        Importa todos os arquivos JSON de uma pasta.
+        
+        Parâmetros:
+            folder_path : str - Caminho da pasta
+            
+        Retorna:
+            list: Lista de tuplas (arquivo, sucesso, mensagem)
+        """
+        import glob
+        
+        results = []
+        json_files = glob.glob(os.path.join(folder_path, "*.json"))
+        
+        for json_file in json_files:
+            success, msg, _ = self.import_json_legado(json_file)
+            results.append((os.path.basename(json_file), success, msg))
+        
+        return results
+
 if __name__ == "__main__":
     # Simple test
     db = DatabaseManager()
