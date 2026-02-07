@@ -193,13 +193,16 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
               realizar_mooney, L_mooney, D_mooney_list,
               D_unico, L_unico, calib_path,
               df_res, df_sum_modelo, best_model_nome, comportamento,
-              lista_imgs, output_folder, fator_calibracao, stats_details=None, df_raw_data=None, df_outliers=None):
+              lista_imgs, output_folder, fator_calibracao, stats_details=None, df_raw_data=None, df_outliers=None, output_filename=None):
     
     if not PDF_AVAILABLE:
         print("AVISO: Biblioteca 'fpdf' não encontrada. Relatório PDF não será gerado.")
         return None
 
-    pdf_filename = os.path.join(output_folder, f"{timestamp_str}_relatorio_analise.pdf")
+    if output_filename:
+        pdf_filename = output_filename
+    else:
+        pdf_filename = os.path.join(output_folder, f"{timestamp_str}_relatorio_analise.pdf")
     
     try:
         pdf = PDFReport("Relatório de Análise Reológica")
@@ -525,7 +528,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
 
     except Exception as e:
         print(f"ERRO ao gerar PDF: {e}")
-        return None
+        raise e
 
 def gerar_pdf_comparativo(output_folder, timestamp_str, dados_analises, lista_imgs, df_mape=None):
     """
@@ -597,4 +600,4 @@ def gerar_pdf_comparativo(output_folder, timestamp_str, dados_analises, lista_im
 
     except Exception as e:
         print(f"ERRO ao gerar PDF Comparativo: {e}")
-        return None
+        raise e

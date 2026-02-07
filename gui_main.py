@@ -12,6 +12,7 @@ from reometer_controller import ReometerController, MockReometerController
 import modelos_reologicos as models
 from scipy.optimize import curve_fit
 import numpy as np
+from gui_data_cleaning import DataCleaningWindow
 
 # Set appearance mode and default color theme
 ctk.set_appearance_mode("Dark")
@@ -354,7 +355,13 @@ class ColetaFrame(ctk.CTkFrame):
             tk.messagebox.showinfo("Sucesso", f"Ponto {ponto_n} salvo para amostra '{nome}'!")
             
         except Exception as e:
-             tk.messagebox.showerror("Erro", f"Erro ao salvar: {e}")
+            tk.messagebox.showerror("Erro", f"Erro ao salvar: {e}")
+
+    def tkraise(self, aboveThis=None):
+        super().tkraise(aboveThis)
+        # Restore callback when frame is shown
+        if self.controller.is_connected:
+            self.controller.on_pressure_reading = self.update_plot_callback
 
 
 class HistoricoFrame(ctk.CTkFrame):
@@ -371,6 +378,12 @@ class HistoricoFrame(ctk.CTkFrame):
         
         # Define columns
         cols = ("ID", "Nome", "Descrição", "Data", "Ensaios")
+        
+        # Configure Treeview Style for larger font
+        style = ttk.Style()
+        style.configure("Treeview", font=("Arial", 12), rowheight=30)
+        style.configure("Treeview.Heading", font=("Arial", 14, "bold"))
+        
         self.tree = ttk.Treeview(self.tree_frame, columns=cols, show="headings")
         
         for col in cols:
@@ -397,6 +410,10 @@ class HistoricoFrame(ctk.CTkFrame):
         self.btn_import_folder = ctk.CTkButton(btn_frame, text="Importar Pasta", 
                                                 command=self.import_folder_json, fg_color="orange")
         self.btn_import_folder.pack(side="left", padx=5)
+
+        self.btn_delete = ctk.CTkButton(btn_frame, text="Excluir Amostra", 
+                                         command=self.delete_sample, fg_color="red")
+        self.btn_delete.pack(side="left", padx=5)
         
         self.refresh_list()
     
@@ -451,13 +468,26 @@ class HistoricoFrame(ctk.CTkFrame):
         # Fetch
         amostras = self.db.list_amostras()
         for a in amostras:
-            # Count tests
             testes = self.db.get_ensaios_by_amostra(a['id'])
-            num_testes = len(testes)
+            self.tree.insert("", "end", iid=str(a['id']), values=(a['id'], a['nome'], a['descricao'], a['data_criacao'], len(testes)))
+
+    def delete_sample(self):
+        """Deletes the selected sample from the history."""
+        from tkinter import messagebox
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Aviso", "Selecione uma amostra para excluir.")
+            return
             
-            self.tree.insert("", "end", values=(
-                a['id'], a['nome'], a['descricao'], a['data_criacao'], num_testes
-            ))
+        amostra_id = int(selected[0])
+        amostra_nome = self.tree.item(selected[0], "values")[1]
+        
+        if messagebox.askyesno("Confirmar Exclusão", f"Tem certeza que deseja excluir a amostra '{amostra_nome}'?\n\nIsso apagará permanentemente todos os ensaios e análises vinculadas!"):
+            if self.db.delete_amostra(amostra_id):
+                messagebox.showinfo("Sucesso", f"Amostra '{amostra_nome}' excluída.")
+                self.refresh_list()
+            else:
+                messagebox.showerror("Erro", "Não foi possível excluir a amostra.")
     
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
@@ -499,11 +529,37 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.btn_action = ctk.CTkButton(self, text="Ler Ponto Baixo", command=self.step_1_low)
         self.btn_action.pack(pady=20)
         
-        # State
         self.v_linha_low = 0
         self.p_pasta_low = 0
         self.v_linha_high = 0
         self.p_pasta_high = 0
+
+    def tkraise(self, aboveThis=None):
+        super().tkraise(aboveThis)
+        # Start monitoring if connected
+        self.start_monitoring()
+
+    def start_monitoring(self):
+        if self.controller.is_connected:
+            self.controller.on_pressure_reading = self.monitor_callback
+            if not self.controller.is_reading:
+                 self.controller.start_reading()
+
+    def monitor_callback(self, p_linha, p_pasta, v1, v2):
+        # Update labels (thread safe)
+        self.after(0, self._update_labels_live, p_linha, p_pasta, v1)
+
+    def _update_labels_live(self, p_linha, p_pasta, v1):
+        # Update labels with live values
+        # Only update if NOT currently holding a captured value (simple check)
+        # Actually, user wants to see live value BEFORE capturing. 
+        # So checking if labels have "---" or not might be tricky.
+        # Better to update separate "Live" labels or append to existing?
+        # User request: "precisa ser apresentado ao usuário a leitura"
+        # I will update the info labels.
+        
+        self.lbl_v1.configure(text=f"V_Linha: {v1:.4f} V")
+        self.lbl_p_pasta.configure(text=f"P_Pasta (ref): {p_pasta:.2f} bar")
 
     def step_1_low(self):
         """Read low pressure point (ideally 0 bar)."""
@@ -612,6 +668,310 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.lbl_v1.configure(text="V_Linha: ---")
         self.lbl_p_pasta.configure(text="P_Pasta (ref): ---")
 
+class RelatorioWindow(ctk.CTkToplevel):
+    def __init__(self, parent, analysis_data, export_callback=None):
+        super().__init__(parent)
+        self.analysis_data = analysis_data
+        self.export_callback = export_callback
+        
+        # Make window modal-like or just top
+        self.title(f"Relatório de Análise - {analysis_data['amostra']['nome']}")
+        self.geometry("1000x800")
+        
+        # Tabs
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.tab_resumo = self.tabview.add("Resumo")
+        self.tab_graficos = self.tabview.add("Gráficos")
+        self.tab_dados = self.tabview.add("Dados Calculados")
+        
+        self._init_resumo()
+        self._init_graficos()
+        self._init_dados()
+        
+        # Footer Actions
+        self.footer = ctk.CTkFrame(self, height=50)
+        self.footer.pack(fill="x", padx=10, pady=10)
+        
+        if export_callback:
+            self.btn_pdf = ctk.CTkButton(self.footer, text="Salvar PDF", command=self.export_callback, fg_color="green")
+            self.btn_pdf.pack(side="right", padx=10)
+        
+        self.btn_close = ctk.CTkButton(self.footer, text="Fechar", command=self.destroy, fg_color="red")
+        self.btn_close.pack(side="right", padx=10)
+        
+        # Focus
+        self.lift()
+        self.focus_force()
+
+    def _init_resumo(self):
+        # Textbox for summary
+        self.txt_resumo = ctk.CTkTextbox(self.tab_resumo, font=("Consolas", 14), wrap="word")
+        self.txt_resumo.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Build Summary Text
+        d = self.analysis_data
+        text = f"AMOSTRA: {d['amostra']['nome']}\n"
+        text += f"Data Análise: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        text += "-"*40 + "\n"
+        text += f"Modelo Melhor Ajuste: {d['best_model']}\n"
+        text += f"R²: {d['best_r2']:.4f}\n"
+        text += f"Índice de Comportamento (n): {d['n_prime']:.4f}\n"
+        text += f"Classificação: {d['comportamento']}\n"
+        text += "-"*40 + "\n\n"
+        
+        text += "PARÂMETROS DOS MODELOS:\n"
+        for model, fit in d['model_fits'].items():
+            if fit.get('params') is not None:
+                text += f"{model}: R²={fit['r2']:.4f}\n"
+                for n, v in zip(fit['param_names'], fit['params']):
+                    text += f"  {n}: {v:.4g}\n"
+                text += "\n"
+        
+        self.txt_resumo.insert("1.0", text)
+        self.txt_resumo.configure(state="disabled")
+
+    def _init_graficos(self):
+        # Tabview for sub-graphs
+        self.graph_tabs = ctk.CTkTabview(self.tab_graficos)
+        self.graph_tabs.pack(fill="both", expand=True)
+        
+        t1 = self.graph_tabs.add("Curva de Fluxo")
+        t2 = self.graph_tabs.add("Viscosidade")
+        t3 = self.graph_tabs.add("Ajuste de Modelos")
+        
+        # We need to defer plotting slightly to avoid layout issues? Or just plot.
+        self._plot_figure(t1, self._create_flow_curve())
+        self._plot_figure(t2, self._create_viscosity_curve())
+        self._plot_figure(t3, self._create_model_curve())
+        
+
+
+class RelatorioWindow(ctk.CTkToplevel):
+    def __init__(self, parent, analysis_data, export_callback=None):
+        super().__init__(parent)
+        self.analysis_data = analysis_data.copy()  # Use copy to avoid side effects
+        self.export_callback = export_callback
+        
+        # Sort data by gamma_dot to avoid zigzagging in plots
+        idx = np.argsort(self.analysis_data['gamma_dot'])
+        self.analysis_data['gamma_dot'] = np.array(self.analysis_data['gamma_dot'])[idx]
+        self.analysis_data['tau_w'] = np.array(self.analysis_data['tau_w'])[idx]
+        self.analysis_data['eta'] = np.array(self.analysis_data['eta'])[idx]
+        
+        self.title(f"Relatório de Análise - {self.analysis_data['amostra']['nome']}")
+        self.geometry("1000x800")
+        
+        # Tabs
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.tab_resumo = self.tabview.add("Resumo")
+        self.tab_graficos = self.tabview.add("Gráficos")
+        self.tab_dados = self.tabview.add("Dados Calculados")
+        
+        self._init_resumo()
+        self._init_graficos()
+        self._init_dados()
+        
+        # Footer Actions
+        self.footer = ctk.CTkFrame(self, height=50)
+        self.footer.pack(fill="x", padx=10, pady=10)
+        
+        if export_callback:
+            self.btn_pdf = ctk.CTkButton(self.footer, text="Salvar PDF", command=self.export_callback, fg_color="green")
+            self.btn_pdf.pack(side="right", padx=10)
+        
+        self.btn_close = ctk.CTkButton(self.footer, text="Fechar", command=self.destroy, fg_color="red")
+        self.btn_close.pack(side="right", padx=10)
+        
+        self.lift()
+        self.focus_force()
+
+    def _init_resumo(self):
+        self.txt_resumo = ctk.CTkTextbox(self.tab_resumo, font=("Consolas", 14), wrap="word")
+        self.txt_resumo.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        d = self.analysis_data
+        text = f"AMOSTRA: {d['amostra']['nome']}\n"
+        text += f"Data Análise: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        text += "-"*40 + "\n"
+        text += f"Modelo Melhor Ajuste: {d['best_model']}\n"
+        text += f"R²: {d['best_r2']:.4f}\n"
+        text += f"Índice de Comportamento (n): {d['n_prime']:.4f}\n"
+        text += f"Classificação: {d['comportamento']}\n"
+        text += "-"*40 + "\n\n"
+        
+        text += "PARÂMETROS DOS MODELOS:\n"
+        for model_name, fit in d['model_fits'].items():
+            if fit.get('params') is not None:
+                text += f"{model_name}: R²={fit['r2']:.4f}\n"
+                for n, v in zip(fit['param_names'], fit['params']):
+                    text += f"  {n}: {v:.4g}\n"
+                text += "\n"
+        
+        text += "-"*40 + "\n"
+        text += "ANÁLISE QUALITATIVA:\n"
+        text += "-"*40 + "\n"
+        
+        # Qualitative analysis logic
+        if d['best_r2'] > 0.99:
+            text += f"O modelo '{d['best_model']}' apresentou excelente correlação (R²={d['best_r2']:.4f}). "
+        elif d['best_r2'] > 0.95:
+            text += f"O modelo '{d['best_model']}' apresentou boa correlação (R²={d['best_r2']:.4f}). "
+        else:
+            text += f"O modelo '{d['best_model']}' apresentou correlação moderada (R²={d['best_r2']:.4f}). "
+            
+        text += f"\n\nComportamento: {d['comportamento']}.\n"
+        
+        if "Pseudoplastico" in d['comportamento']:
+            text += "Este material apresenta 'Shear Thinning', onde a viscosidade diminui com o aumento da taxa de cisalhamento. "
+            if d['n_prime'] < 1:
+                text += f"O índice n'={d['n_prime']:.3f} confirma este comportamento não-Newtoniano."
+        elif "Dilatante" in d['comportamento']:
+            text += "Este material apresenta 'Shear Thickening', onde a viscosidade aumenta com a taxa de cisalhamento."
+        elif "Viscoplastico" in d['comportamento']:
+            text += "O material exige uma tensão mínima (Yield Stress) para iniciar o fluxo, característica de pastas concentradas."
+        elif "Newtoniano" in d['comportamento']:
+            text += "A viscosidade permanece constante independente da taxa de cisalhamento."
+            
+        self.txt_resumo.insert("1.0", text)
+        self.txt_resumo.configure(state="disabled")
+
+    def _init_graficos(self):
+        self.graph_tabs = ctk.CTkTabview(self.tab_graficos)
+        self.graph_tabs.pack(fill="both", expand=True)
+        
+        t1 = self.graph_tabs.add("Curva de Fluxo")
+        t2 = self.graph_tabs.add("Viscosidade")
+        t3 = self.graph_tabs.add("Ajuste de Modelos")
+        
+        desc_fluxo = "Explicação: Relaciona a Tensão (τ) vs Taxa (γ̇). O formato da curva define se o fluido é Newtoniano, Pseudoplástico ou Viscoplástico."
+        desc_visc = "Explicação: Mostra a Viscosidade Aparente vs Taxa. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
+        desc_modelos = f"Explicação: Comparação dos dados experimentais (pontos) com os modelos teóricos (linhas). O melhor ajuste foi o modelo {self.analysis_data.get('best_model')}."
+        
+        self._plot_figure(t1, self._create_flow_curve(), desc_fluxo)
+        self._plot_figure(t2, self._create_viscosity_curve(), desc_visc)
+        self._plot_figure(t3, self._create_model_curve(), desc_modelos)
+        
+    def _plot_figure(self, parent, fig, description=None):
+        if description:
+            lbl = ctk.CTkLabel(parent, text=description, font=ctk.CTkFont(slant="italic", size=11), wraplength=800)
+            lbl.pack(side="bottom", fill="x", padx=10, pady=5)
+            
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def _create_flow_curve(self):
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.plot(self.analysis_data['gamma_dot'], self.analysis_data['tau_w'], 'o-', label='Experimental')
+        ax.set_title("Curva de Fluxo")
+        ax.set_xlabel("Taxa de Cisalhamento (1/s)")
+        ax.set_ylabel("Tensão de Cisalhamento (Pa)")
+        ax.grid(True)
+        return fig
+
+    def _create_viscosity_curve(self):
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.plot(self.analysis_data['gamma_dot'], self.analysis_data['eta'], 's-', color='orange', label='Viscosidade')
+        ax.set_title("Viscosidade Aparente")
+        ax.set_xlabel("Taxa de Cisalhamento (1/s)")
+        ax.set_ylabel("Viscosidade (Pa.s)")
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.grid(True, which="both", ls="-")
+        return fig
+
+    def _create_model_curve(self):
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        x = self.analysis_data['gamma_dot']
+        y = self.analysis_data['tau_w']
+        ax.plot(x, y, 'ko', label='Experimental', alpha=0.6)
+        
+        # Use logspace for smoother model curves
+        if len(x) > 0:
+            x_min = max(1e-3, min(x))
+            x_max = max(x)
+            if x_max > x_min:
+                x_smooth = np.logspace(np.log10(x_min), np.log10(x_max), 100)
+            else:
+                x_smooth = np.array([x_min])
+        else:
+            x_smooth = np.array([1, 10, 100])
+        
+        colors = ['r', 'g', 'b', 'm', 'c']
+        color_idx = 0
+        
+        for name, fit in self.analysis_data['model_fits'].items():
+            if fit.get('params') is not None:
+                # Use the function from the models module dictionary
+                if name in models.MODELS:
+                    func = models.MODELS[name][0]
+                    try:
+                        y_pred = func(x_smooth, *fit['params'])
+                        ax.loglog(x_smooth, y_pred, linestyle='--', label=f"{name}", color=colors[color_idx % len(colors)])
+                        color_idx += 1
+                    except Exception as e:
+                        print(f"Erro ao plotar modelo {name}: {e}")
+                    
+        ax.set_title("Ajuste de Modelos")
+        ax.set_xlabel("Taxa (1/s)")
+        ax.set_ylabel("Tensão (Pa)")
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.legend()
+        ax.grid(True, which="both", alpha=0.3)
+        return fig
+
+    def _init_dados(self):
+        # Apply style for Treeview in Dark Mode
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", 
+                        background="#2b2b2b", 
+                        foreground="white", 
+                        fieldbackground="#2b2b2b", 
+                        borderwidth=0,
+                        font=("Segoe UI", 11))
+        style.configure("Treeview.Heading", 
+                        background="#333333", 
+                        foreground="white", 
+                        relief="flat",
+                        font=("Segoe UI", 11, "bold"))
+        style.map("Treeview", background=[('selected', '#3a7ebf')])
+
+        # Container frame
+        container = ctk.CTkFrame(self.tab_dados)
+        container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Treeview
+        cols = ("Taxa (1/s)", "Tensão (Pa)", "Viscosidade (Pa.s)")
+        tree = ttk.Treeview(container, columns=cols, show="headings", height=15)
+        
+        for c in cols:
+            tree.heading(c, text=c)
+            tree.column(c, width=200, anchor="center")
+            
+        # Scrollbar
+        vsb = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        
+        tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+        
+        d = self.analysis_data
+        if 'gamma_dot' in d and len(d['gamma_dot']) > 0:
+            for g, t, e in zip(d['gamma_dot'], d['tau_w'], d['eta']):
+                tree.insert("", "end", values=(f"{g:.2f}", f"{t:.2f}", f"{e:.4f}"))
+        else:
+            tree.insert("", "end", values=("Nenhum dado", "", ""))
+
 class AnaliseFrame(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -620,21 +980,64 @@ class AnaliseFrame(ctk.CTkFrame):
         self.label = ctk.CTkLabel(self, text="Análise Reológica Completa", font=ctk.CTkFont(size=24, weight="bold"))
         self.label.pack(pady=20, padx=20, anchor="w")
         
-        # Selection Frame
+        # Selection Frame (Treeview)
         self.sel_frame = ctk.CTkFrame(self)
-        self.sel_frame.pack(fill="x", padx=20)
+        self.sel_frame.pack(fill="x", padx=20, pady=10)
         
-        ctk.CTkLabel(self.sel_frame, text="Selecione Amostra:").pack(side="left", padx=10)
-        self.combo_amostras = ctk.CTkComboBox(self.sel_frame, width=200)
-        self.combo_amostras.pack(side="left", padx=10)
-        self.combo_amostras.set("Atualizar Lista ->")
+        ctk.CTkLabel(self.sel_frame, text="Selecione Amostra para Análise:").pack(anchor="w", padx=10, pady=5)
         
-        self.btn_load = ctk.CTkButton(self.sel_frame, text="Analisar", command=self.run_analysis, fg_color="green")
-        self.btn_load.pack(side="left", padx=10)
+        # Treeview Scrollbar
+        self.tree_frame = ctk.CTkFrame(self.sel_frame, height=150)
+        self.tree_frame.pack(fill="x", padx=10, pady=5)
+        
+        cols = ("ID", "Nome", "Descrição", "D(mm)", "L(mm)", "Data", "Ensaios", "Status")
+        self.tree = ttk.Treeview(self.tree_frame, columns=cols, show="headings", height=8, selectmode="extended")
+        
+        self.tree.heading("ID", text="ID")
+        self.tree.column("ID", width=40, anchor="center")
+        self.tree.heading("Nome", text="Nome")
+        self.tree.column("Nome", width=150)
+        self.tree.heading("Descrição", text="Descrição")
+        self.tree.column("Descrição", width=150)
+        self.tree.heading("D(mm)", text="D (mm)")
+        self.tree.column("D(mm)", width=60, anchor="center")
+        self.tree.heading("L(mm)", text="L (mm)")
+        self.tree.column("L(mm)", width=60, anchor="center")
+        self.tree.heading("Data", text="Data")
+        self.tree.column("Data", width=120, anchor="center")
+        self.tree.heading("Ensaios", text="Ensaios")
+        self.tree.column("Ensaios", width=70, anchor="center")
+        self.tree.heading("Status", text="Status")
+        self.tree.column("Status", width=80, anchor="center")
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        
+        vsb = ttk.Scrollbar(self.tree_frame, orient="vertical", command=self.tree.yview)
+        vsb.pack(side="right", fill="y")
+        self.tree.configure(yscrollcommand=vsb.set)
+        
+        # Action Buttons
+        self.actions_frame = ctk.CTkFrame(self.sel_frame)
+        self.actions_frame.pack(fill="x", padx=10, pady=5)
+        
+        self.btn_load = ctk.CTkButton(self.actions_frame, text="Análise (Individual)", command=self.run_single_analysis, fg_color="blue")
+        self.btn_load.pack(side="right", padx=10, pady=10)
+        
+        self.btn_batch = ctk.CTkButton(self.actions_frame, text="Análise em Lote (Selecionados)", command=self.run_batch_analysis, fg_color="purple")
+        self.btn_batch.pack(side="right", padx=10, pady=10)
+        
+        self.btn_cleaning = ctk.CTkButton(self.actions_frame, text="Limpeza / Outliers", command=self.open_cleaning_window, fg_color="orange")
+        self.btn_cleaning.pack(side="left", padx=10, pady=10)
+
+        self.btn_delete = ctk.CTkButton(self.actions_frame, text="Excluir Amostra", command=self.delete_selected_sample, fg_color="red")
+        self.btn_delete.pack(side="left", padx=10, pady=10)
+        
+        # Selection Bind
+        self.tree.bind("<<TreeviewSelect>>", self.on_select_sample)
         
         # Options
         self.opt_frame = ctk.CTkFrame(self)
-        self.opt_frame.pack(fill="x", padx=20, pady=10)
+        self.opt_frame.pack(fill="x", padx=20, pady=5)
         
         self.chk_weissenberg = ctk.CTkCheckBox(self.opt_frame, text="Aplicar Correção Weissenberg-Rabinowitsch")
         self.chk_weissenberg.pack(side="left", padx=10)
@@ -644,34 +1047,94 @@ class AnaliseFrame(ctk.CTkFrame):
         self.export_frame = ctk.CTkFrame(self)
         self.export_frame.pack(fill="x", padx=20, pady=5)
         
+        self.btn_view_report = ctk.CTkButton(self.export_frame, text="Visualizar Relatório", 
+                                             command=self.open_report_window, state="disabled", fg_color="orange")
+        self.btn_view_report.pack(side="left", padx=10)
+        
         self.btn_export_png = ctk.CTkButton(self.export_frame, text="Exportar Gráficos (PNG)", 
                                              command=self.export_graphs, state="disabled")
+        # self.btn_export_png.pack(side="left", padx=10) # Optional now? Keep distinct.
         self.btn_export_png.pack(side="left", padx=10)
         
         self.btn_export_pdf = ctk.CTkButton(self.export_frame, text="Gerar Relatório (PDF)", 
                                              command=self.export_pdf, state="disabled")
         self.btn_export_pdf.pack(side="left", padx=10)
+
         
         # Results (Scrollable Textbox - allows text selection)
         self.txt_result = ctk.CTkTextbox(self, height=350, font=("Consolas", 14), wrap="word")
         self.txt_result.pack(fill="both", expand=True, padx=20, pady=10)
-        self.txt_result.insert("1.0", "Resultados aparecerão aqui.\n\nSelecione uma amostra e clique em 'Analisar'.")
-        self.txt_result.configure(state="disabled")  # Read-only but selectable
+        self.txt_result.insert("1.0", "Selecione uma amostra na lista acima.")
+        self.txt_result.configure(state="disabled") 
         
         # Store analysis data for export
         self.analysis_data = None
+        self.selected_amostra_id = None
         
-        self.refresh_combo()
+        self.refresh_list()
 
-    def refresh_combo(self):
+    def refresh_list(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
         amostras = self.db.list_amostras()
-        names = [a['nome'] for a in amostras]
-        self.combo_amostras.configure(values=names)
-        if names: self.combo_amostras.set(names[0])
+        for a in amostras:
+            # Check if analysis exists
+            last_analysis = self.db.get_last_analise(a['id'])
+            status = "Analisado" if last_analysis else "Pendente"
+            
+            # Count tests
+            testes = self.db.get_ensaios_by_amostra(a['id'])
+            num_testes = len(testes)
+            
+            self.tree.insert("", "end", iid=str(a['id']), values=(
+                a['id'],
+                a['nome'],
+                a['descricao'],
+                f"{a['d_capilar_mm']:.2f}", 
+                f"{a['l_capilar_mm']:.2f}",
+                a['data_criacao'],
+                num_testes,
+                status
+            ))
         
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
-        self.refresh_combo()
+        self.refresh_list()
+
+    def on_select_sample(self, event):
+        selected = self.tree.selection()
+        if not selected: return
+        
+        amostra_id = int(selected[0])
+        self.selected_amostra_id = amostra_id
+        
+        # Try to load existing analysis
+        last_analysis = self.db.get_last_analise(amostra_id)
+        if last_analysis:
+            self.load_analysis_from_db(last_analysis)
+        else:
+            self._set_result("Amostra selecionada. Clique em 'Nova Análise' para processar.")
+            self.analysis_data = None
+            self.btn_export_png.configure(state="disabled")
+            self.btn_export_pdf.configure(state="disabled")
+            self.btn_view_report.configure(state="disabled")
+
+    def load_analysis_from_db(self, analysis_row):
+        """Reconstruct analysis data from database record."""
+        import json
+        
+        try:
+            params = json.loads(analysis_row['parametros_json'])
+            # Auto-run calculation using visual indication
+            self.run_analysis(auto=True)
+            
+            # Prepend info about source
+            current_text = self.txt_result.get("1.0", "end")
+            self._set_result(f"--- RESULTADO CARREGADO DO BANCO DE DADOS ({analysis_row['data_analise']}) ---\n\n" + current_text)
+            
+        except Exception as e:
+            self._set_result(f"Erro ao carregar análise salva: {e}")
     
     def _set_result(self, text):
         """Update results textbox with text (selectable but read-only)."""
@@ -680,201 +1143,257 @@ class AnaliseFrame(ctk.CTkFrame):
         self.txt_result.insert("1.0", text)
         self.txt_result.configure(state="disabled")
 
-    def run_analysis(self):
-        from scipy.stats import linregress
-        from sklearn.metrics import r2_score
-        
-        nome = self.combo_amostras.get()
-        if not nome: return
-        
-        amostra = self.db.get_amostra_by_name(nome)
-        if not amostra: 
-            self._set_result("Amostra não encontrada.")
+    def run_single_analysis(self):
+        """Wrapper for button click to ensure specific selection behavior."""
+        selected = self.tree.selection()
+        if not selected:
+            tk.messagebox.showwarning("Aviso", "Selecione pelo menos uma amostra na tabela.")
             return
         
-        df = self.db.get_ensaios_by_amostra(amostra['id'])
-        if df.empty:
-            self._set_result("Sem ensaios para esta amostra.")
+        # For single analysis, we just run the first one if multiple selected
+        self.selected_amostra_id = int(selected[0])
+        self.run_analysis(auto=False)
+
+    def run_batch_analysis(self):
+        """Processes multiple selected samples in sequence."""
+        selected = self.tree.selection()
+        if not selected:
+            tk.messagebox.showwarning("Aviso", "Selecione as amostras para análise em lote (use Ctrl+Click ou Shift+Click).")
             return
             
+        count = len(selected)
+        if not tk.messagebox.askyesno("Análise em Lote", f"Deseja processar {count} amostras em lote?\nOs resultados serão salvos automaticamente no banco de dados."):
+            return
+            
+        summary = f"═══════════════════════════════════════════\n"
+        summary += f"  RESUMO DA ANÁLISE EM LOTE ({count} itens)\n"
+        summary += f"═══════════════════════════════════════════\n\n"
+        
+        success_count = 0
+        
+        for iid in selected:
+            amostra_id = int(iid)
+            result = self._perform_statistical_analysis(amostra_id, self.chk_weissenberg.get(), auto=False, save=True)
+            
+            if result['success']:
+                success_count += 1
+                summary += f"✓ {result['nome']}:\n"
+                summary += f"  Melhor Modelo: {result['best_model']} (R²={result['best_r2']:.4f})\n"
+                summary += f"  Comportamento: {result['comportamento']}\n\n"
+            else:
+                summary += f"✗ ID {amostra_id}: Erro - {result['error']}\n\n"
+        
+        summary += f"───────────────────────────────────────────\n"
+        summary += f"PROCESSAMENTO CONCLUÍDO: {success_count}/{count} sucesso.\n"
+        summary += f"───────────────────────────────────────────\n"
+        
+        self._set_result(summary)
+        self.refresh_list()
+        tk.messagebox.showinfo("Sucesso", f"Análise em lote concluída!\n{success_count} amostras processadas.")
+
+    def run_analysis(self, auto=False):
+        """Main method for single sample analysis with full UI update."""
+        if not self.selected_amostra_id:
+            return
+
+        result = self._perform_statistical_analysis(self.selected_amostra_id, self.chk_weissenberg.get(), auto=auto, save=not auto)
+        
+        if result['success']:
+            self._set_result(result['text'])
+            self.analysis_data = result['data']
+            self.btn_export_png.configure(state="normal")
+            self.btn_export_pdf.configure(state="normal")
+            self.btn_view_report.configure(state="normal")
+        else:
+            if not auto: tk.messagebox.showerror("Erro na Análise", result['error'])
+            self._set_result(f"Erro: {result['error']}")
+
+    def open_cleaning_window(self):
+        """Opens the data points management and outlier removal window."""
+        selected = self.tree.selection()
+        if not selected:
+            tk.messagebox.showwarning("Aviso", "Selecione uma amostra para limpeza de dados.")
+            return
+            
+        amostra_id = int(selected[0])
+        DataCleaningWindow(self, self.db, amostra_id, on_save_callback=lambda: self.run_analysis(auto=True))
+
+    def delete_selected_sample(self):
+        """Deletes the selected sample after confirmation."""
+        selected = self.tree.selection()
+        if not selected:
+            tk.messagebox.showwarning("Aviso", "Selecione uma amostra para fechar.")
+            return
+        
+        # We delete just the first one if multiple selected (safer)
+        amostra_id = int(selected[0])
+        amostra_nome = self.tree.item(selected[0], "values")[1] # Column 1 is Name
+        
+        if tk.messagebox.askyesno("Confirmar Exclusão", f"Deseja realmente excluir a amostra '{amostra_nome}'?\n\nEsta ação é irreversível e apagará todos os dados vinculados."):
+            if self.db.delete_amostra(amostra_id):
+                tk.messagebox.showinfo("Sucesso", "Amostra excluída com sucesso.")
+                self.refresh_list()
+                self._set_result("") # Clear result box
+                self.analysis_data = None
+            else:
+                tk.messagebox.showerror("Erro", "Falha ao excluir amostra.")
+
+    def _perform_statistical_analysis(self, amostra_id, aplicar_weissenberg, auto=False, save=True):
+        """
+        Isolated reological logic.
+        Returns a dictionary with results, status and data.
+        """
+        from scipy.stats import linregress
+        from sklearn.metrics import r2_score
+        import json
+        
         try:
+            # Fetch fresh from DB
+            amostras = self.db.list_amostras()
+            amostra = next((a for a in amostras if a['id'] == amostra_id), None)
+            
+            if not amostra: 
+                return {'success': False, 'error': "Amostra não encontrada.", 'id': amostra_id}
+
+            nome = amostra['nome']
+            # Fetch ONLY active points
+            df = self.db.get_ensaios_by_amostra(amostra['id'], apenas_ativos=True)
+            
+            if df.empty:
+                return {'success': False, 'error': "Sem ensaios para esta amostra.", 'id': amostra_id, 'nome': nome}
+
             D_mm = amostra['d_capilar_mm']
             L_mm = amostra['l_capilar_mm']
             Rho = amostra['densidade_g_cm3']
             
-            R = (D_mm / 2.0) / 1000.0  # Radius in meters
-            L = L_mm / 1000.0          # Length in meters
-            
-            aplicar_weissenberg = self.chk_weissenberg.get()
+            R = (D_mm / 2.0) / 1000.0
+            L = L_mm / 1000.0
             
             gamma_dots_app = []
             taus = []
-            delta_p_list = []  # P_linha - P_pasta (perdas do sistema)
+            delta_p_list = []
             
             for index, row in df.iterrows():
                 massa_g = row['massa_g']
                 tempo_s = row['duracao_s']
-                p_pasta_bar = row['pressao_pasta_bar']  # Sempre usar sensor da pasta
-                p_linha_bar = row['pressao_linha_bar']  # Para cálculo de perdas
+                p_pasta_bar = row['pressao_pasta_bar']
+                p_linha_bar = row['pressao_linha_bar']
                 
-                if tempo_s <= 0 or massa_g <= 0 or p_pasta_bar <= 0: 
-                    continue
+                if tempo_s <= 0 or massa_g <= 0 or p_pasta_bar <= 0: continue
                 
-                # Perda de pressão no sistema
                 delta_p = p_linha_bar - p_pasta_bar
                 delta_p_list.append(delta_p)
                 
-                # Volumetric flow rate Q
-                Q_cm3s = massa_g / (Rho * tempo_s)  # cm³/s
-                Q_m3s = Q_cm3s * 1e-6               # m³/s
-                
+                Q_cm3s = massa_g / (Rho * tempo_s)
+                Q_m3s = Q_cm3s * 1e-6
                 p_pa = p_pasta_bar * 1e5
                 
-                # Apparent Shear Rate: gamma_dot_app = (4 * Q) / (pi * R^3)
                 gd_app = (4 * Q_m3s) / (np.pi * R**3)
-                
-                # Wall Shear Stress: tau_w = (P * R) / (2 * L)
                 tau_w = (p_pa * R) / (2 * L)
                 
                 gamma_dots_app.append(gd_app)
                 taus.append(tau_w)
                 
             if len(gamma_dots_app) < 3:
-                self._set_result("Pontos insuficientes para análise (mínimo 3).")
-                return
+                return {'success': False, 'error': "Mínimo 3 pontos necessários.", 'id': amostra_id, 'nome': nome}
 
             gd_app_arr = np.array(gamma_dots_app)
             tau_arr = np.array(taus)
             
-            # --- Weissenberg-Rabinowitsch Correction ---
+            # Corrections
             n_prime = 1.0
             if aplicar_weissenberg:
                 try:
                     log_gd = np.log(gd_app_arr)
                     log_tau = np.log(tau_arr)
-                    slope, intercept, r_val, _, _ = linregress(log_gd, log_tau)
+                    slope, _, _, _, _ = linregress(log_gd, log_tau)
                     n_prime = slope
-                    
-                    # Correction Factor
-                    correction_factor = (3 * n_prime + 1) / (4 * n_prime)
-                    gd_true_arr = gd_app_arr * correction_factor
-                except Exception:
-                    gd_true_arr = gd_app_arr
-            else:
-                gd_true_arr = gd_app_arr
+                    gd_true_arr = gd_app_arr * ((3 * n_prime + 1) / (4 * n_prime))
+                except Exception: gd_true_arr = gd_app_arr
+            else: gd_true_arr = gd_app_arr
                 
-            # Viscosity
             eta_arr = tau_arr / gd_true_arr
             
-            # --- Model Fitting ---
+            # Model Fitting
+            model_fits = {}
+            best_model = None
+            best_r2 = -np.inf
+            
+            for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
+                try:
+                    p0 = g_func(gd_true_arr, tau_arr)
+                    popt, _ = curve_fit(m_func, gd_true_arr, tau_arr, p0=p0, bounds=bnds, maxfev=10000)
+                    tau_pred = m_func(gd_true_arr, *popt)
+                    r2 = r2_score(tau_arr, tau_pred)
+                    model_fits[m_name] = {'params': popt, 'r2': r2, 'param_names': p_names}
+                    if r2 > best_r2:
+                        best_r2 = r2
+                        best_model = m_name
+                except Exception as e:
+                    model_fits[m_name] = {'params': None, 'r2': None, 'error': str(e)}
+
+            # Generate Text Result
             results_txt = f"═══════════════════════════════════════════\n"
             results_txt += f"  ANÁLISE REOLÓGICA: {nome}\n"
             results_txt += f"═══════════════════════════════════════════\n\n"
             results_txt += f"Capilar: D={D_mm} mm, L={L_mm} mm\n"
             results_txt += f"Densidade: {Rho} g/cm³\n"
-            results_txt += f"Ensaios analisados: {len(gd_true_arr)}\n"
-            results_txt += f"Sensor Pressão: Pasta (sensor na câmara)\n"
             results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime) if aplicar_weissenberg else 'Não'}\n\n"
             
             results_txt += "───────────────────────────────────────────\n"
             results_txt += "  AJUSTE DE MODELOS REOLÓGICOS\n"
             results_txt += "───────────────────────────────────────────\n\n"
             
-            model_fits = {}
-            best_model = None
-            best_r2 = -np.inf
-            
-            for model_name, (model_func, param_names, guess_func, bounds) in models.MODELS.items():
-                try:
-                    p0 = guess_func(gd_true_arr, tau_arr)
-                    popt, pcov = curve_fit(model_func, gd_true_arr, tau_arr, p0=p0, bounds=bounds, maxfev=10000)
-                    
-                    tau_pred = model_func(gd_true_arr, *popt)
-                    r2 = r2_score(tau_arr, tau_pred)
-                    
-                    model_fits[model_name] = {'params': popt, 'r2': r2, 'param_names': param_names}
-                    
-                    if r2 > best_r2:
-                        best_r2 = r2
-                        best_model = model_name
-                        
-                except Exception as e:
-                    model_fits[model_name] = {'params': None, 'r2': None, 'error': str(e)}
-            
-            # Display Results
-            for model_name, fit_data in model_fits.items():
-                is_best = (model_name == best_model)
-                marker = "★" if is_best else " "
-                
+            for m_name, fit_data in model_fits.items():
                 if fit_data.get('params') is not None:
-                    r2_val = fit_data['r2']
-                    params = fit_data['params']
-                    param_names = fit_data['param_names']
-                    
-                    results_txt += f"{marker} {model_name} (R²={r2_val:.4f})\n"
-                    for i, pname in enumerate(param_names):
-                        results_txt += f"    {pname}: {params[i]:.4g}\n"
-                else:
-                    results_txt += f"  {model_name}: Falha - {fit_data.get('error', 'Desconhecido')}\n"
+                    marker = "★" if m_name == best_model else " "
+                    results_txt += f"{marker} {m_name} (R²={fit_data['r2']:.4f})\n"
+                    for i, pn in enumerate(fit_data['param_names']):
+                        results_txt += f"    {pn}: {fit_data['params'][i]:.4g}\n"
                 results_txt += "\n"
             
-            results_txt += "───────────────────────────────────────────\n"
-            results_txt += f"  MELHOR MODELO: {best_model} (R²={best_r2:.4f})\n"
-            results_txt += "───────────────────────────────────────────\n\n"
-            
-            # Data Summary
-            results_txt += "───────────────────────────────────────────\n"
-            results_txt += "  DADOS CALCULADOS\n"
-            results_txt += "───────────────────────────────────────────\n"
-            results_txt += f"  Taxa Cisalhamento (s⁻¹): [{gd_true_arr.min():.1f} - {gd_true_arr.max():.1f}]\n"
-            results_txt += f"  Tensão Parede (Pa):      [{tau_arr.min():.1f} - {tau_arr.max():.1f}]\n"
-            results_txt += f"  Viscosidade (Pa.s):      [{eta_arr.min():.4f} - {eta_arr.max():.4f}]\n\n"
-            
-            # System Losses (ΔP)
-            delta_p_arr = np.array(delta_p_list)
-            results_txt += "───────────────────────────────────────────\n"
-            results_txt += "  DIAGNÓSTICO DO SISTEMA\n"
-            results_txt += "───────────────────────────────────────────\n"
-            results_txt += f"  ΔP (P_linha - P_pasta):\n"
-            results_txt += f"    Média: {delta_p_arr.mean():.3f} bar\n"
-            results_txt += f"    Min:   {delta_p_arr.min():.3f} bar\n"
-            results_txt += f"    Max:   {delta_p_arr.max():.3f} bar\n"
-            
-            if delta_p_arr.mean() > 0.5:
-                results_txt += f"\n  ⚠️ Perdas elevadas no sistema (>{0.5} bar).\n"
-                results_txt += f"  Verifique: vedação do êmbolo, vazamentos.\n"
-            
-            # Behavior Inference
             import reologia_fitting
             comportamento = reologia_fitting.inferir_comportamento_fluido(best_model, 
                 {best_model: {'params': model_fits[best_model]['params'], 'R2': best_r2}} if best_model else {})
-            results_txt += "\n───────────────────────────────────────────\n"
+            
+            results_txt += f"───────────────────────────────────────────\n"
             results_txt += f"  COMPORTAMENTO: {comportamento}\n"
-            results_txt += "───────────────────────────────────────────\n"
-            
-            self._set_result(results_txt)
-            
-            # Store data for export
-            self.analysis_data = {
-                'amostra': amostra,
-                'gamma_dot': gd_true_arr,
-                'tau_w': tau_arr,
-                'eta': eta_arr,
-                'model_fits': model_fits,
-                'best_model': best_model,
-                'best_r2': best_r2,
-                'comportamento': comportamento,
-                'n_prime': n_prime if aplicar_weissenberg else 1.0,
-                'delta_p': delta_p_arr
+            results_txt += f"───────────────────────────────────────────\n"
+
+            # Prepare data object
+            analysis_data = {
+                'amostra': amostra, 'gamma_dot': gd_true_arr, 'tau_w': tau_arr, 'eta': eta_arr,
+                'model_fits': model_fits, 'best_model': best_model, 'best_r2': best_r2,
+                'comportamento': comportamento, 'n_prime': n_prime if aplicar_weissenberg else 1.0,
+                'delta_p': np.array(delta_p_list)
             }
-            
-            # Enable export buttons
-            self.btn_export_png.configure(state="normal")
-            self.btn_export_pdf.configure(state="normal")
-            
+
+            if save:
+                params_storage = {
+                    'best_model': best_model, 'n_prime': n_prime, 'is_weissenberg': aplicar_weissenberg,
+                    'fits': {m: {'params': f['params'].tolist() if f['params'] is not None else None, 
+                                 'r2': f['r2']} for m, f in model_fits.items()}
+                }
+                self.db.add_analise(amostra_id, best_model, best_r2, n_prime if aplicar_weissenberg else 1.0, 
+                                   comportamento, json.dumps(params_storage))
+
+            return {
+                'success': True, 'text': results_txt, 'data': analysis_data, 
+                'nome': nome, 'best_model': best_model, 'best_r2': best_r2, 
+                'comportamento': comportamento
+            }
+
         except Exception as e:
-            import traceback
-            self._set_result(f"Erro na análise:\n{traceback.format_exc()}")
+            return {'success': False, 'error': str(e), 'id': amostra_id}
+
+    def open_report_window(self):
+        if not self.analysis_data:
+            tk.messagebox.showwarning("Aviso", "Execute a análise primeiro.")
+            return
+        
+        # Capture current data for the callback
+        current_data = self.analysis_data
+        RelatorioWindow(self, current_data, export_callback=lambda: self.export_pdf(current_data))
     
     def export_graphs(self):
         """Export analysis graphs as PNG files."""
@@ -965,14 +1484,17 @@ class AnaliseFrame(ctk.CTkFrame):
         
         tk.messagebox.showinfo("Sucesso", f"{len(imgs_generated)} gráficos exportados para:\n{folder}")
     
-    def export_pdf(self):
+    def export_pdf(self, analysis_data=None):
         """Export analysis as PDF report."""
         import reologia_report_pdf
         from tkinter import filedialog
         from datetime import datetime
         import pandas as pd
         
-        if not self.analysis_data:
+        # Use provided data or current data
+        data_to_use = analysis_data if analysis_data else self.analysis_data
+        
+        if not data_to_use:
             tk.messagebox.showerror("Erro", "Execute uma análise primeiro.")
             return
         
@@ -980,89 +1502,203 @@ class AnaliseFrame(ctk.CTkFrame):
             tk.messagebox.showerror("Erro", "Biblioteca FPDF não instalada.\nExecute: pip install fpdf")
             return
         
-        # Ask for folder
-        folder = filedialog.askdirectory(title="Selecione pasta para salvar relatório")
-        if not folder:
-            return
+        import os as os_sys
         
+        # Get sample name for suggested filename
+        amostra = data_to_use['amostra']
+        nome_amostra = amostra['nome'].replace(' ', '_').replace('%', 'pct')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        amostra = self.analysis_data['amostra']
+        suggested_name = f"Relatorio_{nome_amostra}_{timestamp}.pdf"
         
-        # First generate graphs (needed for PDF)
-        self._generate_temp_graphs(folder, timestamp)
+        # Ask for file location
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf", 
+            filetypes=[("PDF Files", "*.pdf")],
+            initialfile=suggested_name,
+            title="Salvar Relatório PDF"
+        )
         
-        # Prepare data
-        df_res = pd.DataFrame({
-            'Taxa Cisalhamento (s-1)': self.analysis_data['gamma_dot'],
-            'Tensao Cisalhamento (Pa)': self.analysis_data['tau_w'],
-            'Viscosidade (Pa.s)': self.analysis_data['eta']
-        })
+        if not filepath: return
         
-        # Prepare model summary
-        summary_list = []
-        for model_name, fit_data in self.analysis_data['model_fits'].items():
-            if fit_data.get('params') is not None:
-                param_names = fit_data['param_names']
-                params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, fit_data['params'])])
-                summary_list.append({'Modelo': model_name, 'R2': fit_data['r2'], 'Parametros': params_str})
-        df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
-        
-        lista_imgs = [f"{folder}/{timestamp}_curva_fluxo.png",
-                      f"{folder}/{timestamp}_viscosidade.png",
-                      f"{folder}/{timestamp}_modelos.png"]
+        folder = os_sys.path.dirname(filepath)
         
         try:
-            reologia_report_pdf.gerar_pdf(
-                timestamp_str=timestamp,
-                rho_g_cm3=amostra['densidade_g_cm3'],
-                tempo_extrusao_info="Variavel",
-                metodo_entrada="GUI",
-                json_files=[],
-                csv_path="",
-                realizar_bagley=False,
-                D_bagley=amostra['d_capilar_mm'],
-                L_bagley_list=[amostra['l_capilar_mm']],
-                realizar_mooney=False,
-                L_mooney=amostra['l_capilar_mm'],
-                D_mooney_list=[amostra['d_capilar_mm']],
-                D_unico=amostra['d_capilar_mm'],
-                L_unico=amostra['l_capilar_mm'],
-                calib_path="",
-                df_res=df_res,
-                df_sum_modelo=df_sum_modelo,
-                best_model_nome=self.analysis_data['best_model'],
-                comportamento=self.analysis_data['comportamento'],
-                lista_imgs=lista_imgs,
-                output_folder=folder,
-                fator_calibracao=1.0
-            )
-            tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{folder}")
+            # Generate graphs in TEMP folder to avoid cluttering user directory
+            import tempfile
+            import shutil
+            
+            temp_dir = tempfile.mkdtemp()
+            try:
+                self._generate_temp_graphs(temp_dir, timestamp, data_to_use)
+                
+                # Prepare data
+                df_res = pd.DataFrame({
+                    'Taxa Cisalhamento (s-1)': data_to_use['gamma_dot'],
+                    'Tensao Cisalhamento (Pa)': data_to_use['tau_w'],
+                    'Viscosidade (Pa.s)': data_to_use['eta']
+                })
+                
+                # Prepare model summary
+                summary_list = []
+                for model_name, fit_data in data_to_use['model_fits'].items():
+                    if fit_data.get('params') is not None:
+                        param_names = fit_data['param_names']
+                        params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, fit_data['params'])])
+                        summary_list.append({'Modelo': model_name, 'R2': fit_data['r2'], 'Parametros': params_str})
+                df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
+                
+                lista_imgs = [os_sys.path.join(temp_dir, f"{timestamp}_curva_fluxo.png"),
+                              os_sys.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
+                              os_sys.path.join(temp_dir, f"{timestamp}_modelos.png")]
+                
+                reologia_report_pdf.gerar_pdf(
+                    timestamp_str=timestamp,
+                    rho_g_cm3=data_to_use['amostra']['densidade_g_cm3'],
+                    tempo_extrusao_info="Variavel",
+                    metodo_entrada="GUI",
+                    json_files=[],
+                    csv_path="",
+                    realizar_bagley=False,
+                    D_bagley=data_to_use['amostra']['d_capilar_mm'],
+                    L_bagley_list=[data_to_use['amostra']['l_capilar_mm']],
+                    realizar_mooney=False,
+                    L_mooney=data_to_use['amostra']['l_capilar_mm'],
+                    D_mooney_list=[data_to_use['amostra']['d_capilar_mm']],
+                    D_unico=data_to_use['amostra']['d_capilar_mm'],
+                    L_unico=data_to_use['amostra']['l_capilar_mm'],
+                    calib_path="",
+                    df_res=df_res,
+                    df_sum_modelo=df_sum_modelo,
+                    best_model_nome=data_to_use['best_model'],
+                    comportamento=data_to_use['comportamento'],
+                    lista_imgs=lista_imgs,
+                    output_folder=folder,
+                    fator_calibracao=1.0,
+                    output_filename=filepath
+                )
+                tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
+                
+            finally:
+                shutil.rmtree(temp_dir)
+                
         except Exception as e:
-            tk.messagebox.showerror("Erro", f"Falha ao gerar PDF:\n{e}")
+            import traceback
+            tb = traceback.format_exc()
+            print(tb)
+            tk.messagebox.showerror("Erro ao Gerar PDF", f"Falha na geração do relatório:\n{e}\n\nDetalhes no console.")
+        filepath = filedialog.asksaveasfilename(
+            title="Salvar Relatório PDF",
+            defaultextension=".pdf",
+            initialfile=suggested_name,
+            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+        )
+        if not filepath:
+            return
+        
+        # Get folder from filepath
+        folder = os_sys.path.dirname(filepath)
+        if not folder:
+            folder = "."
+        
+        # Ensure folder exists
+        if not os_sys.path.exists(folder):
+            try:
+                os_sys.makedirs(folder, exist_ok=True)
+            except Exception as e:
+                tk.messagebox.showerror("Erro", f"Não foi possível criar a pasta:\n{folder}\n\nErro: {e}")
+                return
+        
+        try:
+            # Generate graphs in TEMP folder to avoid cluttering user directory
+            import tempfile
+            import shutil
+            
+            temp_dir = tempfile.mkdtemp()
+            try:
+                self._generate_temp_graphs(temp_dir, timestamp)
+                
+                # Prepare data
+                df_res = pd.DataFrame({
+                    'Taxa Cisalhamento (s-1)': self.analysis_data['gamma_dot'],
+                    'Tensao Cisalhamento (Pa)': self.analysis_data['tau_w'],
+                    'Viscosidade (Pa.s)': self.analysis_data['eta']
+                })
+                
+                # Prepare model summary
+                summary_list = []
+                for model_name, fit_data in self.analysis_data['model_fits'].items():
+                    if fit_data.get('params') is not None:
+                        param_names = fit_data['param_names']
+                        params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, fit_data['params'])])
+                        summary_list.append({'Modelo': model_name, 'R2': fit_data['r2'], 'Parametros': params_str})
+                df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
+                
+                lista_imgs = [os_sys.path.join(temp_dir, f"{timestamp}_curva_fluxo.png"),
+                              os_sys.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
+                              os_sys.path.join(temp_dir, f"{timestamp}_modelos.png")]
+                
+                reologia_report_pdf.gerar_pdf(
+                    timestamp_str=timestamp,
+                    rho_g_cm3=amostra['densidade_g_cm3'],
+                    tempo_extrusao_info="Variavel",
+                    metodo_entrada="GUI",
+                    json_files=[],
+                    csv_path="",
+                    realizar_bagley=False,
+                    D_bagley=amostra['d_capilar_mm'],
+                    L_bagley_list=[amostra['l_capilar_mm']],
+                    realizar_mooney=False,
+                    L_mooney=amostra['l_capilar_mm'],
+                    D_mooney_list=[amostra['d_capilar_mm']],
+                    D_unico=amostra['d_capilar_mm'],
+                    L_unico=amostra['l_capilar_mm'],
+                    calib_path="",
+                    df_res=df_res,
+                    df_sum_modelo=df_sum_modelo,
+                    best_model_nome=self.analysis_data['best_model'],
+                    comportamento=self.analysis_data['comportamento'],
+                    lista_imgs=lista_imgs,
+                    output_folder=folder,
+                    fator_calibracao=1.0,
+                    output_filename=filepath
+                )
+                tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
+                
+            finally:
+                # Cleanup temp dir
+                shutil.rmtree(temp_dir)
+                
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            tk.messagebox.showerror("Erro", f"Falha ao gerar PDF:\n{e}\n\nDetalhes:\n{tb}")
     
-    def _generate_temp_graphs(self, folder, timestamp):
+    def _generate_temp_graphs(self, folder, timestamp, analysis_data=None):
         """Generate temporary graphs for PDF report."""
         import matplotlib.pyplot as plt
+        from os import path as os_path
         
-        gamma = self.analysis_data['gamma_dot']
-        tau = self.analysis_data['tau_w']
-        eta = self.analysis_data['eta']
-        best_model = self.analysis_data['best_model']
+        data = analysis_data if analysis_data else self.analysis_data
+        
+        gamma = data['gamma_dot']
+        tau = data['tau_w']
+        eta = data['eta']
+        best_model = data['best_model']
         
         # 1. Flow Curve
         fig, ax = plt.subplots(figsize=(8, 6))
         ax.loglog(gamma, tau, 'o', markersize=8, label='Dados')
-        if best_model and self.analysis_data['model_fits'].get(best_model, {}).get('params') is not None:
+        if best_model and data['model_fits'].get(best_model, {}).get('params') is not None:
             gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
             model_func = models.MODELS[best_model][0]
-            params = self.analysis_data['model_fits'][best_model]['params']
+            params = data['model_fits'][best_model]['params']
             tau_model = model_func(gamma_smooth, *params)
             ax.loglog(gamma_smooth, tau_model, '-', linewidth=2, label=f'{best_model}')
         ax.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
         ax.set_ylabel(r'$\tau_w$ (Pa)')
         ax.legend()
         ax.grid(True, which='both', alpha=0.3)
-        fig.savefig(f"{folder}/{timestamp}_curva_fluxo.png", dpi=150, bbox_inches='tight')
+        fig.savefig(os_path.join(folder, f"{timestamp}_curva_fluxo.png"), dpi=150, bbox_inches='tight')
         plt.close(fig)
         
         # 2. Viscosity
@@ -1071,7 +1707,7 @@ class AnaliseFrame(ctk.CTkFrame):
         ax.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
         ax.set_ylabel(r'$\eta$ (Pa.s)')
         ax.grid(True, which='both', alpha=0.3)
-        fig.savefig(f"{folder}/{timestamp}_viscosidade.png", dpi=150, bbox_inches='tight')
+        fig.savefig(os_path.join(folder, f"{timestamp}_viscosidade.png"), dpi=150, bbox_inches='tight')
         plt.close(fig)
         
         # 3. All Models
@@ -1079,7 +1715,7 @@ class AnaliseFrame(ctk.CTkFrame):
         ax.loglog(gamma, tau, 'ko', markersize=8, label='Dados')
         gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-        for i, (model_name, fit_data) in enumerate(self.analysis_data['model_fits'].items()):
+        for i, (model_name, fit_data) in enumerate(data['model_fits'].items()):
             if fit_data.get('params') is not None:
                 model_func = models.MODELS[model_name][0]
                 tau_model = model_func(gamma_smooth, *fit_data['params'])
@@ -1089,7 +1725,7 @@ class AnaliseFrame(ctk.CTkFrame):
         ax.set_ylabel(r'$\tau_w$ (Pa)')
         ax.legend(loc='best')
         ax.grid(True, which='both', alpha=0.3)
-        fig.savefig(f"{folder}/{timestamp}_modelos.png", dpi=150, bbox_inches='tight')
+        fig.savefig(os_path.join(folder, f"{timestamp}_modelos.png"), dpi=150, bbox_inches='tight')
         plt.close(fig)
 
 

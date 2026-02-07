@@ -5,9 +5,12 @@ import os
 
 class DatabaseManager:
     def __init__(self, db_name="reometria.db"):
-        self.db_name = db_name
+        # Use absolute path relative to script directory to ensure persistence
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.db_name = os.path.join(base_dir, db_name)
         self.conn = None
         self.init_db()
+        print(f"Banco de dados: {self.db_name}")
 
     def connect(self):
         """Establish connection to the database."""
@@ -63,12 +66,82 @@ class DatabaseManager:
                 tensao_linha_v REAL,
                 tensao_pasta_v REAL,
                 data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ativo INTEGER DEFAULT 1,
+                FOREIGN KEY (amostra_id) REFERENCES amostras (id)
+            )
+        ''')
+
+        # Table: Analises
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS analises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                amostra_id INTEGER NOT NULL,
+                data_analise DATETIME DEFAULT CURRENT_TIMESTAMP,
+                modelo_melhor TEXT,
+                r2_melhor REAL,
+                n_prime REAL,
+                comportamento TEXT,
+                parametros_json TEXT,
                 FOREIGN KEY (amostra_id) REFERENCES amostras (id)
             )
         ''')
 
         self.conn.commit()
         self.close()
+        
+        # Migration for existing DB
+        self._migrate_db()
+
+    def _migrate_db(self):
+        """Adds missing columns to existing tables."""
+        self.connect()
+        cursor = self.conn.cursor()
+        
+        # Check if 'ativo' exists in 'ensaios'
+        cursor.execute("PRAGMA table_info(ensaios)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'ativo' not in columns:
+            print("Migrando banco de dados: Adicionando coluna 'ativo' na tabela 'ensaios'...")
+            try:
+                cursor.execute("ALTER TABLE ensaios ADD COLUMN ativo INTEGER DEFAULT 1")
+                self.conn.commit()
+            except Exception as e:
+                print(f"Erro na migração: {e}")
+        
+        self.close()
+
+    # --- Analises ---
+
+    def add_analise(self, amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json):
+        """Saves analysis results."""
+        self.connect()
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO analises (amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json))
+            self.conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            print(f"Erro ao salvar análise: {e}")
+            return None
+        finally:
+            self.close()
+
+    def get_last_analise(self, amostra_id):
+        """Get the most recent analysis for a sample."""
+        self.connect()
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT * FROM analises 
+            WHERE amostra_id = ? 
+            ORDER BY data_analise DESC 
+            LIMIT 1
+        ''', (amostra_id,))
+        row = cursor.fetchone()
+        self.close()
+        return row
 
     # --- Amostras ---
 
@@ -105,6 +178,25 @@ class DatabaseManager:
         rows = cursor.fetchall()
         self.close()
         return [dict(row) for row in rows]
+
+    def delete_amostra(self, amostra_id):
+        """Deletes a sample and all its associated tests and analyses."""
+        self.connect()
+        cursor = self.conn.cursor()
+        try:
+            # Delete associated analyses
+            cursor.execute("DELETE FROM analises WHERE amostra_id = ?", (amostra_id,))
+            # Delete associated tests
+            cursor.execute("DELETE FROM ensaios WHERE amostra_id = ?", (amostra_id,))
+            # Delete the sample itself
+            cursor.execute("DELETE FROM amostras WHERE id = ?", (amostra_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao deletar amostra: {e}")
+            return False
+        finally:
+            self.close()
 
     # --- Calibracoes ---
 
@@ -151,10 +243,28 @@ class DatabaseManager:
         finally:
             self.close()
 
-    def get_ensaios_by_amostra(self, amostra_id):
-        """Returns all test points for a given sample as a DataFrame (useful for analysis)."""
+    def update_ensaio_status(self, ensaio_id, ativo):
+        """Enable or disable a specific test point."""
         self.connect()
-        query = "SELECT * FROM ensaios WHERE amostra_id = ? ORDER BY ponto_n"
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("UPDATE ensaios SET ativo = ? WHERE id = ?", (1 if ativo else 0, ensaio_id))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao atualizar status do ensaio: {e}")
+            return False
+        finally:
+            self.close()
+
+    def get_ensaios_by_amostra(self, amostra_id, apenas_ativos=False):
+        """Returns all test points for a given sample as a DataFrame."""
+        self.connect()
+        query = "SELECT * FROM ensaios WHERE amostra_id = ?"
+        if apenas_ativos:
+            query += " AND ativo = 1"
+        query += " ORDER BY ponto_n"
+        
         df = pd.read_sql_query(query, self.conn, params=(amostra_id,))
         self.close()
         return df
