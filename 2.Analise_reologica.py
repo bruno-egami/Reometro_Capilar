@@ -38,7 +38,7 @@ except ImportError:
 
 # --- CONSTANTES ---
 calibrations_folder = utils_reologia.CONSTANTS['CALIBRATIONS_FOLDER']
-FATOR_CALIBRACAO_EMPIRICO_PADRAO = 1.0 
+FATOR_CALIBRACAO_EMPIRICO_PADRAO = 0.5326 
 
 # -----------------------------------------------------------------------------
 # --- FUNÇÕES AUXILIARES LOCAIS (Específicas do fluxo principal) ---
