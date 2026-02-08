@@ -179,6 +179,96 @@ def carregar_csv_resultados(filepath):
         print(f"Erro ao carregar CSV {filepath}: {e}")
         return None
 
+def mapear_colunas_para_padrao(df, cols_originais):
+    """
+    Mapeia colunas de diferentes formatos para o padrão unificado.
+    Suporta Capilar (Indiv/Estat) e Rotacional.
+    """
+    tipo_arquivo = 'desconhecido'
+    
+    if 'gamma_dot_w_mean' in cols_originais:
+        tipo_arquivo = 'estatistico_novo'
+    elif 'mean_gamma' in cols_originais:
+        tipo_arquivo = 'estatistico_antigo'
+    elif 'taxa de cisalhamento corrigida (s-1)' in cols_originais:
+        tipo_arquivo = 'individual'
+    elif 'taxa de cisalhamento (s-1)' in cols_originais:
+        tipo_arquivo = 'rotacional'
+    elif 'γ̇w (s⁻¹)' in cols_originais:
+        tipo_arquivo = 'ja_padronizado'
+    
+    df_result = df.copy()
+    
+    if tipo_arquivo == 'rotacional':
+        df_result = df_result.rename(columns={
+            'taxa de cisalhamento (s-1)': 'γ̇w (s⁻¹)',
+            'tensao de cisalhamento (pa)': 'τw (Pa)',
+            'viscosidade (pa.s)': 'η (Pa·s)',
+            'viscosidade_std (pa.s)': 'η_std (Pa·s)',
+            'tensao_std (pa)': 'τw_std (Pa)'
+        })
+        if 'γ̇w (s⁻¹)' in df_result.columns:
+            df_result['γ̇aw (s⁻¹)'] = df_result['γ̇w (s⁻¹)']
+
+    elif tipo_arquivo == 'individual':
+        df_result = df_result.rename(columns={
+            'taxa de cisalhamento corrigida (s-1)': 'γ̇w (s⁻¹)',
+            'taxa de cisalhamento aparente (s-1)': 'γ̇aw (s⁻¹)',
+            'tensao de cisalhamento (pa)': 'τw (Pa)',
+            'viscosidade real (pa.s)': 'η (Pa·s)',
+            'viscosidade aparente (pa.s)': 'η_a (Pa·s)',
+            'pressao (bar)': 'P (bar)'
+        })
+        
+    elif tipo_arquivo == 'estatistico_novo':
+        df_result = df_result.rename(columns={
+            'gamma_dot_w_mean': 'γ̇w (s⁻¹)',
+            'gamma_dot_aw_mean': 'γ̇aw (s⁻¹)',
+            'tau_w_mean': 'τw (Pa)',
+            'tau_w_std': 'τw_std (Pa)',
+            'eta_true_mean': 'η (Pa·s)',
+            'eta_true_std': 'η_std (Pa·s)',
+            'eta_a_mean': 'η_a (Pa·s)',
+            'pressao_mean_bar': 'P (bar)'
+        })
+        
+    elif tipo_arquivo == 'ja_padronizado':
+        df_result = df_result.rename(columns={
+            'τw (pa)': 'τw (Pa)',
+            'η (pa·s)': 'η (Pa·s)',
+            'p (bar)': 'P (bar)'
+        })
+    
+    return df_result, tipo_arquivo
+
+def carregar_modelo_associado(caminho_csv):
+    """
+    Busca e carrega modelo JSON associado a um arquivo CSV.
+    """
+    pasta = os.path.dirname(caminho_csv)
+    nome_base = os.path.splitext(os.path.basename(caminho_csv))[0]
+    
+    # Sufixos para remover e tentar encontrar o JSON
+    sufixos = ['_resultados_reologicos', '_estatisticas_', '_processado']
+    nome_base_limpo = nome_base
+    for s in sufixos:
+        nome_base_limpo = nome_base_limpo.replace(s, '')
+    
+    possiveis_jsons = [
+        os.path.join(pasta, f"{nome_base}_parametros_modelos.json"),
+        os.path.join(pasta, f"{nome_base_limpo}_parametros_modelos.json"),
+    ]
+    
+    for json_path in possiveis_jsons:
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if "Melhor Modelo" in data and "Parametros" in data:
+                    return data
+            except: pass
+    return None
+
 def carregar_dados_estatisticos(filepath):
     """
     Carrega um arquivo CSV de dados estatísticos.

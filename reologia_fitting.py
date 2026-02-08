@@ -82,3 +82,20 @@ def inferir_comportamento_fluido(best_model_nome, model_results):
         
     else:
         return "Newtoniano"
+
+def calcular_mape(y_true, y_pred):
+    """
+    Calcula o Mean Absolute Percentage Error (MAPE).
+    
+    Args:
+        y_true: Valores reais (referência)
+        y_pred: Valores preditos ou comparados
+        
+    Returns:
+        float: Erro percentual médio.
+    """
+    y_true, y_pred = np.array(y_true), np.array(y_pred)
+    # Evita divisão por zero
+    mask = (y_true != 0)
+    if not np.any(mask): return 0.0
+    return np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100

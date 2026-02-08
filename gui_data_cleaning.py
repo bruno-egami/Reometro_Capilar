@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import pandas as pd
 import numpy as np
+from gui_utils import adjust_column_widths
 
 class DataCleaningWindow(ctk.CTkToplevel):
     def __init__(self, parent, db, amostra_id, on_save_callback=None):
@@ -93,6 +94,9 @@ class DataCleaningWindow(ctk.CTkToplevel):
             ), tags=tags)
             
         self.tree.tag_configure("inactive", foreground="red")
+        
+        # UI optimization: adjust columns
+        adjust_column_widths(self.tree)
 
     def toggle_selected(self):
         selected = self.tree.selection()

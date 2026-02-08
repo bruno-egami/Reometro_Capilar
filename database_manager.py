@@ -143,6 +143,38 @@ class DatabaseManager:
         self.close()
         return row
 
+    def delete_analise(self, amostra_id):
+        """Deletes the most recent analysis for a sample."""
+        self.connect()
+        cursor = self.conn.cursor()
+        try:
+            # We delete the one that matched get_last_analise logic
+            cursor.execute('''
+                DELETE FROM analises 
+                WHERE id = (SELECT id FROM analises WHERE amostra_id = ? ORDER BY data_analise DESC LIMIT 1)
+            ''', (amostra_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao deletar análise: {e}")
+            return False
+        finally:
+            self.close()
+
+    def delete_all_analises(self, amostra_id):
+        """Deletes ALL analyses for a specifically sample."""
+        self.connect()
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("DELETE FROM analises WHERE amostra_id = ?", (amostra_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao deletar análises: {e}")
+            return False
+        finally:
+            self.close()
+
     # --- Amostras ---
 
     def add_amostra(self, nome, descricao, d_capilar, l_capilar, densidade):

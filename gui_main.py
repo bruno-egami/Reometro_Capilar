@@ -15,6 +15,11 @@ from scipy.optimize import curve_fit
 import numpy as np
 import pandas as pd
 from gui_data_cleaning import DataCleaningWindow
+from gui_utils import adjust_column_widths
+import reologia_fitting
+import reologia_plot
+import reologia_report_pdf
+from reologia_io import mapear_colunas_para_padrao, carregar_modelo_associado
 
 # Set appearance mode and default color theme
 ctk.set_appearance_mode("Dark")
@@ -472,6 +477,9 @@ class HistoricoFrame(ctk.CTkFrame):
         for a in amostras:
             testes = self.db.get_ensaios_by_amostra(a['id'])
             self.tree.insert("", "end", iid=str(a['id']), values=(a['id'], a['nome'], a['descricao'], a['data_criacao'], len(testes)))
+        
+        # Auto-adjust column widths
+        adjust_column_widths(self.tree)
 
     def delete_sample(self):
         """Deletes the selected sample from the history."""
@@ -1049,6 +1057,390 @@ class RelatorioWindow(ctk.CTkToplevel):
                 ))
         else:
             tree.insert("", "end", values=("Nenhum dado", "", "", "", ""))
+            
+        # UI optimization: adjust columns
+        adjust_column_widths(tree)
+
+class ComparativeAnalysisWindow(ctk.CTkToplevel):
+    """Secondary window for comparing multiple rheological datasets."""
+    
+    def __init__(self, parent, dataset_list):
+        super().__init__(parent)
+        self.title("Análise Reológica Comparativa")
+        self.geometry("1100x850")
+        
+        # Primary datasets from DB (as list of dicts)
+        self.datasets = dataset_list
+        self.external_datasets = [] # For rotational data
+        
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        
+        # --- Top Panel: Selection and Actions ---
+        self.top_frame = ctk.CTkFrame(self)
+        self.top_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=20)
+        
+        self.lbl_title = ctk.CTkLabel(self.top_frame, text="Configuração da Comparação", font=ctk.CTkFont(size=20, weight="bold"))
+        self.lbl_title.pack(pady=10)
+        
+        self.ctrl_frame = ctk.CTkFrame(self.top_frame, fg_color="transparent")
+        self.ctrl_frame.pack(fill="x", padx=10, pady=5)
+        
+        # Reference Selection for MAPE
+        ctk.CTkLabel(self.ctrl_frame, text="Amostra de Referência (MAPE):").pack(side="left", padx=5)
+        self.combo_ref = ctk.CTkComboBox(self.ctrl_frame, values=[d['nome'] for d in self.datasets], width=250)
+        self.combo_ref.pack(side="left", padx=5)
+        
+        self.btn_add_ext = ctk.CTkButton(self.ctrl_frame, text="+ Adicionar Rotacional", 
+                                          command=self._add_external_data, fg_color="#c45c22")
+        self.btn_add_ext.pack(side="right", padx=5)
+        
+        # --- Middle Panel: Visualization Buttons ---
+        self.viz_frame = ctk.CTkFrame(self)
+        self.viz_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
+        
+        self.lbl_info = ctk.CTkLabel(self.viz_frame, text="Selecione o tipo de gráfico comparativo:", font=ctk.CTkFont(size=14))
+        self.lbl_info.pack(pady=10)
+        
+        self.btn_grid = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
+        self.btn_grid.pack(pady=10)
+        
+        plots = [
+            ("Curva de Fluxo", "fluxo"),
+            ("Viscosidade", "viscosidade"),
+            ("Índice n'", "n_prime"),
+            ("Pressão vs Visc", "pressao")
+        ]
+        
+        for text, mode in plots:
+            btn = ctk.CTkButton(self.btn_grid, text=text, height=60, width=200, 
+                                 font=ctk.CTkFont(size=16, weight="bold"),
+                                 command=lambda m=mode: self._show_plot(m))
+            btn.pack(side="left", padx=10)
+            
+        # Analysis Stats Display
+        self.txt_mape = ctk.CTkTextbox(self.viz_frame, height=150, font=("Consolas", 14))
+        self.txt_mape.pack(fill="both", expand=True, padx=20, pady=10)
+        self.txt_mape.insert("1.0", "Execute um gráfico para ver a análise de erro (MAPE).")
+        self.txt_mape.configure(state="disabled")
+        
+        # --- Bottom Panel: Export ---
+        self.bot_frame = ctk.CTkFrame(self)
+        self.bot_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
+        
+        self.btn_export_pdf = ctk.CTkButton(self.bot_frame, text="Gerar Relatório PDF Comparativo", 
+                                             command=self._export_pdf, fg_color="green", height=45)
+        self.btn_export_pdf.pack(fill="x", padx=100)
+        
+        self.focus_force()
+
+    def _get_combined_data(self):
+        """Combines DB datasets and external datasets for plotting/analysis."""
+        all_data = {}
+        all_models = {}
+        
+        # DB Data
+        for d in self.datasets:
+            nome = d['nome']
+            data = d['data']
+            # Reconstruct DataFrame
+            n_val = data.get('n_prime', 1.0)
+            
+            # Safe retrieval of pressure mean (must match length of gamma_dot)
+            pres_mean = data.get('pressao_mean')
+            if pres_mean is None or len(pres_mean) != len(data['gamma_dot']):
+                # Fallback: create array of same length using mean of raw pressure
+                mean_p = data.get('raw_pressure', np.array([0])).mean()
+                if np.isnan(mean_p): mean_p = 0
+                pres_mean = np.full_like(data['gamma_dot'], mean_p)
+            
+            df = pd.DataFrame({
+                'γ̇w (s⁻¹)': data['gamma_dot'],
+                'τw (Pa)': data['tau_w'],
+                'η (Pa·s)': data['eta'],
+                'γ̇aw (s⁻¹)': data['gamma_dot'] / ((3*n_val+1)/(4*n_val)),
+                'η_a (Pa·s)': data['tau_w'] / (data['gamma_dot'] / ((3*n_val+1)/(4*n_val))),
+                'P (bar)': pres_mean
+            })
+            df['n_prime'] = n_val # Same for all points in this sample
+            
+            # Std Devs
+            if 'tau_w_std' in data: df['τw_std (Pa)'] = data['tau_w_std']
+            if 'eta_std' in data: df['η_std (Pa·s)'] = data['eta_std']
+            
+            all_data[nome] = df
+            
+            # Models
+            best_model = data.get('best_model')
+            if best_model and best_model in data.get('model_fits', {}):
+                fit = data['model_fits'][best_model]
+                if fit.get('params') is not None:
+                    all_models[nome] = {
+                        'Melhor Modelo': best_model,
+                        'Parametros': fit['params'],
+                        'R2': fit.get('r2', 0.0)
+                    }
+                    
+        # External Data
+        for d in self.external_datasets:
+            all_data[d['nome']] = d['df']
+            if d.get('modelo'):
+                all_models[d['nome']] = d['modelo']
+                
+        return all_data, all_models
+
+    def _add_external_data(self):
+        """Opens file dialog to load processed rotational rheometer data."""
+        from tkinter import filedialog
+        import os
+        from reologia_io import carregar_csv_resultados, mapear_colunas_para_padrao, carregar_modelo_associado
+        
+        initial_dir = r"D:\GitHub\Reometro_Capilar\resultados_processados_interativo"
+        if not os.path.exists(initial_dir): initial_dir = os.getcwd()
+        
+        filepath = filedialog.askopenfilename(
+            initialdir=initial_dir,
+            title="Selecionar Resultado Processado (Rotacional)",
+            filetypes=[("CSV Files", "*.csv")]
+        )
+        
+        if not filepath: return
+        
+        df = carregar_csv_resultados(filepath)
+        if df is None:
+            tk.messagebox.showerror("Erro", "Falha ao carregar o arquivo CSV.")
+            return
+            
+        # Standardize
+        df.columns = [c.lower() for c in df.columns]
+        df_std, tipo = mapear_colunas_para_padrao(df, df.columns.tolist())
+        
+        # Load associated model
+        modelo = carregar_modelo_associado(filepath)
+        
+        nome_sugerido = os.path.basename(filepath).replace("_processado.csv", "").replace(".csv", "")
+        nome_legenda = CTkInputDialog(text=f"Nome para a legenda (Tipo: {tipo}):", title="Legenda").get_input()
+        if not nome_legenda: nome_legenda = nome_sugerido
+        
+        self.external_datasets.append({
+            'nome': nome_legenda,
+            'df': df_std,
+            'modelo': modelo
+        })
+        
+        # Update combo values
+        current_vals = list(self.combo_ref.cget("values"))
+        current_vals.append(nome_legenda)
+        self.combo_ref.configure(values=current_vals)
+        
+        tk.messagebox.showinfo("Sucesso", f"Dataset '{nome_legenda}' adicionado com sucesso.")
+        self.lift()
+        self.focus_force()
+
+    def _show_plot(self, mode):
+        """Generates and shows a comparative plot with error analysis."""
+        import matplotlib.pyplot as plt
+        import reologia_plot
+        import tempfile
+        import os
+        from datetime import datetime
+        
+        all_data, all_models = self._get_combined_data()
+        if not all_data: 
+            tk.messagebox.showwarning("Aviso", "Nenhum dado disponível para plotagem.")
+            return
+        
+        # 1. Update MAPE analysis
+        self._update_mape_display(all_data)
+        
+        # 2. Configure plot based on mode
+        config_map = {
+            'fluxo': {
+                'col_x': 'γ̇w (s⁻¹)', 'col_y': 'τw (Pa)', 'title': 'Curva de Fluxo (Comparativo)',
+                'xl': r'$\dot{\gamma}$ (s$^{-1}$)', 'yl': r'$\tau_w$ (Pa)', 'log': True
+            },
+            'viscosidade': {
+                'col_x': 'γ̇w (s⁻¹)', 'col_y': 'η (Pa·s)', 'title': 'Viscosidade vs Taxa (Comparativo)',
+                'xl': r'$\dot{\gamma}$ (s$^{-1}$)', 'yl': r'$\eta$ (Pa·s)', 'log': True
+            },
+            'n_prime': {
+                'col_x': 'γ̇w (s⁻¹)', 'col_y': 'n_prime', 'title': 'Índice n\' (Comparativo)',
+                'xl': r'$\dot{\gamma}$ (s$^{-1}$)', 'yl': "Índice n\'", 'log': False
+            },
+            'pressao': {
+                'col_x': 'η (Pa·s)', 'col_y': 'P (bar)', 'title': 'Pressão vs Viscosidade (Comparativo)',
+                'xl': r'$\eta$ (Pa·s)', 'yl': 'Pressão (bar)', 'log': False
+            }
+        }
+        
+        cfg = config_map.get(mode)
+        if not cfg: return
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_dir = tempfile.gettempdir()
+        
+        try:
+            reologia_plot.plotar_comparativo_multiplo(
+                dados_analises=all_data,
+                coluna_x=cfg['col_x'],
+                coluna_y=cfg['col_y'],
+                titulo=cfg['title'],
+                xlabel=cfg['xl'],
+                ylabel=cfg['yl'],
+                output_folder=temp_dir,
+                timestamp_str=timestamp,
+                usar_log=cfg['log'],
+                show_plots=True,
+                only_show=True,
+                modelos_dict=all_models
+            )
+        except Exception as e:
+            tk.messagebox.showerror("Erro ao Plotar", f"Ocorreu um erro ao gerar o gráfico:\n{str(e)}")
+            # Print trace for debugging
+            import traceback
+            traceback.print_exc()
+
+    def _update_mape_display(self, all_data):
+        """Calculates and displays MAPE relative to chosen reference."""
+        ref_name = self.combo_ref.get()
+        if ref_name not in all_data:
+            self._set_mape("Selecione uma amostra de referência válida para análise MAPE.")
+            return
+            
+        ref_df = all_data[ref_name]
+        # Reference values for Viscosity
+        y_ref = ref_df['η (Pa·s)'].values
+        x_ref = ref_df['γ̇w (s⁻¹)'].values
+        
+        text = f"--- ANÁLISE DE DISCREPÂNCIA (MAPE) ---\n"
+        text += f"Referência: {ref_name}\n\n"
+        text += f"{'Amostra':<30} | {'MAPE (%)':<10}\n"
+        text += "─" * 45 + "\n"
+        
+        from reologia_fitting import calcular_mape
+        from scipy.interpolate import interp1d
+        
+        for name, df in all_data.items():
+            if name == ref_name: continue
+            
+            # To compare, we need to interpolate the other data to the same reference X-points
+            # or vice versa. Let's interpolate target onto reference points.
+            x_target = df['γ̇w (s⁻¹)'].values
+            y_target = df['η (Pa·s)'].values
+            
+            try:
+                # Use interpolation to align points
+                f_interp = interp1d(x_target, y_target, bounds_error=False, fill_value="extrapolate")
+                y_compared = f_interp(x_ref)
+                
+                mape = calcular_mape(y_ref, y_compared)
+                text += f"{name:<30} | {mape:>8.2f}%\n"
+            except:
+                text += f"{name:<30} | Erro no cálculo\n"
+                
+        self._set_mape(text)
+
+    def _set_mape(self, text):
+        self.txt_mape.configure(state="normal")
+        self.txt_mape.delete("1.0", "end")
+        self.txt_mape.insert("1.0", text)
+        self.txt_mape.configure(state="disabled")
+
+    def _export_pdf(self):
+        """Generates a complete comparative PDF report."""
+        from tkinter import filedialog
+        import tempfile
+        import shutil
+        import os
+        from datetime import datetime
+        import reologia_plot
+        import reologia_report_pdf
+        
+        all_data, all_models = self._get_combined_data()
+        if not all_data: return
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        suggested_name = f"Relatorio_Comparativo_{timestamp}.pdf"
+        
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf", 
+            filetypes=[("PDF Files", "*.pdf")],
+            initialfile=suggested_name,
+            title="Salvar Relatório Comparativo"
+        )
+        if not filepath: return
+        
+        folder = os.path.dirname(filepath)
+        temp_dir = tempfile.mkdtemp()
+        
+        try:
+            # Generate all 4 comparative plots as PNG using reologia_plot API
+            lista_imgs = []
+            
+            configs = [
+                ('γ̇w (s⁻¹)', 'τw (Pa)', 'Curva de Fluxo', r'$\dot{\gamma}$ (s$^{-1}$)', r'$\tau_w$ (Pa)', True),
+                ('γ̇w (s⁻¹)', 'η (Pa·s)', 'Viscosidade', r'$\dot{\gamma}$ (s$^{-1}$)', r'$\eta$ (Pa·s)', True),
+                ('γ̇w (s⁻¹)', 'n_prime', 'n_prime', r'$\dot{\gamma}$ (s$^{-1}$)', "Índice n\'", False),
+                ('η (Pa·s)', 'P (bar)', 'Pressao_vs_Visc', r'$\eta$ (Pa·s)', 'Pressão (bar)', False)
+            ]
+            
+            for cx, cy, tit, xl, yl, log in configs:
+                f_name = reologia_plot.plotar_comparativo_multiplo(
+                    dados_analises=all_data,
+                    coluna_x=cx,
+                    coluna_y=cy,
+                    titulo=tit,
+                    xlabel=xl,
+                    ylabel=yl,
+                    output_folder=temp_dir,
+                    timestamp_str=timestamp,
+                    usar_log=log,
+                    show_plots=False,
+                    only_show=False,
+                    modelos_dict=all_models
+                )
+                if f_name: lista_imgs.append(f_name)
+            
+            # Prepare MAPE info for PDF
+            ref_name = self.combo_ref.get()
+            mape_rows = []
+            if ref_name in all_data:
+                ref_df = all_data[ref_name]
+                x_ref, y_ref = ref_df['γ̇w (s⁻¹)'].values, ref_df['η (Pa·s)'].values
+                from reologia_fitting import calcular_mape
+                from scipy.interpolate import interp1d
+                for name, df in all_data.items():
+                    if name == ref_name: continue
+                    try:
+                        f_interp = interp1d(df['γ̇w (s⁻¹)'].values, df['η (Pa·s)'].values, bounds_error=False, fill_value="extrapolate")
+                        mape = calcular_mape(y_ref, f_interp(x_ref))
+                        mape_rows.append({'Amostra': name, 'Referência': ref_name, 'MAPE (%)': mape})
+                    except: pass
+            
+            df_mape = pd.DataFrame(mape_rows)
+            
+            reologia_report_pdf.gerar_pdf_comparativo(
+                output_folder=folder,
+                timestamp_str=timestamp,
+                dados_analises=all_data,
+                lista_imgs=lista_imgs,
+                df_mape=df_mape
+            )
+            
+            # File renaming is handled by gerar_pdf_comparativo if we provide output_folder
+            # but we might want to ensure it matches the user's picked name.
+            # gerar_pdf_comparativo uses: f"{timestamp_str}_relatorio_comparativo.pdf"
+            expected_name = os.path.join(folder, f"{timestamp}_relatorio_comparativo.pdf")
+            if os.path.exists(expected_name) and expected_name != filepath:
+                if os.path.exists(filepath): os.remove(filepath)
+                os.rename(expected_name, filepath)
+
+            tk.messagebox.showinfo("Sucesso", f"Relatório Comparativo PDF gerado em:\n{filepath}")
+            
+        except Exception as e:
+            tk.messagebox.showerror("Erro ao Gerar PDF", f"Falha: {e}")
+        finally:
+            shutil.rmtree(temp_dir)
 
 class AnaliseFrame(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -1101,14 +1493,17 @@ class AnaliseFrame(ctk.CTkFrame):
         self.btn_load = ctk.CTkButton(self.actions_frame, text="Análise (Individual)", command=self.run_single_analysis, fg_color="blue")
         self.btn_load.pack(side="right", padx=10, pady=10)
         
-        self.btn_batch = ctk.CTkButton(self.actions_frame, text="Análise em Lote (Selecionados)", command=self.run_batch_analysis, fg_color="purple")
+        self.btn_batch = ctk.CTkButton(self.actions_frame, text="Análise em Lote", command=self.run_batch_analysis, fg_color="purple")
         self.btn_batch.pack(side="right", padx=10, pady=10)
+        
+        self.btn_compare = ctk.CTkButton(self.actions_frame, text="Visualizar Comparativo", command=self.run_comparative_analysis, fg_color="#2b5a2b")
+        self.btn_compare.pack(side="right", padx=10, pady=10)
         
         self.btn_cleaning = ctk.CTkButton(self.actions_frame, text="Limpeza / Outliers", command=self.open_cleaning_window, fg_color="orange")
         self.btn_cleaning.pack(side="left", padx=10, pady=10)
 
-        self.btn_delete = ctk.CTkButton(self.actions_frame, text="Excluir Amostra", command=self.delete_selected_sample, fg_color="red")
-        self.btn_delete.pack(side="left", padx=10, pady=10)
+        self.btn_delete_analise = ctk.CTkButton(self.actions_frame, text="Excluir Análise", command=self.delete_selected_analysis, fg_color="#8b0000")
+        self.btn_delete_analise.pack(side="left", padx=10, pady=10)
         
         # Selection Bind
         self.tree.bind("<<TreeviewSelect>>", self.on_select_sample)
@@ -1168,6 +1563,9 @@ class AnaliseFrame(ctk.CTkFrame):
                 num_testes,
                 status
             ))
+            
+        # UI optimization: adjust columns
+        adjust_column_widths(self.tree)
         
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
@@ -1262,6 +1660,31 @@ class AnaliseFrame(ctk.CTkFrame):
         self.refresh_list()
         tk.messagebox.showinfo("Sucesso", f"Análise em lote concluída!\n{success_count} amostras processadas.")
 
+    def run_comparative_analysis(self):
+        """Prepares and opens the comparative analysis window."""
+        selected = self.tree.selection()
+        if not selected:
+            tk.messagebox.showwarning("Aviso", "Selecione pelo menos uma amostra para comparação.")
+            return
+            
+        dataset_list = []
+        for iid in selected:
+            amostra_id = int(iid)
+            # Try to load existing or process on-the-fly
+            result = self._perform_statistical_analysis(amostra_id, aplicar_weissenberg=True, auto=True, save=False)
+            if result['success']:
+                dataset_list.append({
+                    'id': amostra_id,
+                    'nome': result['nome'],
+                    'data': result['data']
+                })
+
+        if not dataset_list:
+            tk.messagebox.showerror("Erro", "Não foi possível carregar dados para as amostras selecionadas.")
+            return
+            
+        ComparativeAnalysisWindow(self, dataset_list)
+
     def run_analysis(self, auto=False):
         """Main method for single sample analysis with full UI update."""
         if not self.selected_amostra_id:
@@ -1290,25 +1713,33 @@ class AnaliseFrame(ctk.CTkFrame):
         amostra_id = int(selected[0])
         DataCleaningWindow(self, self.db, amostra_id, on_save_callback=lambda: self.run_analysis(auto=True))
 
-    def delete_selected_sample(self):
-        """Deletes the selected sample after confirmation."""
+    def delete_selected_analysis(self):
+        """Deletes the specific analysis for the selected sample."""
         selected = self.tree.selection()
         if not selected:
-            tk.messagebox.showwarning("Aviso", "Selecione uma amostra para fechar.")
+            tk.messagebox.showwarning("Aviso", "Selecione uma amostra para remover a análise.")
             return
         
-        # We delete just the first one if multiple selected (safer)
         amostra_id = int(selected[0])
-        amostra_nome = self.tree.item(selected[0], "values")[1] # Column 1 is Name
+        amostra_nome = self.tree.item(selected[0], "values")[1]
         
-        if tk.messagebox.askyesno("Confirmar Exclusão", f"Deseja realmente excluir a amostra '{amostra_nome}'?\n\nEsta ação é irreversível e apagará todos os dados vinculados."):
-            if self.db.delete_amostra(amostra_id):
-                tk.messagebox.showinfo("Sucesso", "Amostra excluída com sucesso.")
+        # Check if analysis exists
+        last_analysis = self.db.get_last_analise(amostra_id)
+        if not last_analysis:
+            tk.messagebox.showinfo("Informação", "Não há análise salva para esta amostra.")
+            return
+
+        if tk.messagebox.askyesno("Confirmar Exclusão", f"Deseja realmente excluir a análise da amostra '{amostra_nome}'?\n\nA amostra e os ensaios brutos serão preservados."):
+            if self.db.delete_analise(amostra_id):
+                tk.messagebox.showinfo("Sucesso", "Análise excluída com sucesso.")
                 self.refresh_list()
-                self._set_result("") # Clear result box
+                self._set_result("Análise removida. A amostra continua disponível para novo processamento.")
                 self.analysis_data = None
+                self.btn_export_png.configure(state="disabled")
+                self.btn_export_pdf.configure(state="disabled")
+                self.btn_view_report.configure(state="disabled")
             else:
-                tk.messagebox.showerror("Erro", "Falha ao excluir amostra.")
+                tk.messagebox.showerror("Erro", "Falha ao excluir análise.")
 
     def _perform_statistical_analysis(self, amostra_id, aplicar_weissenberg, auto=False, save=True):
         """
@@ -1420,7 +1851,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 # Additional Means for Report
                 gd_app_mean = grouped['gamma_dot_app'].mean().values
                 eta_app_mean = grouped['eta_app'].mean().values
-                pressao_mean = grouped['pressao'].mean().values
+                pressao_mean = grouped['pressao'].mean().values # Ensure this is calculated
                 tempo_mean = grouped['tempo_s'].mean().values
                 massa_mean = grouped['massa_g'].mean().values
                 
@@ -1570,6 +2001,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 'model_fits': model_fits, 'best_model': best_model, 'best_r2': best_r2,
                 'comportamento': comportamento, 'n_prime': n_prime if aplicar_weissenberg else 1.0,
                 'delta_p': np.array(delta_p_list),
+                'pressao_mean': pressao_mean if stats_details else np.array(delta_p_list), # Fallback if no stats
                 'stats_details': stats_details
             }
 
@@ -1772,7 +2204,8 @@ class AnaliseFrame(ctk.CTkFrame):
                 
                 lista_imgs = [os_sys.path.join(temp_dir, f"{timestamp}_curva_fluxo.png"),
                               os_sys.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
-                              os_sys.path.join(temp_dir, f"{timestamp}_modelos.png")]
+                              os_sys.path.join(temp_dir, f"{timestamp}_modelos_fluxo.png"),
+                              os_sys.path.join(temp_dir, f"{timestamp}_modelos_visc.png")]
                 
                 # Prepare Outlier Dataframe for Report - From Block 2
                 df_outliers_report = None
@@ -1820,7 +2253,8 @@ class AnaliseFrame(ctk.CTkFrame):
                     output_filename=filepath,
                     df_raw_data=df_raw_data,
                     stats_details=data_to_use.get('stats_details'),
-                    df_outliers=df_outliers_report
+                    df_outliers=df_outliers_report,
+                    amostra_info=data_to_use['amostra']
                 )
                 tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
                 
@@ -1909,10 +2343,30 @@ class AnaliseFrame(ctk.CTkFrame):
         # 3. Model Fitting Comparison (Canvas style)
         fig = plt.figure(figsize=(12, 5))
         
-        # Subplot 1: Stress
-        ax1 = fig.add_subplot(121)
+        # Helper for setting limits with padding
+        def set_smart_limits(ax, x_data, y_data):
+            if len(x_data) > 0 and len(y_data) > 0:
+                # Log limits
+                x_min, x_max = x_data.min(), x_data.max()
+                y_min, y_max = y_data.min(), y_data.max()
+                
+                # Add 20% padding on log scale
+                x_pad = (np.log10(x_max) - np.log10(x_min)) * 0.1
+                y_pad = (np.log10(y_max) - np.log10(y_min)) * 0.1
+                
+                # Handle single point or zero range
+                if x_pad == 0: x_pad = 0.5
+                if y_pad == 0: y_pad = 0.5
+                
+                ax.set_xlim(10**(np.log10(x_min) - x_pad), 10**(np.log10(x_max) + x_pad))
+                ax.set_ylim(10**(np.log10(y_min) - y_pad), 10**(np.log10(y_max) + y_pad))
+
+        # 1. Flow Curve (Models)
+        fig1, ax1 = plt.subplots(figsize=(6, 5))
+        
         if 'raw_gamma' in data and 'raw_tau' in data:
             ax1.loglog(data['raw_gamma'], data['raw_tau'], 'o', color='lightgray', markersize=3, alpha=0.4)
+            
         ax1.errorbar(gamma, tau, yerr=data.get('tau_w_std'), fmt='ko-', capsize=3, label='Dados experimentais', alpha=0.7)
         
         gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
@@ -1927,31 +2381,33 @@ class AnaliseFrame(ctk.CTkFrame):
                 ax1.loglog(gamma_smooth, tau_model, '-', linewidth=1.5, color=colors_list[i % 5],
                          label=f'{model_name} (R²={fit_data["r2"]:.4f})')
                 i += 1
+                
         ax1.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
         ax1.set_ylabel(r'$\tau_w$ (Pa)')
-        ax1.set_title('Curva de Fluxo')
+        ax1.set_title('Curva de Fluxo (Ajuste)')
         ax1.legend(fontsize='small')
+        
+        # Set limits based on EXPERIMENTAL data only
+        # Use raw data if available for broader context, or averaged for focus
+        # Using averaged (gamma, tau) ensures consistency with error bars
+        set_smart_limits(ax1, gamma, tau)
         
         # Better Ticks
         ax1.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
         ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
         ax1.grid(True, which='both', alpha=0.3)
+        
+        plt.tight_layout()
+        fig1.savefig(os_path.join(folder, f"{timestamp}_modelos_fluxo.png"), dpi=150, bbox_inches='tight')
+        plt.close(fig1)
 
-        # Subplot 2: Viscosity
-        ax2 = fig.add_subplot(122)
+        # 2. Viscosity (Models)
+        fig2, ax2 = plt.subplots(figsize=(6, 5))
+        
         if 'raw_gamma' in data and 'raw_eta' in data:
             ax2.loglog(data['raw_gamma'], data['raw_eta'], 's', color='lightgray', markersize=3, alpha=0.4)
             
         ax2.errorbar(gamma, eta, yerr=data.get('eta_std'), fmt='ks-', capsize=3, label='Viscosidade Real', alpha=0.7)
-        
-        # Dual Plot if Weissenberg - REMOVED APPARENT SERIES FROM MODEL PLOT
-        # n_prime = data.get('n_prime', 1.0)
-        # if n_prime != 1.0:
-        #    factor = (3*n_prime + 1) / (4*n_prime)
-        #    gamma_app = gamma / factor
-        #    eta_app = tau / gamma_app
-        #    ax2.loglog(gamma_app, eta_app, 'b^--', markersize=4, label='Viscosidade Aparente', alpha=0.5)
         
         # Plot all models on Viscosity Graph
         i = 0
@@ -1965,16 +2421,20 @@ class AnaliseFrame(ctk.CTkFrame):
                 
         ax2.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
         ax2.set_ylabel(r'$\eta$ (Pa.s)')
-        ax2.set_title('Viscosidade')
+        ax2.set_title('Viscosidade (Ajuste)')
+        ax2.legend(fontsize='small')
         ax2.grid(True, which='both', alpha=0.3)
+        
+        # Set limits based on EXPERIMENTAL data only
+        set_smart_limits(ax2, gamma, eta)
         
         # Better Ticks
         ax2.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
         ax2.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
         
         plt.tight_layout()
-        fig.savefig(os_path.join(folder, f"{timestamp}_modelos.png"), dpi=150, bbox_inches='tight')
-        plt.close(fig)
+        fig2.savefig(os_path.join(folder, f"{timestamp}_modelos_visc.png"), dpi=150, bbox_inches='tight')
+        plt.close(fig2)
 
 
 class CorrecoesFrame(ctk.CTkFrame):

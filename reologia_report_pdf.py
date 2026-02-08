@@ -124,10 +124,6 @@ class PDFReport(FPDF):
 
     def add_image_centered(self, img_path, width=150):
         if os.path.exists(img_path):
-            # Check space
-            if self.get_y() + (width * 0.75) > (self.h - 20): # Approx aspect ratio
-                self.add_page()
-            
             self.image(img_path, w=width, x=(self.w - width)/2)
             self.ln(5)
         else:
@@ -173,19 +169,23 @@ def get_graph_explanation(img_name):
     """Retorna uma explicação baseada no nome do arquivo do gráfico."""
     name = img_name.lower()
     if "curva_fluxo" in name:
-        return "Figura 1: Curva de Fluxo. Este gráfico relaciona a Tensão de Cisalhamento (eixo Y) com a Taxa de Cisalhamento (eixo X). A inclinação e o formato da curva indicam o tipo de fluido (Newtoniano, Pseudoplástico, etc.). As linhas representam os modelos reológicos ajustados."
-    elif "viscosidade" in name and "comparativo" not in name:
-        return "Figura 2: Curva de Viscosidade. Mostra como a viscosidade real (eta) varia com a taxa de cisalhamento. Para fluidos pseudoplásticos, espera-se que a viscosidade diminua à medida que a taxa aumenta (Shear Thinning)."
+        return "Figura 1: Curva de Fluxo (Experimental). Dados brutos de Tensão vs Taxa de Cisalhamento."
+    elif "viscosidade" in name and "comparativo" not in name and "modelos" not in name:
+        return "Figura 2: Curva de Viscosidade (Experimental). Comportamento da viscosidade em função da taxa de cisalhamento."
+    elif "modelos_fluxo" in name:
+        return "Figura 3: Ajuste de Modelos - Curva de Fluxo. Comparação entre os dados experimentais e os modelos ajustados."
+    elif "modelos_visc" in name:
+        return "Figura 4: Ajuste de Modelos - Viscosidade. Comparação entre a viscosidade experimental e as previsões dos modelos."
     elif "n_prime" in name:
-        return "Figura 3: Determinação de n'. Gráfico log-log da Tensão vs Taxa de Cisalhamento Aparente. A inclinação da reta (n') é usada na correção de Weissenberg-Rabinowitsch para obter a taxa de cisalhamento real na parede."
+        return "Figura 5: Determinação de n'. Gráfico log-log da Tensão vs Taxa de Cisalhamento Aparente."
     elif "bagley" in name:
-        return "Figura Extra: Correção de Bagley. Utilizada para determinar a perda de carga na entrada do capilar e corrigir a tensão de cisalhamento."
+        return "Figura Extra: Correção de Bagley. Ajuste linear para determinação da perda de carga na entrada."
     elif "comparativo" in name:
-        return "Figura Comparativa: Viscosidade Real vs Aparente. Ilustra a diferença entre os dados brutos (aparente) e os dados corrigidos (real) após as correções de Weissenberg e/ou Bagley."
+        return "Figura Comparativa: Viscosidade Real vs Aparente. Impacto das correções reológicas."
     elif "pressao" in name:
-        return "Figura Extra: Pressão vs Viscosidade. Relação direta entre a pressão aplicada e a viscosidade resultante (útil para controle de processo)."
+        return "Figura Extra: Pressão vs Viscosidade. Relação direta para controle de processo."
     else:
-        return f"Figura: {img_name}"
+        return f"Figura: {os.path.basename(img_name)}"
 
 def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
               metodo_entrada, json_files, csv_path,
@@ -193,7 +193,9 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
               realizar_mooney, L_mooney, D_mooney_list,
               D_unico, L_unico, calib_path,
               df_res, df_sum_modelo, best_model_nome, comportamento,
-              lista_imgs, output_folder, fator_calibracao, stats_details=None, df_raw_data=None, df_outliers=None, output_filename=None):
+              lista_imgs, output_folder, fator_calibracao, 
+              stats_details=None, df_raw_data=None, df_outliers=None, 
+              output_filename=None, amostra_info=None):
     
     if not PDF_AVAILABLE:
         print("AVISO: Biblioteca 'fpdf' não encontrada. Relatório PDF não será gerado.")
@@ -212,6 +214,15 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
         pdf.section_title("1. Parâmetros Gerais e Identificação")
         
         info_text = f"Data da Análise: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        
+        # Identificação da Amostra (Solicitação Usuário)
+        if amostra_info:
+            info_text += f"ID Amostra: {amostra_info.get('id', 'N/A')}\n"
+            info_text += f"Nome Amostra: {amostra_info.get('nome', 'N/A')}\n"
+            obs = amostra_info.get('descricao', '') or amostra_info.get('observacoes', '')
+            if obs:
+                info_text += f"Descrição/Obs: {obs}\n"
+        
         info_text += f"Densidade da Pasta: {rho_g_cm3:.3f} g/cm3\n"
         
         # if isinstance(tempo_extrusao_info, (float, int)):
@@ -316,7 +327,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
             
             # --- SEÇÃO DE ESTATÍSTICA APROFUNDADA (Se disponível) ---
             if stats_details:
-                pdf.add_page()
+                pdf.ln(5)
                 pdf.section_title("1.2. Relatório de Variação Estatística Aprofundada")
                 
                 # Métricas Globais
@@ -337,6 +348,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                 pdf.chapter_body(parecer)
                 
                 # Tabela Detalhada de CVs
+                pdf.ln(5)
                 pdf.section_title("1.4. Tabela de Coeficiente de Variação (CV) por Ponto")
                 df_cv = stats_details.get('df_cv', pd.DataFrame())
                 if not df_cv.empty:
@@ -359,7 +371,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
 
             # --- 1.5. DETALHAMENTO DO TRATAMENTO DE OUTLIERS ---
             if df_outliers is not None and not df_outliers.empty:
-                pdf.add_page()
+                pdf.ln(5)
                 pdf.section_title("1.5. Detalhamento do Tratamento de Outliers e Limpeza de Dados")
                 
                 num_outliers = len(df_outliers)
@@ -400,6 +412,8 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                 pdf.chapter_body("Nenhum outlier foi detectado ou removido nesta análise.")
 
         if df_sum_modelo is not None and not df_sum_modelo.empty:
+            pdf.ln(5)
+            pdf.section_title("2. Ajuste de Modelos e Análise Qualitativa")
             pdf.chapter_body("Resumo dos Ajustes dos Modelos:")
             df_mod = df_sum_modelo.copy()
             df_mod['R2'] = df_mod['R2'].apply(lambda x: f"{x:.4f}")
@@ -427,27 +441,49 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
         pdf.section_title("3. Gráficos Gerados")
         
         imgs_sorted = sorted(lista_imgs)
-        order_keywords = ['fluxo', 'viscosidade', 'n_prime', 'pressao', 'comparativo']
+        # Sequence: Exp Flux (1), Exp Visc (2), Model Flux (3), Model Visc (4), n_prime (5)
+        # Use specific keywords to avoid overlap (e.g., 'fluxo' matching both exp and models)
+        order_keywords = [
+            'curva_fluxo',    # Figura 1
+            'viscosidade',    # Figura 2 (should not contain 'modelos')
+            'modelos_fluxo',  # Figura 3
+            'modelos_visc',   # Figura 4
+            'n_prime',        # Figura 5
+            'pressao',        # Extra
+            'comparativo'     # Extra
+        ]
+        
         ordered_imgs = []
         for kw in order_keywords:
             for img in imgs_sorted:
-                if kw in img and img not in ordered_imgs:
+                img_name_lower = os.path.basename(img).lower()
+                # Special check for experimental viscosity to not match model_visc
+                if kw == 'viscosidade':
+                    if 'viscosidade.png' in img_name_lower and 'modelos' not in img_name_lower:
+                        if img not in ordered_imgs: ordered_imgs.append(img)
+                elif kw in img_name_lower and img not in ordered_imgs:
                     ordered_imgs.append(img)
+                    
         for img in imgs_sorted:
             if img not in ordered_imgs: ordered_imgs.append(img)
             
         for img_name in ordered_imgs:
             if img_name.lower().endswith('.png'):
                 full_path = os.path.join(output_folder, img_name)
-                
-                # Adiciona explicação
                 explanation = get_graph_explanation(img_name)
+                
+                # Proteção: Se a explicação + imagem não couberem, quebra página antes de começar
+                # Assumindo altura da explicação ~15mm e imagem 133mm * 0.75 ratio ~100mm
+                # Total ~115mm. Reduzi para 110 para maior tolerância (2x110 = 220 < 250útil)
+                if pdf.get_y() + 110 > (pdf.h - 20):
+                    pdf.add_page()
+                
                 pdf.set_font('helvetica', 'B', 10)
                 pdf.multi_cell(0, 5, explanation)
                 pdf.ln(2)
                 
-                pdf.add_image_centered(full_path, width=140)
-                pdf.ln(5)
+                pdf.add_image_centered(full_path, width=133)
+                pdf.ln(2) # Reduzi LN de 5 para 2 para ganhar espaço
 
         # --- 4. Dados Detalhados (No final) ---
         pdf.add_page()
