@@ -1,0 +1,253 @@
+\documentclass{beamer}
+
+% --- Configuração do Tema e Pacotes ---
+\usetheme{MU} 
+
+% Ativa a numeração sequencial das figuras (Figura 1, Figura 2, etc.)
+\setbeamertemplate{caption}[numbered]
+
+% Ajuste do rodapé e numeração
+\setbeamertemplate{footline}{%
+	\ifnum\insertframenumber=1
+	% Slide 1: rodapé com data e número
+	\leavevmode\hbox{\begin{beamercolorbox}[wd=\paperwidth,ht=2.5ex,dp=1.125ex,left]{date in head/foot}%
+			\hspace{1em}\insertshortdate\hfill\insertframenumber/\inserttotalframenumber\hspace{1em}
+	\end{beamercolorbox}}
+	\else
+	% Slides 2+: pequeno rodapé visível próximo à margem inferior, sem número
+	\leavevmode\hbox{\begin{beamercolorbox}[wd=\paperwidth,ht=1.2ex,dp=1ex,center]{date in head/foot}%
+			% thin footer bar (keeps visual separation near bottom)
+	\end{beamercolorbox}}
+	\fi
+}
+
+% Número do slide no canto superior direito
+\setbeamertemplate{headline}{%
+	\ifnum\insertframenumber>1
+	% Número do slide apenas no canto superior direito
+	\leavevmode\hbox{\begin{beamercolorbox}[wd=\paperwidth,ht=2.5ex,dp=1.125ex,right]{section in head/foot}%
+			\hfill\insertframenumber/\inserttotalframenumber\hspace{1em}
+	\end{beamercolorbox}}
+	\fi
+}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{graphicx} 
+
+% --- Configuração de Fundo ---
+% Nota: o background global foi removido para evitar que a imagem seja
+% replicada e escalada em todos os slides. A imagem será aplicada apenas
+% na capa (slide 1) abaixo, na sua dimensão original.
+
+% Dados da Apresentação
+\title[\tiny DIW de Cerâmicas Avançadas]{\Large Manufatura Aditiva Livre de Solventes e Ligantes de Cerâmicas Derivadas de Polímeros: Otimização Reológica e Desempenho Estrutural}
+\subtitle{\normalsize Revisão do Artigo: Viswanadha et al., \textit{Additive Manufacturing}, 2025}
+
+\author{Acad. Bruno Kenji Nishitani Egami\\
+	Profº Dr. Douglas A. Simon}
+\institute{Manufatura Aditiva - PPGTEM 2025/02\\
+	IFRS Campus Farroupilha}
+\date{\today}
+
+\begin{document}
+	
+	% --- Capa ---
+	\begin{frame}[plain]
+		% Fundo branco para garantir contraste
+		\setbeamercolor{background canvas}{bg=white}
+		% Logotipo no canto superior esquerdo, ajustado mais abaixo
+		\vspace{1cm}
+		\raisebox{0pt}[0pt][0pt]{\makebox[0pt][l]{\includegraphics[width=3.5cm,keepaspectratio]{background_16_9.png}}}
+		% Texto centralizado ocupando toda a largura
+		\vspace{2cm}
+		\begin{center}
+			{\color{black}\usebeamerfont{title}\inserttitle\par}
+			\vspace{0.5cm}
+			{\color{black}\usebeamerfont{subtitle}\insertsubtitle\par}
+			\vspace{1cm}
+			{\color{black}\usebeamerfont{author} \insertauthor\par}
+			\vspace{0.3cm}
+			{\color{black}\usebeamerfont{institute}\insertinstitute\par}
+			\vspace{0.3cm}
+			{\color{black}\usebeamerfont{date} \insertdate\par}
+		\end{center}
+	\end{frame}
+	
+	% --- Sumário ---
+	\begin{frame}{Roteiro da Apresentação}
+		\tableofcontents
+	\end{frame}
+	
+	% =================================================================
+	% SEÇÃO 1: INTRODUÇÃO E INOVAÇÃO
+	% =================================================================
+	\section{Inovação: A Formulação sem solvente ou ligante}
+	
+	\begin{frame}{O Desafio da Manufatura Aditiva de Cerâmicas}
+		\begin{itemize}
+			\item As Cerâmicas Avançadas como o Carbeto de Silício (SiC) são críticas para aplicações onde a alta resistência e resiliência térmica são fatores importantes, como a indúsatria aeroespaciais.
+			\item O processo \textit{DIW (Direct Ink Writing)} é promissor, mas a formulação das "tintas" depende de:
+			\begin{itemize}
+				\item \textbf{Ligantes (\textit{Binders}):} Exigem \textit{de-binding} térmico, causando retração irregular e rachaduras.
+				\item \textbf{Solventes:} Voláteis, introduzem toxicidade, e sua evaporação induz instabilidades estruturais (empenamento, microfissuras e poros).
+			\end{itemize}
+		\end{itemize}
+	\end{frame}
+	
+	\begin{frame}{Inovação Central do Artigo}
+		% Texto ocupando a parte superior (largura total)
+		\vspace{-2mm}
+		\begin{minipage}[t]{\textwidth}
+			\begin{itemize}
+				\item \textbf{Abordagem Livre de Solventes e Ligantes (\textit{Solvent- and Binder-free})}.
+				\item \textbf{Material Chave:} Utilização do \textbf{policarbosilano SMP-10}.
+				\begin{itemize}
+					\item O SMP-10 atua como o \textbf{precursor cerâmico} e a \textbf{fase líquida} para ligar as nanopartículas de $\beta$-SiC.
+					\item Simplifica o pós-processamento, minimizando defeitos estruturais.
+				\end{itemize}
+			\end{itemize}
+		\end{minipage}
+		
+		% Forçar a figura para a região inferior do slide
+		\vfill
+		\begin{center}
+			\includegraphics[width=1.0\textwidth,keepaspectratio]{esquema_processo.PNG}\\[0.6ex]
+			\captionof{figure}{\footnotesize Esquema do processo DIW livre de ligantes e solventes.}
+		\end{center}
+	\end{frame}
+	
+	% =================================================================
+	% SEÇÃO 2: REOLOGIA E PRINTABILIDADE
+	% =================================================================
+	\section{Reologia e Estabilidade da Tinta}
+	
+	\begin{frame}{Otimização Reológica para impressão de pastas}
+		\begin{columns}
+			\begin{column}{0.5\textwidth}
+				\begin{itemize}
+					\item A pasta ideal deve ter comportamento pseduplástico (\textbf{\textit{shear-thinning})} para extrusão suave.
+					\item Deve ter elasticidade suficiente para \textbf{reter a forma} após a deposição.
+				\end{itemize}
+				\textbf{Critério de Printabilidade (Ponto de Gel):}
+				\begin{itemize}
+					\item O critério crucial é o \textbf{Ponto de Gel} ($G' = G''$) ser \textbf{superior a $1000 \text{ Pa}$}.
+					\item \textbf{Resultado:} A forrmulação com \textbf{60 wt\% SiC} mostrou excelente retenção, superando o limite.
+				\end{itemize}
+				
+			\end{column}
+			\begin{column}{0.5\textwidth}
+				\centering
+				\includegraphics[width=\columnwidth,height=0.70\textheight,keepaspectratio]{curva_reologia.png}
+				\captionof{figure}{\footnotesize Curvas de Módulo de Armazenamento ($G'$) e Módulo de Perda ($G''$) em função do \textit{stress} (Ponto de Gel).}
+			\end{column}
+		\end{columns}
+	\end{frame}
+	
+	\begin{frame}{Limites de Estabilidade Estrutural ($h_{max}$)}
+		\begin{columns}
+			\begin{column}{0.5\textwidth}
+				\begin{itemize}
+					\item O artigo investigou a \textbf{Altura Máxima Imprimível ($h_{max}$)}.
+					\item \textbf{Suporte Lateral ($d_w$):} Maior espaçamento levou a $h_{max}$ reduzida ($\approx 7 \text{ mm}$). O espaçamento reduzido é crucial para estruturas mais altas.
+					\item \textbf{Largura da Camada Base ($l_w$):} Camadas base mais largas aumentaram a $h_{max}$ ($\approx 20 \text{ mm}$).
+				\end{itemize}
+			\end{column}
+			\begin{column}{0.5\textwidth}
+				\centering
+				\includegraphics[width=\columnwidth,height=0.7\textheight,keepaspectratio]{estabilidade_impressao.png}
+				\captionof{figure}{\footnotesize (a)Gráfico da altura máxima ($h_{max}$) versus espaçamento de parede ($d_w$) e (b) efeito da geometria na estabilidade .}
+			\end{column}
+		\end{columns}
+	\end{frame}
+	
+	% =================================================================
+	% SEÇÃO 3: RESULTADOS PÓS-PROCESSAMENTO
+	% =================================================================
+	\section{Desempenho Térmico e Mecânico}
+	
+	\begin{frame}{Transformação de Fase e Retração}
+		\begin{columns}
+			\begin{column}{0.5\textwidth}
+				\begin{itemize}
+					\item
+					\textbf{Cura:} Oxidação do SMP-10 $200^\circ\text{C}$ . \item \textbf{Pós-Processamento:} Sinterizadas a $1500^\circ\text{C}$ e $2300^\circ\text{C}$.
+					\item \textbf{Fases (XRD):} $\beta$-SiC predominante a $1500^\circ\text{C}$. Transformação para $\alpha$-SiC a $2300^\circ\text{C}$.
+					\item \textbf{Retração:} A $2300^\circ\text{C}$, a retração é maior e \textbf{anisotrópica}, com alta retração fora do plano ($\approx 17\%$).
+				\end{itemize}
+			\end{column}
+			\begin{column}{0.5\textwidth}
+				\centering
+				\includegraphics[width=\columnwidth,height=0.7\textheight,keepaspectratio]{xrd_retracao.png}
+				\captionof{figure}{\footnotesize Padrões de Difração de Raios X (XRD) comparando as fases a $1500^\circ\text{C}$ e $2300^\circ\text{C}$.}
+			\end{column}
+		\end{columns}
+	\end{frame}
+	
+	\begin{frame}{Propriedades Mecânicas e Térmicas}
+		\begin{columns}
+			\begin{column}{0.5\textwidth}
+				\begin{itemize}
+					\item \textbf{Resistência Mecânica (Compressão):}
+					\begin{itemize}
+						\item Amostras sinterizadas a $1500^\circ\text{C}$ mostraram maior resistência (média $9.62\ \text{MPa}$) em comparação com $2300^\circ\text{C}$.
+						\item A maior retração a $2300^\circ\text{C}$ explica parte da perda de resistência.
+					\end{itemize}
+					\item \textbf{Isolamento Térmico:} Microestrutura mais porosa a $1500^\circ\text{C}$ melhora o isolamento térmico.
+				\end{itemize}
+			\end{column}
+			\begin{column}{0.5\textwidth}
+				\centering
+				\includegraphics[height=0.70\textheight,keepaspectratio]{resultados_mecanicos_termicos-vertical.png}
+				\captionof{figure}{\footnotesize Comparação da resistência à compressão e do desempenho de isolamento térmico.}
+			\end{column}
+		\end{columns}
+	\end{frame}
+	
+	% =================================================================
+	% SEÇÃO 4: CONCLUSÃO
+	% =================================================================
+	\section{Conclusão}
+	
+	\begin{frame}{Conclusões}
+		\begin{itemize}
+			\item O método \textbf{DIW livre de solventes e ligantes} é uma abordagem conveniente e eficiente para cerâmicas avançadas.
+			\item A \textbf{reologia} é o fator limitante. A printabilidade ideal requer um \textbf{Ponto de Gel $> 1000 \text{ Pa}$}.
+			\item A \textbf{estabilidade estrutural} é altamente dependente da geometria.
+			\item \textbf{Resultado peculiar:} O tratamento térmico a $1500^\circ\text{C}$ forneceu \textbf{melhores propriedades mecânicas e isolamento térmico} do que a $2300^\circ\text{C}$.
+		\end{itemize}
+	\end{frame}
+	
+	\begin{frame}{Relevância e Perspectivas Futuras}
+		\begin{itemize}
+			\item Este trabalho fornece a fundação para equilibrar printabilidade, isolamento térmico e desempenho mecânico.
+			\item O uso do DIW com formulações livres de solventes aprimora o controle sobre a evolução microestrutural.
+		\end{itemize}
+	\end{frame}
+	
+	% =================================================================
+	% SEÇÃO 5: REFERÊNCIAS E FIM
+	% =================================================================
+	\section{Referências}
+	
+	\begin{frame}{Referências}
+		
+		\begin{itemize}
+			\item VISWANADHA, P. et al. Solvent- and binder-free additive manufacturing of polymer-derived ceramics: Rheological optimization and structural performance. \textit{Additive Manufacturing}, v. 84, p. 104278, 2025.
+		\end{itemize}
+		
+	\end{frame}
+	
+	% ÚLTIMO SLIDE: AGRADECIMENTO (apenas o texto)
+	\begin{frame}
+		\vfill
+		\centering
+		\textbf{\Huge Obrigado.}
+		\vfill
+	\end{frame}
+	
+\end{document}

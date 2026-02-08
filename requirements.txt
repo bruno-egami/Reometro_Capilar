@@ -1,0 +1,9 @@
+customtkinter
+matplotlib
+numpy
+pandas
+scipy
+pyserial
+scikit-learn
+fpdf
+Pillow

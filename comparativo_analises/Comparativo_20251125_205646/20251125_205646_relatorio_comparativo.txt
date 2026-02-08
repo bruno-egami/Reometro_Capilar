@@ -1,0 +1,9 @@
+======================================================================
+--- RELATÓRIO COMPARATIVO DE ANÁLISES ---
+Data/Hora: 2025-11-25 20:57:11
+======================================================================
+
+Análises Comparadas:
+- 20251125_144710_20251125_142628: 12 pontos
+- teste-filtro-modelo-json: 26 pontos
+- teste-unificacao: 37 pontos

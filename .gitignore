@@ -2,27 +2,73 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Resultados dos Testes e Análises
-resultados_testes_reometro/
-resultados_analise_reologica/
-resultados_analise_estatistica/
-comparativo_analises/
-correcoes_bagley_mooney/
-curvas-fluxo-viscosidade/
-resultados_processados_interativo/
-resultados_estatisticos/
-dados_reometro_rotacional/
+# Virtual Environments
+venv/
+env/
+ENV/
+.env
+.venv/
 
-# Arquivos Temporários e de Sistema
-.DS_Store
-Thumbs.db
+# IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Project Specific - Data & Outputs
+reometria.db
+*.db
 *.log
-*.tmp
+*.pdf
+*.png
 
-# Backups
-*.backup_corrupted
+# Output Directories (Results)
+resultados_analise_reologica/
+resultados_analise_estatistica/
+resultados_processados_interativo/
+correcoes_bagley_mooney/
+comparative_analises/
+resultados_testes_reometro/
 
-Artigo_Reometro_Capilar_Transdutor/
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# More Output Directories
+resultados_csv/
+resultados_estatisticos/
+curvas-fluxo-viscosidade/
+Relatorios-PDF/
+dados_reometro_rotacional/
+.tmp.drivedownload/
+
+# System
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,111 @@
+import customtkinter as ctk
+import tkinter as tk
+from tkinter import messagebox
+import sys
+import os
+
+# Add project root to path
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())
+
+from database_manager import DatabaseManager
+from reometer_controller import ReometerController
+
+# Import Frames
+from gui.frames.coleta import ColetaFrame
+from gui.frames.historico import HistoricoFrame
+from gui.frames.calibracao import CalibracaoFrame
+from gui.frames.analise import AnaliseFrame
+from gui.frames.correcoes import CorrecoesFrame
+
+# Set appearance mode and default color theme
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
+
+# Increase global font/widget scaling for better readability
+ctk.set_widget_scaling(1.1) 
+ctk.set_window_scaling(1.1)
+
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("Reômetro Capilar Control System")
+        self.geometry("1100x700")
+
+        # Initialize Logic Components
+        self.db = DatabaseManager()
+        self.controller = ReometerController() 
+        
+        # Grid Layout (1x2)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+
+        # --- Sidebar ---
+        self.sidebar_frame = ctk.CTkFrame(self, width=140, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(6, weight=1) # Spacer row
+
+        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="Reômetro\nDual Sensor", font=ctk.CTkFont(size=20, weight="bold"))
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+
+        self.btn_coleta = ctk.CTkButton(self.sidebar_frame, text="Nova Coleta", command=self.show_coleta)
+        self.btn_coleta.grid(row=1, column=0, padx=20, pady=10)
+        
+        self.btn_historico = ctk.CTkButton(self.sidebar_frame, text="Histórico", command=self.show_historico)
+        self.btn_historico.grid(row=2, column=0, padx=20, pady=10)
+        
+        self.btn_calibracao = ctk.CTkButton(self.sidebar_frame, text="Calibração", command=self.show_calibracao)
+        self.btn_calibracao.grid(row=3, column=0, padx=20, pady=10)
+
+        self.btn_analise = ctk.CTkButton(self.sidebar_frame, text="Análise", command=self.show_analise)
+        self.btn_analise.grid(row=4, column=0, padx=20, pady=10)
+        
+        self.btn_correcoes = ctk.CTkButton(self.sidebar_frame, text="Correções", command=self.show_correcoes)
+        self.btn_correcoes.grid(row=5, column=0, padx=20, pady=10)
+        
+        # Bottom Status
+        self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Status: Inicializando...", text_color="gray")
+        self.status_label.grid(row=7, column=0, padx=20, pady=20)
+
+        # --- Main Area ---
+        # Container for frames
+        self.container = ctk.CTkFrame(self)
+        self.container.grid(row=0, column=1, sticky="nsew")
+        self.container.grid_rowconfigure(0, weight=1)
+        self.container.grid_columnconfigure(0, weight=1)
+
+        self.frames = {}
+        for F in (ColetaFrame, HistoricoFrame, CalibracaoFrame, AnaliseFrame, CorrecoesFrame):
+            frame_name = F.__name__
+            frame = F(parent=self.container, controller=self)
+            self.frames[frame_name] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
+
+        self.show_coleta()
+        
+        # Start connection status check loop
+        self.check_connection()
+
+    def show_frame(self, name):
+        frame = self.frames[name]
+        frame.tkraise()
+        
+    def show_coleta(self): self.show_frame("ColetaFrame")
+    def show_historico(self): self.show_frame("HistoricoFrame")
+    def show_calibracao(self): self.show_frame("CalibracaoFrame")
+    def show_analise(self): self.show_frame("AnaliseFrame")
+    def show_correcoes(self): self.show_frame("CorrecoesFrame")
+
+    def check_connection(self):
+        """Periodically updates connection status label."""
+        if self.controller.is_connected:
+            self.status_label.configure(text="Arduino: Conectado", text_color="green")
+        else:
+            self.status_label.configure(text="Arduino: Desconectado", text_color="red")
+        self.after(2000, self.check_connection)
+
+    def on_close(self):
+        if self.controller.is_connected:
+            self.controller.disconnect()
+        self.destroy()

@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import pandas as pd
 import numpy as np
-from gui_utils import adjust_column_widths
+from gui.utils import adjust_column_widths
 
 class DataCleaningWindow(ctk.CTkToplevel):
     def __init__(self, parent, db, amostra_id, on_save_callback=None):
