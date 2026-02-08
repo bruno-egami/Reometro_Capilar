@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import matplotlib.ticker as ticker
 import threading
 import time
 from datetime import datetime
@@ -797,7 +798,7 @@ class RelatorioWindow(ctk.CTkToplevel):
         t3 = self.graph_tabs.add("Ajuste de Modelos")
         
         desc_fluxo = "Explicação: Relaciona a Tensão (τ) vs Taxa (γ̇). O formato da curva define se o fluido é Newtoniano, Pseudoplástico ou Viscoplástico."
-        desc_visc = "Explicação: Mostra a Viscosidade Aparente vs Taxa. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
+        desc_visc = "Explicação: Mostra a Viscosidade (Real ou Aparente) vs Taxa. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
         desc_modelos = f"Explicação: Comparação dos dados experimentais (pontos) com os modelos teóricos (linhas). O melhor ajuste foi o modelo {self.analysis_data.get('best_model')}."
         
         self._plot_figure(t1, self._create_flow_curve(), desc_fluxo)
@@ -833,6 +834,12 @@ class RelatorioWindow(ctk.CTkToplevel):
         ax.set_ylabel("Tensão de Cisalhamento (Pa)")
         ax.set_xscale('log')
         ax.set_yscale('log')
+        ax.set_yscale('log')
+        
+        # Better Ticks
+        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
         ax.grid(True, which="both", alpha=0.3)
         ax.legend()
         return fig
@@ -850,15 +857,30 @@ class RelatorioWindow(ctk.CTkToplevel):
         y = self.analysis_data['eta']
         yerr = self.analysis_data.get('eta_std', None)
         
-        ax.errorbar(x, y, yerr=yerr, fmt='s-', capsize=5, color='orange', label='Viscosidade Média')
+        ax.errorbar(x, y, yerr=yerr, fmt='s-', capsize=5, color='orange', label='Viscosidade Real')
         
-        # Dynamic Title
-        titulo = "Viscosidade Real (Weissenberg)" if self.chk_weissenberg.get() else "Viscosidade Aparente"
-        ax.set_title(titulo)
+        # Dual Plot (Always active if n' != 1)
+        n_prime = self.analysis_data.get('n_prime', 1.0)
+        if n_prime != 1.0:
+            # Calculate Apparent
+            factor = (3*n_prime + 1) / (4*n_prime)
+            x_app = x / factor
+            y_app = self.analysis_data['tau_w'] / x_app
+            ax.loglog(x_app, y_app, 'b^--', markersize=5, label='Viscosidade Aparente', alpha=0.7)
+            ax.set_title(f"Viscosidade: Real (n'={n_prime:.2f}) vs Aparente")
+        else:
+            ax.set_title("Viscosidade Aparente (Fluido Newtoniano)")
+            
         ax.set_xlabel("Taxa de Cisalhamento (1/s)")
         ax.set_ylabel("Viscosidade (Pa.s)")
         ax.set_xscale('log')
         ax.set_yscale('log')
+        ax.set_yscale('log')
+        
+        # Better Ticks
+        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
         ax.grid(True, which="both", ls="-", alpha=0.3)
         ax.legend()
         return fig
@@ -877,7 +899,7 @@ class RelatorioWindow(ctk.CTkToplevel):
         if 'raw_gamma' in self.analysis_data and 'raw_tau' in self.analysis_data:
             ax1.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_tau'], 'o', color='lightgray', markersize=3, alpha=0.4)
             
-        ax1.errorbar(x, y, yerr=yerr, fmt='ko', capsize=3, label='Exp (Médias)', alpha=0.7)
+        ax1.errorbar(x, y, yerr=yerr, fmt='ko-', capsize=3, label='Dados experimentais', alpha=0.7)
         
         # Prepare smooth x for models
         if len(x) > 0:
@@ -905,7 +927,18 @@ class RelatorioWindow(ctk.CTkToplevel):
         if 'raw_gamma' in self.analysis_data and 'raw_eta' in self.analysis_data:
             ax2.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_eta'], 's', color='lightgray', markersize=3, alpha=0.4)
             
-        ax2.errorbar(x, eta, yerr=eta_err, fmt='ks', capsize=3, label='Exp (Médias)', alpha=0.7)
+        # Plot Means with Error Bars
+        ax2.errorbar(x, eta, yerr=eta_err, fmt='ks-', capsize=3, label='Viscosidade Real', alpha=0.7)
+        
+        # Dual Plot (Always active if n' != 1)
+        # REMOVED APPARENT VISCOSITY FROM MODEL PLOT PER USER REQUEST
+        # n_prime = self.analysis_data.get('n_prime', 1.0)
+        # if n_prime != 1.0:
+        #     # Calculate Apparent
+        #     factor = (3*n_prime + 1) / (4*n_prime)
+        #     x_app = x / factor
+        #     y_app = self.analysis_data['tau_w'] / x_app
+        #     ax2.loglog(x_app, y_app, 'b^--', markersize=4, label='Viscosidade Aparente', alpha=0.5)
         
         for name, fit in self.analysis_data['model_fits'].items():
             if fit.get('params') is not None:
@@ -929,21 +962,33 @@ class RelatorioWindow(ctk.CTkToplevel):
                         print(f"Erro ao plotar modelo {name}: {e}")
                     
         # Formatting Plot 1
-        ax1.set_title("Ajuste: Tensão de Cisalhamento")
+        ax1.set_title("Curva de Fluxo")
         ax1.set_xlabel("Taxa (1/s)")
         ax1.set_ylabel("Tensão (Pa)")
         ax1.set_xscale('log')
         ax1.set_yscale('log')
         ax1.legend(fontsize='small')
+        ax1.legend(fontsize='small')
+        
+        # Better Ticks
+        ax1.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
         ax1.grid(True, which="both", alpha=0.3)
         
         # Formatting Plot 2
-        ax2.set_title("Ajuste: Viscosidade Aparente")
+        # Formatting Plot 2
+        ax2.set_title("Viscosidade")
         ax2.set_xlabel("Taxa (1/s)")
         ax2.set_ylabel("Viscosidade (Pa.s)")
         ax2.set_xscale('log')
         ax2.set_yscale('log')
         ax2.legend(fontsize='small')
+        
+        # Better Ticks
+        ax2.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax2.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
         ax2.grid(True, which="both", alpha=0.3)
         
         fig.tight_layout()
@@ -1069,13 +1114,6 @@ class AnaliseFrame(ctk.CTkFrame):
         self.tree.bind("<<TreeviewSelect>>", self.on_select_sample)
         
         # Options
-        self.opt_frame = ctk.CTkFrame(self)
-        self.opt_frame.pack(fill="x", padx=20, pady=5)
-        
-        self.chk_weissenberg = ctk.CTkCheckBox(self.opt_frame, text="Aplicar Correção Weissenberg-Rabinowitsch")
-        self.chk_weissenberg.pack(side="left", padx=10)
-        self.chk_weissenberg.select()  # Default: enabled
-        
         # Export Buttons Frame
         self.export_frame = ctk.CTkFrame(self)
         self.export_frame.pack(fill="x", padx=20, pady=5)
@@ -1229,7 +1267,8 @@ class AnaliseFrame(ctk.CTkFrame):
         if not self.selected_amostra_id:
             return
 
-        result = self._perform_statistical_analysis(self.selected_amostra_id, self.chk_weissenberg.get(), auto=auto, save=not auto)
+        # Force Weissenberg correction
+        result = self._perform_statistical_analysis(self.selected_amostra_id, aplicar_weissenberg=True, auto=auto, save=not auto)
         
         if result['success']:
             self._set_result(result['text'])
@@ -1703,6 +1742,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 self._generate_temp_graphs(temp_dir, timestamp, data_to_use)
                 
                 # Prepare data (Statistical Means + StdDevs)
+                # Use data_to_use (which might be passed arg) instead of self.analysis_data directly
                 df_res = pd.DataFrame({
                     'Taxa Cisalhamento (s-1)': data_to_use['gamma_dot'],
                     'Tensao Cisalhamento (Pa)': data_to_use['tau_w'],
@@ -1711,7 +1751,7 @@ class AnaliseFrame(ctk.CTkFrame):
                     'Desvio Padrao Viscosidade (Pa.s)': data_to_use.get('eta_std', np.zeros_like(data_to_use['eta']))
                 })
                 
-                # Prepare Raw Data (All Active Points)
+                # Prepare Raw Data (All Active Points) - Restored from Block 1
                 df_raw_data = pd.DataFrame({
                     'gamma_dot_w': data_to_use.get('raw_gamma', []),
                     'tau_w': data_to_use.get('raw_tau', []),
@@ -1734,6 +1774,26 @@ class AnaliseFrame(ctk.CTkFrame):
                               os_sys.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
                               os_sys.path.join(temp_dir, f"{timestamp}_modelos.png")]
                 
+                # Prepare Outlier Dataframe for Report - From Block 2
+                df_outliers_report = None
+                try:
+                    # Use selected_amostra_id from controller if matches data
+                    # Or better: data_to_use['amostra']['id']
+                    amostra_id = data_to_use['amostra']['id']
+                    
+                    query_out = """
+                        SELECT gamma_dot_w, tau_w, eta_true, tempo_s, 
+                               NULL as limite_inf, NULL as limite_sup, -- Placeholder if limits not stored per point
+                               ' IQR / Manual' as motivo
+                        FROM pontos_ensaio 
+                        WHERE amostra_id = ? AND (ativo = 0 OR outlier = 1)
+                    """
+                    rows_out = self.db.fetch_all(query_out, (amostra_id,))
+                    if rows_out:
+                        df_outliers_report = pd.DataFrame(rows_out, columns=['gamma_dot_w', 'tau_w', 'eta_true', 'tempo_s', 'Limite Inf', 'Limite Sup', 'motivo'])
+                except Exception as ex_out:
+                    print(f"Erro ao buscar outliers: {ex_out}")
+
                 reologia_report_pdf.gerar_pdf(
                     timestamp_str=timestamp,
                     rho_g_cm3=data_to_use['amostra']['densidade_g_cm3'],
@@ -1759,7 +1819,8 @@ class AnaliseFrame(ctk.CTkFrame):
                     fator_calibracao=1.0,
                     output_filename=filepath,
                     df_raw_data=df_raw_data,
-                    stats_details=data_to_use.get('stats_details')
+                    stats_details=data_to_use.get('stats_details'),
+                    df_outliers=df_outliers_report
                 )
                 tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
                 
@@ -1771,96 +1832,11 @@ class AnaliseFrame(ctk.CTkFrame):
             tb = traceback.format_exc()
             print(tb)
             tk.messagebox.showerror("Erro ao Gerar PDF", f"Falha na geração do relatório:\n{e}\n\nDetalhes no console.")
-        filepath = filedialog.asksaveasfilename(
-            title="Salvar Relatório PDF",
-            defaultextension=".pdf",
-            initialfile=suggested_name,
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
-        )
-        if not filepath:
-            return
-        
-        # Get folder from filepath
-        folder = os_sys.path.dirname(filepath)
-        if not folder:
-            folder = "."
-        
-        # Ensure folder exists
-        if not os_sys.path.exists(folder):
-            try:
-                os_sys.makedirs(folder, exist_ok=True)
-            except Exception as e:
-                tk.messagebox.showerror("Erro", f"Não foi possível criar a pasta:\n{folder}\n\nErro: {e}")
-                return
-        
-        try:
-            # Generate graphs in TEMP folder to avoid cluttering user directory
-            import tempfile
-            import shutil
-            
-            temp_dir = tempfile.mkdtemp()
-            try:
-                self._generate_temp_graphs(temp_dir, timestamp)
-                
-                # Prepare data
-                df_res = pd.DataFrame({
-                    'Taxa Cisalhamento (s-1)': self.analysis_data['gamma_dot'],
-                    'Tensao Cisalhamento (Pa)': self.analysis_data['tau_w'],
-                    'Viscosidade (Pa.s)': self.analysis_data['eta']
-                })
-                
-                # Prepare model summary
-                summary_list = []
-                for model_name, fit_data in self.analysis_data['model_fits'].items():
-                    if fit_data.get('params') is not None:
-                        param_names = fit_data['param_names']
-                        params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, fit_data['params'])])
-                        summary_list.append({'Modelo': model_name, 'R2': fit_data['r2'], 'Parametros': params_str})
-                df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
-                
-                lista_imgs = [os_sys.path.join(temp_dir, f"{timestamp}_curva_fluxo.png"),
-                              os_sys.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
-                              os_sys.path.join(temp_dir, f"{timestamp}_modelos.png")]
-                
-                reologia_report_pdf.gerar_pdf(
-                    timestamp_str=timestamp,
-                    rho_g_cm3=amostra['densidade_g_cm3'],
-                    tempo_extrusao_info="Variavel",
-                    metodo_entrada="GUI",
-                    json_files=[],
-                    csv_path="",
-                    realizar_bagley=False,
-                    D_bagley=amostra['d_capilar_mm'],
-                    L_bagley_list=[amostra['l_capilar_mm']],
-                    realizar_mooney=False,
-                    L_mooney=amostra['l_capilar_mm'],
-                    D_mooney_list=[amostra['d_capilar_mm']],
-                    D_unico=amostra['d_capilar_mm'],
-                    L_unico=amostra['l_capilar_mm'],
-                    calib_path="",
-                    df_res=df_res,
-                    df_sum_modelo=df_sum_modelo,
-                    best_model_nome=self.analysis_data['best_model'],
-                    comportamento=self.analysis_data['comportamento'],
-                    lista_imgs=lista_imgs,
-                    output_folder=folder,
-                    fator_calibracao=1.0,
-                    output_filename=filepath
-                )
-                tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
-                
-            finally:
-                # Cleanup temp dir
-                shutil.rmtree(temp_dir)
-                
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            tk.messagebox.showerror("Erro", f"Falha ao gerar PDF:\n{e}\n\nDetalhes:\n{tb}")
     
     def _generate_temp_graphs(self, folder, timestamp, analysis_data=None):
         """Generate temporary graphs for PDF report."""
         import matplotlib.pyplot as plt
+        import matplotlib.ticker as ticker
         from os import path as os_path
         
         data = analysis_data if analysis_data else self.analysis_data
@@ -1872,44 +1848,131 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 1. Flow Curve
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.loglog(gamma, tau, 'o', markersize=8, label='Dados')
+        
+        # Raw Data Shadow
+        if 'raw_gamma' in data and 'raw_tau' in data:
+            ax.loglog(data['raw_gamma'], data['raw_tau'], 'o', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
+            
+        ax.loglog(gamma, tau, 'ko-', markersize=6, label='Dados experimentais')
+        
         if best_model and data['model_fits'].get(best_model, {}).get('params') is not None:
             gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
             model_func = models.MODELS[best_model][0]
             params = data['model_fits'][best_model]['params']
             tau_model = model_func(gamma_smooth, *params)
-            ax.loglog(gamma_smooth, tau_model, '-', linewidth=2, label=f'{best_model}')
-        ax.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
-        ax.set_ylabel(r'$\tau_w$ (Pa)')
+            ax.loglog(gamma_smooth, tau_model, 'r-', linewidth=2, label=f'Modelo: {best_model}')
+            
+        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)')
+        ax.set_ylabel(r'Tensão de Cisalhamento $\tau_w$ (Pa)')
+        
+        # Better Ticks
+        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
         ax.legend()
         ax.grid(True, which='both', alpha=0.3)
         fig.savefig(os_path.join(folder, f"{timestamp}_curva_fluxo.png"), dpi=150, bbox_inches='tight')
         plt.close(fig)
         
-        # 2. Viscosity
+        # 2. Viscosity (Dual Axis or Double Series)
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.loglog(gamma, eta, 's', markersize=8, color='green')
-        ax.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
-        ax.set_ylabel(r'$\eta$ (Pa.s)')
+        
+        # Raw Data Shadow
+        if 'raw_gamma' in data and 'raw_eta' in data:
+            ax.loglog(data['raw_gamma'], data['raw_eta'], 's', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
+
+        # Plot Apparent vs Real
+        n_prime = data.get('n_prime', 1.0)
+        is_weissenberg = n_prime != 1.0 
+        
+        if is_weissenberg:
+             factor = (3*n_prime + 1) / (4*n_prime)
+             gamma_app = gamma / factor
+             eta_app = tau / gamma_app
+             ax.loglog(gamma_app, eta_app, 'b^--', markersize=6, label='Viscosidade Aparente' )
+             ax.loglog(gamma, eta, 'rs-', markersize=6, label=f'Viscosidade Real (n\'={n_prime:.2f})')
+        else:
+             ax.loglog(gamma, eta, 's-', markersize=6, color='orange', label='Viscosidade Aparente')
+
+        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)')
+        ax.set_ylabel(r'Viscosidade $\eta$ (Pa.s)')
+        
+        # Better Ticks
+        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
+        ax.legend()
         ax.grid(True, which='both', alpha=0.3)
         fig.savefig(os_path.join(folder, f"{timestamp}_viscosidade.png"), dpi=150, bbox_inches='tight')
         plt.close(fig)
         
-        # 3. All Models
-        fig, ax = plt.subplots(figsize=(10, 7))
-        ax.loglog(gamma, tau, 'ko', markersize=8, label='Dados')
+        # 3. Model Fitting Comparison (Canvas style)
+        fig = plt.figure(figsize=(12, 5))
+        
+        # Subplot 1: Stress
+        ax1 = fig.add_subplot(121)
+        if 'raw_gamma' in data and 'raw_tau' in data:
+            ax1.loglog(data['raw_gamma'], data['raw_tau'], 'o', color='lightgray', markersize=3, alpha=0.4)
+        ax1.errorbar(gamma, tau, yerr=data.get('tau_w_std'), fmt='ko-', capsize=3, label='Dados experimentais', alpha=0.7)
+        
         gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-        for i, (model_name, fit_data) in enumerate(data['model_fits'].items()):
+        colors_list = ['r', 'g', 'b', 'c', 'm']
+        
+        # Plot all models on Stress Graph
+        i = 0
+        for model_name, fit_data in data['model_fits'].items():
             if fit_data.get('params') is not None:
                 model_func = models.MODELS[model_name][0]
                 tau_model = model_func(gamma_smooth, *fit_data['params'])
-                ax.loglog(gamma_smooth, tau_model, '-', linewidth=2, color=colors[i % len(colors)],
+                ax1.loglog(gamma_smooth, tau_model, '-', linewidth=1.5, color=colors_list[i % 5],
                          label=f'{model_name} (R²={fit_data["r2"]:.4f})')
-        ax.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
-        ax.set_ylabel(r'$\tau_w$ (Pa)')
-        ax.legend(loc='best')
-        ax.grid(True, which='both', alpha=0.3)
+                i += 1
+        ax1.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
+        ax1.set_ylabel(r'$\tau_w$ (Pa)')
+        ax1.set_title('Curva de Fluxo')
+        ax1.legend(fontsize='small')
+        
+        # Better Ticks
+        ax1.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
+        ax1.grid(True, which='both', alpha=0.3)
+
+        # Subplot 2: Viscosity
+        ax2 = fig.add_subplot(122)
+        if 'raw_gamma' in data and 'raw_eta' in data:
+            ax2.loglog(data['raw_gamma'], data['raw_eta'], 's', color='lightgray', markersize=3, alpha=0.4)
+            
+        ax2.errorbar(gamma, eta, yerr=data.get('eta_std'), fmt='ks-', capsize=3, label='Viscosidade Real', alpha=0.7)
+        
+        # Dual Plot if Weissenberg - REMOVED APPARENT SERIES FROM MODEL PLOT
+        # n_prime = data.get('n_prime', 1.0)
+        # if n_prime != 1.0:
+        #    factor = (3*n_prime + 1) / (4*n_prime)
+        #    gamma_app = gamma / factor
+        #    eta_app = tau / gamma_app
+        #    ax2.loglog(gamma_app, eta_app, 'b^--', markersize=4, label='Viscosidade Aparente', alpha=0.5)
+        
+        # Plot all models on Viscosity Graph
+        i = 0
+        for model_name, fit_data in data['model_fits'].items():
+            if fit_data.get('params') is not None:
+                model_func = models.MODELS[model_name][0]
+                tau_model = model_func(gamma_smooth, *fit_data['params'])
+                eta_model = tau_model / gamma_smooth
+                ax2.loglog(gamma_smooth, eta_model, '-', linewidth=1.5, color=colors_list[i % 5], label=model_name)
+                i += 1
+                
+        ax2.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
+        ax2.set_ylabel(r'$\eta$ (Pa.s)')
+        ax2.set_title('Viscosidade')
+        ax2.grid(True, which='both', alpha=0.3)
+        
+        # Better Ticks
+        ax2.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax2.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
+        
+        plt.tight_layout()
         fig.savefig(os_path.join(folder, f"{timestamp}_modelos.png"), dpi=150, bbox_inches='tight')
         plt.close(fig)
 

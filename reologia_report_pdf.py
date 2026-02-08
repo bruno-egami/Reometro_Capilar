@@ -348,50 +348,54 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                         'gamma_dot_w_mean': 'Taxa Media (s-1)',
                         'cv_gamma': 'CV Taxa (%)',
                         'cv_eta': 'CV Visc (%)',
-                        'tempo_mean': 'Tempo Medio (s)',
-                        'massa_mean': 'Massa Media (g)'
+                        'num_points': 'N'
                     }
                     df_cv_print.rename(columns=cols_map_cv, inplace=True)
-                    
-                    # Adiciona coluna Item
-                    df_cv_print.insert(0, 'Item', range(1, len(df_cv_print) + 1))
-                    
-                    # Seleciona e ordena colunas
-                    cols_order = ['Item', 'Tensao Media (Pa)', 'CV Tensao (%)', 'Taxa Media (s-1)', 'CV Taxa (%)', 'CV Visc (%)', 'Tempo Medio (s)', 'Massa Media (g)']
-                    cols_final_cv = [c for c in cols_order if c in df_cv_print.columns]
-                    
+                    cols_final_cv = [c for c in cols_map_cv.values() if c in df_cv_print.columns]
                     for c in cols_final_cv:
-                        if c != 'Item':
                             df_cv_print[c] = df_cv_print[c].apply(lambda x: f"{x:.4g}" if isinstance(x, (float, int)) else x)
                         
                     pdf.add_table(df_cv_print[cols_final_cv])
 
-            # --- 1.5 Pontos Descartados (Outliers) ---
-            pdf.section_title("1.5. Pontos Descartados (Outliers)")
+            # --- 1.5. DETALHAMENTO DO TRATAMENTO DE OUTLIERS ---
             if df_outliers is not None and not df_outliers.empty:
-                pdf.chapter_body(f"Total de pontos removidos: {len(df_outliers)}")
+                pdf.add_page()
+                pdf.section_title("1.5. Detalhamento do Tratamento de Outliers e Limpeza de Dados")
+                
+                num_outliers = len(df_outliers)
+                outlier_text = (
+                    f"Total de pontos removidos da análise: {num_outliers}\n\n"
+                    "METODOLOGIA DE REMOÇÃO:\n"
+                    "Os pontos listados abaixo foram excluídos automaticamente pelo algoritmo IQR (Interquartile Range) ou manualmente pelo operador. "
+                    "O método IQR identifica como outliers os pontos que se afastam mais de 1.5 vezes o intervalo interquartil da mediana do grupo, "
+                    "garantindo que a análise estatística (seção 1.1) seja realizada apenas com dados representativos e estáveis.\n"
+                )
+                pdf.chapter_body(outlier_text)
+                
+                pdf.chapter_body("Tabela de Pontos Excluídos:")
                 
                 df_out_print = df_outliers.copy()
                 # Seleciona colunas relevantes
-                cols_out = ['gamma_dot_w', 'tau_w', 'eta_true', 'tempo_s', 'Limite Inf', 'Limite Sup']
+                cols_out = ['gamma_dot_w', 'tau_w', 'eta_true', 'tempo_s', 'motivo']
                 cols_out_map = {
                     'gamma_dot_w': 'Taxa (s-1)',
                     'tau_w': 'Tensao (Pa)',
                     'eta_true': 'Visc (Pa.s)',
                     'tempo_s': 'Tempo (s)',
-                    'Limite Inf': 'Lim Inf (Pa)',
-                    'Limite Sup': 'Lim Sup (Pa)'
+                    'motivo': 'Motivo'
                 }
                 
-                # Filtra colunas existentes
-                cols_to_use = [c for c in cols_out if c in df_out_print.columns]
-                df_out_print = df_out_print[cols_to_use].rename(columns=cols_out_map)
+                # Check available cols
+                available_cols = [c for c in cols_out if c in df_out_print.columns]
+                df_out_print = df_out_print[available_cols].rename(columns=cols_out_map)
                 
-                # Formata
+                # Format numbers
                 for c in df_out_print.columns:
-                    df_out_print[c] = df_out_print[c].apply(lambda x: f"{x:.4g}" if isinstance(x, (float, int)) else x)
-                    
+                     if c != 'Motivo':
+                          df_out_print[c] = df_out_print[c].apply(lambda x: f"{x:.4g}" if isinstance(x, (float, int)) else x)
+                          
                 pdf.add_table(df_out_print)
+            
             else:
                 pdf.chapter_body("Nenhum outlier foi detectado ou removido nesta análise.")
 
