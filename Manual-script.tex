@@ -253,131 +253,37 @@ $\eta_p$ & Viscosidade plástica (\si{Pa.s}) \\
 
 \section*{3. Fluxo de Trabalho e Arquitetura do Sistema}
 
-O sistema de análise reológica foi reestruturado em módulos independentes para garantir maior robustez, rastreabilidade e facilidade de manutenção. Cada script desempenha uma função específica no ciclo de vida dos dados, desde a coleta até a análise comparativa.
+O sistema de análise reológica foi reestruturado na versão 4.1 para uma arquitetura modular baseada em pacotes, garantindo maior robustez e manutenibilidade. A operação principal agora é centrada na Interface Gráfica (GUI), enquanto os scripts de linha de comando originais foram preservados como opções de legado ou para uso "headless".
 
 \noindent
-\href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo Atualizado}}
+\href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo}}
 
-\subsection*{3.0 Launcher (Script 0: Launcher.py)}
-Interface de menu para facilitar a execução dos scripts.
-\begin{itemize}
-  \item \textbf{Função:} Apresenta um menu interativo numerado com todos os scripts disponíveis no sistema.
-  \item \textbf{Operação:} O usuário seleciona o número correspondente ao script desejado e o sistema o executa automaticamente.
-  \item \textbf{Benefício:} Simplifica o workflow eliminando a necessidade de executar cada script manualmente via linha de comando.
-\end{itemize}
-
-\subsection*{3.0.1 Interface Gráfica (gui\_main.py) -- NOVO v4.0}
-A partir da versão 4.0, o sistema oferece uma \textbf{interface gráfica moderna} desenvolvida com \textit{CustomTkinter}, que integra todas as funcionalidades em uma única aplicação.
+\subsection*{3.0 Interface Gráfica (gui\_main.py) -- V4.1}
+A versão atual do sistema opera através de uma interface moderna desenvolvida com \textit{CustomTkinter}, organizada no pacote \texttt{gui/}. Este é o ponto de entrada padrão:
 
 \begin{itemize}
-  \item \textbf{Aba Coleta:} Conexão com Arduino, visualização de pressão em tempo real, coleta de dados com validação automática e salvamento em banco de dados SQLite.
-  
-  \item \textbf{Aba Histórico:} Visualização de amostras e ensaios armazenados no banco local.
-  
-  \item \textbf{Aba Calibração:} Wizard simplificado de calibração. O sensor \textit{Pasta} utiliza calibração de fábrica ($P = 2{,}5V - 1{,}25$), enquanto o sensor \textit{Linha} é calibrado usando o sensor Pasta como referência.
-  
-  \item \textbf{Aba Análise:} Ajuste automático de 5 modelos reológicos (Newtoniano, Lei da Potência, Bingham, Herschel-Bulkley, Casson), correção Weissenberg-Rabinowitsch, cálculo de $R^2$, exportação de gráficos PNG e relatórios PDF.
-  
-  \item \textbf{Aba Correções:} Interface para correções avançadas de Bagley e Mooney com seleção múltipla de amostras.
+  \item \textbf{Módulo Central:} O arquivo \texttt{gui\_main.py} atua como lançador, inicializando a aplicação definida em \texttt{gui/app.py}.
+  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções), facilitando a expansão do sistema.
+  \item \textbf{Abstração de Hardware:} A comunicação com o Arduino é gerenciada pela classe \texttt{ReometerController} (\texttt{reometer\_controller.py}), desacoplada da interface.
+  \item \textbf{Persistência:} Todos os dados são armazenados localmente em um banco de dados SQLite (\texttt{reometria.db}), gerenciado por \texttt{database\_manager.py}, eliminando a dependência estrita de arquivos JSON para operação diária.
 \end{itemize}
 
 \textbf{Execução:} \texttt{python gui\_main.py}
 
-\textbf{Dependências adicionais:} \texttt{customtkinter}, \texttt{fpdf2}, \texttt{pytest}
+\subsection*{3.1 Scripts Legados (CLI)}
+Os scripts originais de linha de comando, numerados de 1 a 5, foram movidos para o diretório \texttt{legacy/}. Eles mantêm a lógica funcional original e servem como referência ou \textit{backend} para operações específicas.
 
-\subsection*{3.1 Coleta de Dados (Script 1: Controle\_Reometro.py)}
-Responsável pela interface com o hardware (Arduino/Transdutores).
-\begin{itemize}
-  \item \textbf{Função:} Leitura em tempo real dos sensores de pressão (Linha e Pasta).
-  \item \textbf{Validação:} Implementa verificação automática de estabilidade e permite ao usuário rejeitar pontos espúrios durante o ensaio.
-  \item \textbf{Saída:} Gera um arquivo JSON bruto contendo os dados experimentais e metadados do ensaio.
-\end{itemize}
+\subsubsection*{3.1.1 Coleta e Controle (Script 1)}
+Responsável pela interface direta com transdutores em modo texto. Gera arquivos JSON compatíveis com o novo sistema.
 
-\subsection*{3.2 Editor de Dados (Script 1a: Edit-Json-coleta.py)}
-Ferramenta para correção manual de erros nos arquivos JSON de coleta.
-\begin{itemize}
-  \item \textbf{Função:} Permite editar valores específicos nos JSONs brutos (pressão, massa, tempo, etc.) quando erros de digitação ou leitura são detectados pós-coleta.
-  \item \textbf{Interface:} Apresenta os dados de forma estruturada e solicita confirmação antes de salvar alterações.
-  \item \textbf{Segurança:} Valida os tipos de dados para evitar corrupção dos arquivos.
-\end{itemize}
+\subsubsection*{3.1.2 Análise Reológica (Script 2)}
+Realiza o processamento matemático "bruto" dos arquivos JSON. As equações e modelos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson) permanecem os mesmos utilizados pela GUI (agora encapsulados em \texttt{modelos\_reologicos.py} e \texttt{reologia\_fitting.py}).
 
-\subsection*{3.3 Pré-Filtro de Dados (Script 1b: Pre-analise-filtro.py)}
-Análise preliminar e identificação visual de outliers.
-\begin{itemize}
-  \item \textbf{Função:} Gera gráficos preliminares dos dados brutos (pressão vs. massa, tempo vs. vazão) para identificação visual de pontos anômalos.
-  \item \textbf{Interação:} Permite ao usuário selecionar e remover pontos problemáticos antes da análise reológica completa.
-  \item \textbf{Aplicação:} Útil quando ensaios apresentam instabilidades (bolhas de ar, entupimentos momentâneos).
-\end{itemize}
+\subsubsection*{3.1.3 Comparativo e Outros}
+Os scripts de tratamento estatístico e comparativo analítico também foram preservados em \texttt{legacy/} para garantir reprodutibilidade de análises antigas.
 
-\subsection*{3.4 Análise Reológica (Script 2: Analise\_reologica.py)}
-O núcleo matemático do sistema. Processa os dados brutos e aplica as correções físicas.
-\begin{itemize}
-  \item \textbf{Entrada:} Arquivo JSON gerado pelo Script 1, 1a ou 1b.
-  \item \textbf{Processamento:}
-  \begin{enumerate}
-      \item Conversão de unidades para o SI;
-      \item Cálculo de tensões e taxas aparentes;
-      \item Aplicação das correções de Bagley e Mooney (se dados disponíveis);
-      \item Correção de Weissenberg-Rabinowitsch;
-      \item Ajuste dos modelos reológicos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson).
-  \end{enumerate}
-  \item \textbf{Saída:} Arquivos CSV com os dados processados e JSON com os parâmetros dos modelos ajustados. Geração de gráficos detalhados do ensaio.
-\end{itemize}
-
-\subsection*{3.5 Tratamento Estatístico (Script 2b: Tratamento\_Estatistico.py)}
-Módulo de confiabilidade (detalhado na Seção 10).
-\begin{itemize}
-  \item \textbf{Função:} Analisa a dispersão dos dados experimentais quando há repetições.
-  \item \textbf{Método:} Agrupa dados por pressão nominal, remove outliers estatísticos ($> 2\sigma$) e calcula o Coeficiente de Variação (CV).
-  \item \textbf{Saída:} Relatório de qualidade dos dados, indicando a precisão do ensaio.
-\end{itemize}
-
-\subsection*{3.6 Filtro por Resíduos (Script 2c: Filtro\_Residuos\_Modelo.py)}
-Refinamento baseado no ajuste de modelo.
-\begin{itemize}
-  \item \textbf{Função:} Analisa os resíduos (diferenças entre dados experimentais e modelo ajustado) para identificar pontos com desvio excessivo.
-  \item \textbf{Método:} Remove automaticamente pontos cujos resíduos excedem um limite configurável.
-  \item \textbf{Recurso:} Inclui seleção manual de arquivo JSON quando a detecção automática falha (múltiplos JSONs na pasta).
-\end{itemize}
-
-\subsection*{3.7 Visualização (Script 3: Visualizar\_resultados.py)}
-Geração de gráficos detalhados de um único ensaio.
-\begin{itemize}
-  \item \textbf{Função:} Cria visualizações completas: curvas de fluxo ($\tau_w$ vs $\dot{\gamma}_w$), viscosidade ($\eta$ vs $\dot{\gamma}_w$), pressão vs viscosidade, e análise de resíduos.
-  \item \textbf{Modelo:} Sobrepõe as curvas teóricas do modelo ajustado aos dados experimentais.
-  \item \textbf{Saída:} Gráficos salvos em alta resolução (PNG) na pasta de resultados.
-\end{itemize}
-
-\subsection*{3.8 Análise Comparativa (Script 4: Comparativo-Analises.py)}
-Comparação entre múltiplos ensaios (detalhado na Seção 11).
-\begin{itemize}
-  \item \textbf{Função:} Permite sobrepor curvas de diferentes ensaios para comparação direta.
-  \item \textbf{Análise:} Calcula o erro relativo (MAPE) entre uma amostra de referência e outras amostras.
-  \item \textbf{Saída:} Gráficos comparativos e relatório de discrepâncias.
-\end{itemize}
-
-\subsection*{3.9 Processador Rotacional (Script 5: Processador\_Rotacional\_Completo.py)}
-Integração com reômetros comerciais.
-\begin{itemize}
-  \item \textbf{Função:} Processa dados exportados de reômetros rotacionais comerciais (ex: Anton Paar MCR 102).
-  \item \textbf{Conversão:} Converte os dados para o formato compatível com os scripts de análise do sistema.
-  \item \textbf{Aplicação:} Permite comparação direta entre o reômetro capilar DIY e equipamentos comerciais de referência.
-\end{itemize}
-
-\subsection*{3.10 Testes Unitários (test\_calculos.py) -- NOVO v4.0}
-Suíte de testes automatizados para validação dos cálculos reológicos.
-\begin{itemize}
-  \item \textbf{Framework:} pytest (21 testes automatizados)
-  \item \textbf{Cobertura:}
-  \begin{enumerate}
-      \item Modelos reológicos (7 testes): Validação das 5 equações com dados sintéticos.
-      \item Cálculos fundamentais (3 testes): $Q$, $\dot{\gamma}_{aw}$, $\tau_w$.
-      \item Weissenberg-Rabinowitsch (3 testes): Fator de correção para diferentes $n'$.
-      \item Ajuste de modelos (4 testes): Recuperação de parâmetros e seleção de melhor modelo.
-      \item Inferência de comportamento (4 testes): Pseudoplástico, Dilatante, Viscoplástico, Newtoniano.
-  \end{enumerate}
-  \item \textbf{Execução:} \texttt{python -m pytest test\_calculos.py -v}
-\end{itemize}
+\subsection*{3.2 Testes Automatizados}
+A robustez matemática é garantida por uma suíte de testes unitários (\texttt{test\_calculos.py}) que valida as equações de correções e ajustes de modelos contra resultados conhecidos.
 
 % --- Referências Bibliográficas (Manual) ---
 \begin{thebibliography}{9}
