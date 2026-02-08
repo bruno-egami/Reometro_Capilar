@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import os
+from typing import Optional, List, Dict, Any, Tuple
 
 class DatabaseManager:
     def __init__(self, db_name="reometria.db"):
@@ -22,7 +23,7 @@ class DatabaseManager:
         if self.conn:
             self.conn.close()
 
-    def init_db(self):
+    def init_db(self) -> None:
         """Initialize the database with the required tables."""
         self.connect()
         cursor = self.conn.cursor()
@@ -92,7 +93,7 @@ class DatabaseManager:
         # Migration for existing DB
         self._migrate_db()
 
-    def _migrate_db(self):
+    def _migrate_db(self) -> None:
         """Adds missing columns to existing tables."""
         self.connect()
         cursor = self.conn.cursor()
@@ -112,7 +113,7 @@ class DatabaseManager:
 
     # --- Analises ---
 
-    def add_analise(self, amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json):
+    def add_analise(self, amostra_id: int, modelo_melhor: str, r2_melhor: float, n_prime: float, comportamento: str, parametros_json: str) -> Optional[int]:
         """Saves analysis results."""
         self.connect()
         cursor = self.conn.cursor()
@@ -129,7 +130,7 @@ class DatabaseManager:
         finally:
             self.close()
 
-    def get_last_analise(self, amostra_id):
+    def get_last_analise(self, amostra_id: int) -> Optional[sqlite3.Row]:
         """Get the most recent analysis for a sample."""
         self.connect()
         cursor = self.conn.cursor()
@@ -143,7 +144,7 @@ class DatabaseManager:
         self.close()
         return row
 
-    def delete_analise(self, amostra_id):
+    def delete_analise(self, amostra_id: int) -> bool:
         """Deletes the most recent analysis for a sample."""
         self.connect()
         cursor = self.conn.cursor()
@@ -161,7 +162,7 @@ class DatabaseManager:
         finally:
             self.close()
 
-    def delete_all_analises(self, amostra_id):
+    def delete_all_analises(self, amostra_id: int) -> bool:
         """Deletes ALL analyses for a specifically sample."""
         self.connect()
         cursor = self.conn.cursor()
@@ -177,7 +178,7 @@ class DatabaseManager:
 
     # --- Amostras ---
 
-    def add_amostra(self, nome, descricao, d_capilar, l_capilar, densidade):
+    def add_amostra(self, nome: str, descricao: str, d_capilar: float, l_capilar: float, densidade: float) -> Optional[int]:
         """Adds a new sample to the database."""
         self.connect()
         cursor = self.conn.cursor()
@@ -194,7 +195,7 @@ class DatabaseManager:
         finally:
             self.close()
 
-    def get_amostra_by_name(self, nome):
+    def get_amostra_by_name(self, nome: str) -> Optional[Dict[str, Any]]:
         self.connect()
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM amostras WHERE nome = ?", (nome,))
@@ -202,7 +203,7 @@ class DatabaseManager:
         self.close()
         return dict(row) if row else None
 
-    def list_amostras(self):
+    def list_amostras(self) -> List[Dict[str, Any]]:
         """Returns a list of all samples."""
         self.connect()
         cursor = self.conn.cursor()
@@ -211,7 +212,7 @@ class DatabaseManager:
         self.close()
         return [dict(row) for row in rows]
 
-    def delete_amostra(self, amostra_id):
+    def delete_amostra(self, amostra_id: int) -> bool:
         """Deletes a sample and all its associated tests and analyses."""
         self.connect()
         cursor = self.conn.cursor()
@@ -232,7 +233,9 @@ class DatabaseManager:
 
     # --- Calibracoes ---
 
-    def add_calibracao(self, slope_l, intercept_l, slope_p, intercept_p):
+    # --- Calibracoes ---
+
+    def add_calibracao(self, slope_l: float, intercept_l: float, slope_p: float, intercept_p: float) -> int:
         """Adds a new calibration and sets it as active (logic to handle 'active' can be refined)."""
         self.connect()
         cursor = self.conn.cursor()
@@ -249,7 +252,7 @@ class DatabaseManager:
         self.close()
         return calib_id
 
-    def get_latest_calibracao(self):
+    def get_latest_calibracao(self) -> Optional[Dict[str, Any]]:
         """Returns the most recent calibration."""
         self.connect()
         cursor = self.conn.cursor()
@@ -260,7 +263,7 @@ class DatabaseManager:
 
     # --- Ensaios ---
 
-    def add_ensaio(self, amostra_id, ponto_n, p_linha, p_pasta, massa, duracao, v_linha, v_pasta):
+    def add_ensaio(self, amostra_id: int, ponto_n: int, p_linha: float, p_pasta: float, massa: float, duracao: float, v_linha: float, v_pasta: float) -> int:
         """Adds a test point (ensaio) to a sample."""
         self.connect()
         cursor = self.conn.cursor()
@@ -275,7 +278,7 @@ class DatabaseManager:
         finally:
             self.close()
 
-    def update_ensaio_status(self, ensaio_id, ativo):
+    def update_ensaio_status(self, ensaio_id: int, ativo: bool) -> bool:
         """Enable or disable a specific test point."""
         self.connect()
         cursor = self.conn.cursor()
@@ -289,7 +292,7 @@ class DatabaseManager:
         finally:
             self.close()
 
-    def get_ensaios_by_amostra(self, amostra_id, apenas_ativos=False):
+    def get_ensaios_by_amostra(self, amostra_id: int, apenas_ativos: bool = False) -> pd.DataFrame:
         """Returns all test points for a given sample as a DataFrame."""
         self.connect()
         query = "SELECT * FROM ensaios WHERE amostra_id = ?"
@@ -303,12 +306,12 @@ class DatabaseManager:
 
     # --- Import Legacy JSON ---
     
-    def import_json_legado(self, json_path):
+    def import_json_legado(self, json_path: str) -> Tuple[bool, str, Optional[int]]:
         """
         Importa um arquivo JSON legado (do sistema de scripts) para o banco SQLite.
         
         Parâmetros:
-            json_path : str - Caminho completo para o arquivo JSON
+            json_path (str): Caminho completo para o arquivo JSON
             
         Retorna:
             tuple: (sucesso: bool, mensagem: str, amostra_id: int ou None)
@@ -383,15 +386,15 @@ class DatabaseManager:
         
         return True, f"Importado: {nome} ({imported_count} pontos)", amostra_id
     
-    def import_folder_json(self, folder_path):
+    def import_folder_json(self, folder_path: str) -> List[Tuple[str, bool, str]]:
         """
         Importa todos os arquivos JSON de uma pasta.
         
         Parâmetros:
-            folder_path : str - Caminho da pasta
+            folder_path (str): Caminho da pasta
             
         Retorna:
-            list: Lista de tuplas (arquivo, sucesso, mensagem)
+            list: Lista de tuplas (nome_arquivo, sucesso, mensagem)
         """
         import glob
         

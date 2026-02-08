@@ -3,6 +3,7 @@ import serial.tools.list_ports
 import time
 import threading
 import numpy as np
+from typing import Optional, Callable, Tuple, Any
 
 # Constants from original script
 BAUD_RATE = 115200
@@ -14,40 +15,58 @@ FACTORY_PASTA_SLOPE = 2.5  # bar/V
 FACTORY_PASTA_INTERCEPT = -1.25  # bar
 
 class ReometerController:
-    def __init__(self):
-        self.ser = None
-        self.is_connected = False
-        self.is_reading = False
-        self.read_thread = None
+    """
+    Controller class manages the serial communication with the Arduino for the Capillary Rheometer.
+    It handles connection establishment, background data reading, and sensor calibration application.
+    
+    Attributes:
+        ser (Optional[serial.Serial]): The serial connection object.
+        is_connected (bool): Connection status flag.
+        is_reading (bool): Data reading loop active flag.
+        read_thread (Optional[threading.Thread]): Background thread for data reading.
+        on_pressure_reading (Optional[Callable]): Callback for new pressure data (p_linha, p_pasta, v1, v2).
+        on_error (Optional[Callable]): Callback for error reporting.
+    """
+    def __init__(self) -> None:
+        self.ser: Optional[serial.Serial] = None
+        self.is_connected: bool = False
+        self.is_reading: bool = False
+        self.read_thread: Optional[threading.Thread] = None
         
         # Callbacks
-        self.on_pressure_reading = None # func(p_linha, p_pasta)
-        self.on_error = None # func(error_message)
+        self.on_pressure_reading: Optional[Callable[[float, float, float, float], None]] = None 
+        self.on_error: Optional[Callable[[str], None]] = None
         
         # Calibration Parameters
         # Linha: user-calibrated
-        self.calib_slope_linha = 1.0
-        self.calib_intercept_linha = 0.0
+        self.calib_slope_linha: float = 1.0
+        self.calib_intercept_linha: float = 0.0
         # Pasta: factory calibration (fixed)
-        self.calib_slope_pasta = FACTORY_PASTA_SLOPE
-        self.calib_intercept_pasta = FACTORY_PASTA_INTERCEPT
-        self.calibration_loaded = True  # Pasta is always calibrated
+        self.calib_slope_pasta: float = FACTORY_PASTA_SLOPE
+        self.calib_intercept_pasta: float = FACTORY_PASTA_INTERCEPT
+        self.calibration_loaded: bool = True  # Pasta is always calibrated
 
-    def load_calibration_linha(self, slope_l, intercept_l):
+    def load_calibration_linha(self, slope_l: float, intercept_l: float) -> None:
         """Loads calibration parameters for Linha sensor only (Pasta uses factory)."""
         self.calib_slope_linha = slope_l
         self.calib_intercept_linha = intercept_l
         self.calibration_loaded = True
     
-    def load_calibration(self, slope_l, intercept_l, slope_p=None, intercept_p=None):
-        """Legacy: Loads calibration parameters. Pasta params are ignored (factory)."""
+    def load_calibration(self, slope_l: float, intercept_l: float, slope_p: Optional[float] = None, intercept_p: Optional[float] = None) -> None:
+        """
+        Legacy method to load calibration parameters.
+        Pasta parameters are ignored in this version as it uses factory calibration.
+        """
         self.calib_slope_linha = slope_l
         self.calib_intercept_linha = intercept_l
         # Pasta is always factory calibrated, ignore provided values
         self.calibration_loaded = True
 
-    def find_and_connect(self):
-        """Attempts to auto-connect to Arduino."""
+    def find_and_connect(self) -> Tuple[bool, str]:
+        """
+        Attempts to auto-connect to an Arduino device.
+        Scans available COM ports for descriptions containing 'USB', 'ARDUINO', or 'CH340'.
+        """
         ports = serial.tools.list_ports.comports()
         for p in ports:
             # Common Arduino descriptions/IDs
@@ -58,8 +77,11 @@ class ReometerController:
                     continue
         return False, "Arduino não encontrado."
 
-    def connect(self, port):
-        """Connects to a specific port."""
+    def connect(self, port: str) -> Tuple[bool, str]:
+        """
+        Connects to a specific serial port.
+        Performs a handshake ("PING" -> "ACK_PING_OK") to verify the device.
+        """
         try:
             self.ser = serial.Serial(port, BAUD_RATE, timeout=TIMEOUT_SERIAL)
             time.sleep(2) # Wait for Arduino reset
@@ -80,16 +102,19 @@ class ReometerController:
             return False, str(e)
         return False, "Erro desconhecido."
 
-    def disconnect(self):
-        """Disconnects serial port and stops reading."""
+    def disconnect(self) -> None:
+        """Disconnects the serial port and stops the reading thread."""
         self.stop_reading()
         if self.ser and self.ser.isOpen():
             self.ser.close()
         self.is_connected = False
         self.ser = None
 
-    def start_reading(self):
-        """Starts the background reading thread."""
+    def start_reading(self) -> bool:
+        """
+        Starts the background reading thread.
+        Returns True if started successfully or already running.
+        """
         if not self.is_connected or not self.ser:
             return False
             
@@ -101,15 +126,18 @@ class ReometerController:
         self.read_thread.start()
         return True
 
-    def stop_reading(self):
-        """Stops the background reading thread."""
+    def stop_reading(self) -> None:
+        """Stops the background reading thread safely."""
         self.is_reading = False
         if self.read_thread:
             self.read_thread.join(timeout=1.0)
             self.read_thread = None
 
-    def _read_loop(self):
-        """Internal loop running in a thread."""
+    def _read_loop(self) -> None:
+        """
+        Internal loop running in a background thread.
+        continuously requests voltage readings from the Arduino (READ_VOLTAGE command).
+        """
         while self.is_reading and self.ser and self.ser.isOpen():
             try:
                 # Command to request voltage
@@ -145,8 +173,8 @@ class ReometerController:
                 self.stop_reading()
                 break
 
-    def _convert_voltage_to_pressure(self, voltage, sensor_type):
-        """Converts voltage to pressure using loaded calibration."""
+    def _convert_voltage_to_pressure(self, voltage: float, sensor_type: str) -> float:
+        """Converts raw voltage to pressure (bar) using loaded calibration."""
         if not self.calibration_loaded:
             return 0.0
             
@@ -159,25 +187,26 @@ class ReometerController:
 
 # Mock Controller for Testing without Hardware
 class MockSerial:
-    def isOpen(self): return True
-    def close(self): pass
-    def flushInput(self): pass
-    def flushOutput(self): pass
-    def write(self, b): pass
-    def readline(self): return b""
+    def isOpen(self) -> bool: return True
+    def close(self) -> None: pass
+    def flushInput(self) -> None: pass
+    def flushOutput(self) -> None: pass
+    def write(self, b: bytes) -> None: pass
+    def readline(self) -> bytes: return b""
     @property
-    def in_waiting(self): return 0
+    def in_waiting(self) -> int: return 0
 
 class MockReometerController(ReometerController):
-    def connect(self, port="MockPort"):
+    """Mock implementation of ReometerController for testing without physical hardware."""
+    def connect(self, port: str = "MockPort") -> Tuple[bool, str]:
         self.is_connected = True
-        self.ser = MockSerial()
+        self.ser = MockSerial() # type: ignore
         return True, "Conectado (Mock)"
         
-    def find_and_connect(self):
+    def find_and_connect(self) -> Tuple[bool, str]:
         return self.connect()
 
-    def _read_loop(self):
+    def _read_loop(self) -> None:
         t = 0
         while self.is_reading:
             # Generate fake sine wave pressure
@@ -199,7 +228,7 @@ if __name__ == "__main__":
     success, msg = controller.connect()
     print(msg)
     
-    def print_pressure(p1, p2, v1, v2):
+    def print_pressure(p1: float, p2: float, v1: float, v2: float) -> None:
         print(f"L: {p1:.2f} bar | P: {p2:.2f} bar")
         
     controller.on_pressure_reading = print_pressure
