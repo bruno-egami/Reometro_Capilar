@@ -12,6 +12,7 @@ from reometer_controller import ReometerController, MockReometerController
 import modelos_reologicos as models
 from scipy.optimize import curve_fit
 import numpy as np
+import pandas as pd
 from gui_data_cleaning import DataCleaningWindow
 
 # Set appearance mode and default color theme
@@ -668,83 +669,7 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.lbl_v1.configure(text="V_Linha: ---")
         self.lbl_p_pasta.configure(text="P_Pasta (ref): ---")
 
-class RelatorioWindow(ctk.CTkToplevel):
-    def __init__(self, parent, analysis_data, export_callback=None):
-        super().__init__(parent)
-        self.analysis_data = analysis_data
-        self.export_callback = export_callback
-        
-        # Make window modal-like or just top
-        self.title(f"Relatório de Análise - {analysis_data['amostra']['nome']}")
-        self.geometry("1000x800")
-        
-        # Tabs
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        self.tab_resumo = self.tabview.add("Resumo")
-        self.tab_graficos = self.tabview.add("Gráficos")
-        self.tab_dados = self.tabview.add("Dados Calculados")
-        
-        self._init_resumo()
-        self._init_graficos()
-        self._init_dados()
-        
-        # Footer Actions
-        self.footer = ctk.CTkFrame(self, height=50)
-        self.footer.pack(fill="x", padx=10, pady=10)
-        
-        if export_callback:
-            self.btn_pdf = ctk.CTkButton(self.footer, text="Salvar PDF", command=self.export_callback, fg_color="green")
-            self.btn_pdf.pack(side="right", padx=10)
-        
-        self.btn_close = ctk.CTkButton(self.footer, text="Fechar", command=self.destroy, fg_color="red")
-        self.btn_close.pack(side="right", padx=10)
-        
-        # Focus
-        self.lift()
-        self.focus_force()
 
-    def _init_resumo(self):
-        # Textbox for summary
-        self.txt_resumo = ctk.CTkTextbox(self.tab_resumo, font=("Consolas", 14), wrap="word")
-        self.txt_resumo.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Build Summary Text
-        d = self.analysis_data
-        text = f"AMOSTRA: {d['amostra']['nome']}\n"
-        text += f"Data Análise: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
-        text += "-"*40 + "\n"
-        text += f"Modelo Melhor Ajuste: {d['best_model']}\n"
-        text += f"R²: {d['best_r2']:.4f}\n"
-        text += f"Índice de Comportamento (n): {d['n_prime']:.4f}\n"
-        text += f"Classificação: {d['comportamento']}\n"
-        text += "-"*40 + "\n\n"
-        
-        text += "PARÂMETROS DOS MODELOS:\n"
-        for model, fit in d['model_fits'].items():
-            if fit.get('params') is not None:
-                text += f"{model}: R²={fit['r2']:.4f}\n"
-                for n, v in zip(fit['param_names'], fit['params']):
-                    text += f"  {n}: {v:.4g}\n"
-                text += "\n"
-        
-        self.txt_resumo.insert("1.0", text)
-        self.txt_resumo.configure(state="disabled")
-
-    def _init_graficos(self):
-        # Tabview for sub-graphs
-        self.graph_tabs = ctk.CTkTabview(self.tab_graficos)
-        self.graph_tabs.pack(fill="both", expand=True)
-        
-        t1 = self.graph_tabs.add("Curva de Fluxo")
-        t2 = self.graph_tabs.add("Viscosidade")
-        t3 = self.graph_tabs.add("Ajuste de Modelos")
-        
-        # We need to defer plotting slightly to avoid layout issues? Or just plot.
-        self._plot_figure(t1, self._create_flow_curve())
-        self._plot_figure(t2, self._create_viscosity_curve())
-        self._plot_figure(t3, self._create_model_curve())
         
 
 
@@ -812,6 +737,14 @@ class RelatorioWindow(ctk.CTkToplevel):
                 text += "\n"
         
         text += "-"*40 + "\n"
+        text += "METODOLOGIA ESTATÍSTICA:\n"
+        text += "-"*40 + "\n"
+        text += "1. Agrupamento: Os pontos experimentais foram agrupados por Taxa de Cisalhamento (log-arredondado).\n"
+        text += "2. Cálculo: Para cada grupo, calculou-se a Média e o Desvio Padrão da Tensão e Viscosidade.\n"
+        text += "3. Ajuste: Os modelos reológicos foram ajustados aos valores MÉDIOS, reduzindo o impacto de ruído experimental.\n"
+        text += "4. Visualização: As barras de erro nos gráficos representam ±1 Desvio Padrão.\n\n"
+        
+        text += "-"*40 + "\n"
         text += "ANÁLISE QUALITATIVA:\n"
         text += "-"*40 + "\n"
         
@@ -835,6 +768,22 @@ class RelatorioWindow(ctk.CTkToplevel):
             text += "O material exige uma tensão mínima (Yield Stress) para iniciar o fluxo, característica de pastas concentradas."
         elif "Newtoniano" in d['comportamento']:
             text += "A viscosidade permanece constante independente da taxa de cisalhamento."
+            
+        # --- Statistical Details ---
+        if d.get('stats_details'):
+            sd = d['stats_details']
+            metrics = sd.get('metrics', {})
+            
+            text += "\n\n" + "-"*40 + "\n"
+            text += "ANÁLISE DE VARIAÇÃO ESTATÍSTICA (CV):\n"
+            text += "-"*40 + "\n"
+            
+            text += f"CV Médio (Tensão): {metrics.get('cv_tau_global', 0):.2f}%\n"
+            text += f"CV Médio (Viscosidade): {metrics.get('cv_eta_global', 0):.2f}%\n"
+            text += f"Pontos Analisados: {metrics.get('num_pontos', 0)}\n\n"
+            
+            text += "PARECER AUTOMÁTICO:\n"
+            text += sd.get('parecer', 'N/A')
             
         self.txt_resumo.insert("1.0", text)
         self.txt_resumo.configure(state="disabled")
@@ -867,34 +816,70 @@ class RelatorioWindow(ctk.CTkToplevel):
     def _create_flow_curve(self):
         fig = Figure(figsize=(5, 4), dpi=100)
         ax = fig.add_subplot(111)
-        ax.plot(self.analysis_data['gamma_dot'], self.analysis_data['tau_w'], 'o-', label='Experimental')
-        ax.set_title("Curva de Fluxo")
+        
+        # Plot Raw Data (Light background)
+        if 'raw_gamma' in self.analysis_data:
+            ax.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_tau'], 'o', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
+            
+        # Plot Means with Error Bars
+        x = self.analysis_data['gamma_dot']
+        y = self.analysis_data['tau_w']
+        yerr = self.analysis_data.get('tau_w_std', None)
+        
+        ax.errorbar(x, y, yerr=yerr, fmt='o-', capsize=5, label='Média ± DesvPad', color='blue')
+        
+        ax.set_title("Curva de Fluxo (Estatística)")
         ax.set_xlabel("Taxa de Cisalhamento (1/s)")
         ax.set_ylabel("Tensão de Cisalhamento (Pa)")
-        ax.grid(True)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.grid(True, which="both", alpha=0.3)
+        ax.legend()
         return fig
 
     def _create_viscosity_curve(self):
         fig = Figure(figsize=(5, 4), dpi=100)
         ax = fig.add_subplot(111)
-        ax.plot(self.analysis_data['gamma_dot'], self.analysis_data['eta'], 's-', color='orange', label='Viscosidade')
-        ax.set_title("Viscosidade Aparente")
+        
+        # Plot Raw Data (Light background)
+        if 'raw_gamma' in self.analysis_data and 'raw_eta' in self.analysis_data:
+            ax.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_eta'], 's', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
+        
+        # Plot Means with Error Bars
+        x = self.analysis_data['gamma_dot']
+        y = self.analysis_data['eta']
+        yerr = self.analysis_data.get('eta_std', None)
+        
+        ax.errorbar(x, y, yerr=yerr, fmt='s-', capsize=5, color='orange', label='Viscosidade Média')
+        
+        # Dynamic Title
+        titulo = "Viscosidade Real (Weissenberg)" if self.chk_weissenberg.get() else "Viscosidade Aparente"
+        ax.set_title(titulo)
         ax.set_xlabel("Taxa de Cisalhamento (1/s)")
         ax.set_ylabel("Viscosidade (Pa.s)")
         ax.set_xscale('log')
         ax.set_yscale('log')
-        ax.grid(True, which="both", ls="-")
+        ax.grid(True, which="both", ls="-", alpha=0.3)
+        ax.legend()
         return fig
 
     def _create_model_curve(self):
-        fig = Figure(figsize=(5, 4), dpi=100)
-        ax = fig.add_subplot(111)
+        # Create subplot 1x2 (Flow Curve | Viscosity Curve)
+        fig = Figure(figsize=(10, 4), dpi=100)
         
+        # --- Plot 1: Flow Curve (Stress vs Rate) ---
+        ax1 = fig.add_subplot(121)
         x = self.analysis_data['gamma_dot']
         y = self.analysis_data['tau_w']
-        ax.plot(x, y, 'ko', label='Experimental', alpha=0.6)
+        yerr = self.analysis_data.get('tau_w_std', None)
         
-        # Use logspace for smoother model curves
+        # Plot Raw Data Shadow (Flow)
+        if 'raw_gamma' in self.analysis_data and 'raw_tau' in self.analysis_data:
+            ax1.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_tau'], 'o', color='lightgray', markersize=3, alpha=0.4)
+            
+        ax1.errorbar(x, y, yerr=yerr, fmt='ko', capsize=3, label='Exp (Médias)', alpha=0.7)
+        
+        # Prepare smooth x for models
         if len(x) > 0:
             x_min = max(1e-3, min(x))
             x_max = max(x)
@@ -908,25 +893,60 @@ class RelatorioWindow(ctk.CTkToplevel):
         colors = ['r', 'g', 'b', 'm', 'c']
         color_idx = 0
         
+        # --- Plot Models on Both Graphs ---
+        # We need to calculate Viscosity Prediction for the models too: eta_pred = tau_pred / gamma
+        
+        ax2 = fig.add_subplot(122) # Viscosity Plot
+        # Plot Exp Viscosity
+        eta = self.analysis_data['eta']
+        eta_err = self.analysis_data.get('eta_std', None)
+        
+        # Plot Raw Data Shadow (Viscosity)
+        if 'raw_gamma' in self.analysis_data and 'raw_eta' in self.analysis_data:
+            ax2.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_eta'], 's', color='lightgray', markersize=3, alpha=0.4)
+            
+        ax2.errorbar(x, eta, yerr=eta_err, fmt='ks', capsize=3, label='Exp (Médias)', alpha=0.7)
+        
         for name, fit in self.analysis_data['model_fits'].items():
             if fit.get('params') is not None:
-                # Use the function from the models module dictionary
                 if name in models.MODELS:
                     func = models.MODELS[name][0]
                     try:
+                        # Calculate Preds
                         y_pred = func(x_smooth, *fit['params'])
-                        ax.loglog(x_smooth, y_pred, linestyle='--', label=f"{name}", color=colors[color_idx % len(colors)])
+                        eta_pred = y_pred / x_smooth
+                        
+                        color = colors[color_idx % len(colors)]
+                        
+                        # Plot 1 (Flow)
+                        ax1.loglog(x_smooth, y_pred, linestyle='--', label=f"{name}", color=color)
+                        
+                        # Plot 2 (Viscosity)
+                        ax2.loglog(x_smooth, eta_pred, linestyle='--', label=f"{name}", color=color)
+                        
                         color_idx += 1
                     except Exception as e:
                         print(f"Erro ao plotar modelo {name}: {e}")
                     
-        ax.set_title("Ajuste de Modelos")
-        ax.set_xlabel("Taxa (1/s)")
-        ax.set_ylabel("Tensão (Pa)")
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.legend()
-        ax.grid(True, which="both", alpha=0.3)
+        # Formatting Plot 1
+        ax1.set_title("Ajuste: Tensão de Cisalhamento")
+        ax1.set_xlabel("Taxa (1/s)")
+        ax1.set_ylabel("Tensão (Pa)")
+        ax1.set_xscale('log')
+        ax1.set_yscale('log')
+        ax1.legend(fontsize='small')
+        ax1.grid(True, which="both", alpha=0.3)
+        
+        # Formatting Plot 2
+        ax2.set_title("Ajuste: Viscosidade Aparente")
+        ax2.set_xlabel("Taxa (1/s)")
+        ax2.set_ylabel("Viscosidade (Pa.s)")
+        ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax2.legend(fontsize='small')
+        ax2.grid(True, which="both", alpha=0.3)
+        
+        fig.tight_layout()
         return fig
 
     def _init_dados(self):
@@ -951,12 +971,13 @@ class RelatorioWindow(ctk.CTkToplevel):
         container.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Treeview
-        cols = ("Taxa (1/s)", "Tensão (Pa)", "Viscosidade (Pa.s)")
+        cols = ("Taxa (1/s)", "Tensão (Pa)", "DesvPad Tensão", "Viscosidade (Pa.s)", "DesvPad Visc")
         tree = ttk.Treeview(container, columns=cols, show="headings", height=15)
         
         for c in cols:
             tree.heading(c, text=c)
-            tree.column(c, width=200, anchor="center")
+            width = 150 if "Desv" in c else 120
+            tree.column(c, width=width, anchor="center")
             
         # Scrollbar
         vsb = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
@@ -967,10 +988,22 @@ class RelatorioWindow(ctk.CTkToplevel):
         
         d = self.analysis_data
         if 'gamma_dot' in d and len(d['gamma_dot']) > 0:
-            for g, t, e in zip(d['gamma_dot'], d['tau_w'], d['eta']):
-                tree.insert("", "end", values=(f"{g:.2f}", f"{t:.2f}", f"{e:.4f}"))
+            for i in range(len(d['gamma_dot'])):
+                g = d['gamma_dot'][i]
+                t = d['tau_w'][i]
+                t_std = d.get('tau_w_std', [0]*len(d['tau_w']))[i]
+                e = d['eta'][i]
+                e_std = d.get('eta_std', [0]*len(d['eta']))[i]
+                
+                tree.insert("", "end", values=(
+                    f"{g:.2f}", 
+                    f"{t:.2f}", 
+                    f"{t_std:.2f}",
+                    f"{e:.4f}",
+                    f"{e_std:.4f}"
+                ))
         else:
-            tree.insert("", "end", values=("Nenhum dado", "", ""))
+            tree.insert("", "end", values=("Nenhum dado", "", "", "", ""))
 
 class AnaliseFrame(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -1272,6 +1305,9 @@ class AnaliseFrame(ctk.CTkFrame):
             gamma_dots_app = []
             taus = []
             delta_p_list = []
+            massas = []
+            tempos = []
+            pressoes = []
             
             for index, row in df.iterrows():
                 massa_g = row['massa_g']
@@ -1283,6 +1319,9 @@ class AnaliseFrame(ctk.CTkFrame):
                 
                 delta_p = p_linha_bar - p_pasta_bar
                 delta_p_list.append(delta_p)
+                massas.append(massa_g)
+                tempos.append(tempo_s)
+                pressoes.append(p_pasta_bar)
                 
                 Q_cm3s = massa_g / (Rho * tempo_s)
                 Q_m3s = Q_cm3s * 1e-6
@@ -1300,7 +1339,7 @@ class AnaliseFrame(ctk.CTkFrame):
             gd_app_arr = np.array(gamma_dots_app)
             tau_arr = np.array(taus)
             
-            # Corrections
+            # Corrections (Weissenberg) performed on RAW data first
             n_prime = 1.0
             if aplicar_weissenberg:
                 try:
@@ -1314,17 +1353,137 @@ class AnaliseFrame(ctk.CTkFrame):
                 
             eta_arr = tau_arr / gd_true_arr
             
-            # Model Fitting
+            # --- STATISTICAL GROUPING ---
+            try:
+                # Create DataFrame for statistical grouping
+                df_calc = pd.DataFrame({
+                    'gamma_dot': gd_true_arr, # True Shear Rate
+                    'tau_w': tau_arr,
+                    'eta': eta_arr, # True Viscosity
+                    'gamma_dot_app': gd_app_arr, # Apparent Shear Rate
+                    'eta_app': tau_arr / gd_app_arr, # Apparent Viscosity
+                    'massa_g': np.array(massas),
+                    'tempo_s': np.array(tempos),
+                    'pressao': np.array(pressoes)
+                })
+                # Group by log of shear rate (rounded to 1 decimal)
+                df_calc['log_gd'] = np.round(np.log10(df_calc['gamma_dot']), 1)
+                
+                grouped = df_calc.groupby('log_gd')
+                
+                # Extract vectors for fitting and plotting (Means)
+                gd_mean = grouped['gamma_dot'].mean().values
+                tau_mean = grouped['tau_w'].mean().values
+                tau_std = grouped['tau_w'].std().fillna(0).values
+                eta_mean = grouped['eta'].mean().values
+                eta_std = grouped['eta'].std().fillna(0).values
+                
+                # Additional Means for Report
+                gd_app_mean = grouped['gamma_dot_app'].mean().values
+                eta_app_mean = grouped['eta_app'].mean().values
+                pressao_mean = grouped['pressao'].mean().values
+                tempo_mean = grouped['tempo_s'].mean().values
+                massa_mean = grouped['massa_g'].mean().values
+                
+                # --- Advanced Statistics (CVs) ---
+                # Avoid division by zero
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    cv_tau = np.where(tau_mean > 0, (tau_std / tau_mean) * 100.0, 0.0)
+                    cv_eta = np.where(eta_mean > 0, (eta_std / eta_mean) * 100.0, 0.0)
+                    
+                    # Gamma CV (using True Shear Rate std)
+                    gd_std = grouped['gamma_dot'].std().fillna(0).values
+                    cv_gamma = np.where(gd_mean > 0, (gd_std / gd_mean) * 100.0, 0.0)
+
+                # Weighted Global Metrics (Weighted by Shear Stress)
+                total_stress = np.sum(tau_mean)
+                if total_stress > 0:
+                    cv_tau_global = np.sum(cv_tau * tau_mean) / total_stress
+                    cv_eta_global = np.sum(cv_eta * tau_mean) / total_stress
+                    cv_gamma_global = np.sum(cv_gamma * tau_mean) / total_stress
+                else:
+                    cv_tau_global = np.mean(cv_tau)
+                    cv_eta_global = np.mean(cv_eta)
+                    cv_gamma_global = np.mean(cv_gamma)
+                    
+                cv_tau_max = np.max(cv_tau) if len(cv_tau) > 0 else 0.0
+                
+                # Qualitative Assessment Text
+                parecer_texto = "1. REPRODUTIBILIDADE DA TENSÃO (tau_w):\n"
+                if cv_tau_global < 1.0:
+                    parecer_texto += f"  * RESULTADO: Excelente ({cv_tau_global:.2f}%). Alta reprodutibilidade.\n"
+                elif cv_tau_global < 5.0:
+                    parecer_texto += f"  * RESULTADO: Bom ({cv_tau_global:.2f}%). Variação aceitável.\n"
+                else:
+                    parecer_texto += f"  * RESULTADO: Atenção ({cv_tau_global:.2f}%). Dispersão considerável.\n"
+                    
+                parecer_texto += "\n2. ESTABILIDADE DA VISCOSIDADE (eta):\n"
+                if cv_eta_global < 5.0:
+                    parecer_texto += f"  * RESULTADO: Alta Estabilidade ({cv_eta_global:.2f}%).\n"
+                elif cv_eta_global < 10.0:
+                    parecer_texto += f"  * RESULTADO: Estabilidade Aceitável ({cv_eta_global:.2f}%).\n"
+                else:
+                    parecer_texto += f"  * RESULTADO: Baixa Estabilidade ({cv_eta_global:.2f}%).\n"
+
+                # Prepare Raw Values String List for Report
+                sorted_keys = sorted(grouped.groups.keys())
+                raw_values_clean = []
+                for k in sorted_keys:
+                    vals = grouped.get_group(k)['tau_w'].values
+                    vals_str = ", ".join([f"{v:.1f}" for v in vals])
+                    raw_values_clean.append(vals_str)
+                
+                # Build stats_details dictionary
+                stats_details = {
+                    'df_cv': pd.DataFrame({
+                        'tau_w_mean': tau_mean,
+                        'tau_w_std': tau_std,
+                        'cv_tau': cv_tau,
+                        'gamma_dot_w_mean': gd_mean,
+                        'cv_gamma': cv_gamma,
+                        'cv_eta': cv_eta,
+                        'tempo_mean': tempo_mean,
+                        'massa_mean': massa_mean,
+                        'raw_values': raw_values_clean,
+                        'num_points': [len(grouped.get_group(k)) for k in sorted_keys]
+                    }),
+                    'metrics': {
+                        'cv_tau_global': cv_tau_global,
+                        'cv_gamma_global': cv_gamma_global,
+                        'cv_eta_global': cv_eta_global,
+                        'cv_tau_max': cv_tau_max,
+                        'num_pontos': len(tau_mean)
+                    },
+                    'parecer': parecer_texto
+                }
+
+                # Use MEANS for model fitting
+                fit_gd = gd_mean
+                fit_tau = tau_mean
+                
+            except Exception as e:
+                # Fallback to raw data if grouping fails
+                print(f"Error in grouping: {e}")
+                fit_gd = gd_true_arr
+                fit_tau = tau_arr
+                gd_mean, tau_mean, eta_mean = gd_true_arr, tau_arr, eta_arr
+                tau_std, eta_std = np.zeros_like(tau_arr), np.zeros_like(eta_arr)
+                stats_details = None
+
+            # Model Fitting (Weighted by inverse variance? For now, standard fit on means)
             model_fits = {}
             best_model = None
             best_r2 = -np.inf
             
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:
-                    p0 = g_func(gd_true_arr, tau_arr)
-                    popt, _ = curve_fit(m_func, gd_true_arr, tau_arr, p0=p0, bounds=bnds, maxfev=10000)
-                    tau_pred = m_func(gd_true_arr, *popt)
-                    r2 = r2_score(tau_arr, tau_pred)
+                    p0 = g_func(fit_gd, fit_tau)
+                    # Fit to means
+                    popt, _ = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
+                    
+                    tau_pred = m_func(fit_gd, *popt)
+                    r2 = r2_score(fit_tau, tau_pred)
+                    
                     model_fits[m_name] = {'params': popt, 'r2': r2, 'param_names': p_names}
                     if r2 > best_r2:
                         best_r2 = r2
@@ -1334,14 +1493,15 @@ class AnaliseFrame(ctk.CTkFrame):
 
             # Generate Text Result
             results_txt = f"═══════════════════════════════════════════\n"
-            results_txt += f"  ANÁLISE REOLÓGICA: {nome}\n"
+            results_txt += f"  ANÁLISE REOLÓGICA (ESTATÍSTICA): {nome}\n"
             results_txt += f"═══════════════════════════════════════════\n\n"
             results_txt += f"Capilar: D={D_mm} mm, L={L_mm} mm\n"
             results_txt += f"Densidade: {Rho} g/cm³\n"
+            results_txt += f"Pontos Agrupados: {len(fit_gd)} níveis de taxa\n"
             results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime) if aplicar_weissenberg else 'Não'}\n\n"
             
             results_txt += "───────────────────────────────────────────\n"
-            results_txt += "  AJUSTE DE MODELOS REOLÓGICOS\n"
+            results_txt += "  AJUSTE DOS MODELOS (MÉDIAS)\n"
             results_txt += "───────────────────────────────────────────\n\n"
             
             for m_name, fit_data in model_fits.items():
@@ -1360,17 +1520,28 @@ class AnaliseFrame(ctk.CTkFrame):
             results_txt += f"  COMPORTAMENTO: {comportamento}\n"
             results_txt += f"───────────────────────────────────────────\n"
 
-            # Prepare data object
+            # Prepare data object (Storing means as primary data, raw as secondary)
             analysis_data = {
-                'amostra': amostra, 'gamma_dot': gd_true_arr, 'tau_w': tau_arr, 'eta': eta_arr,
+                'amostra': amostra, 
+                'gamma_dot': gd_mean, 'tau_w': tau_mean, 'eta': eta_mean, # Means
+                'gamma_dot_std': np.zeros_like(gd_mean), # Assume negligible x-error for now or calc it
+                'tau_w_std': tau_std, 'eta_std': eta_std, # Standard Deviations
+                'raw_gamma': gd_true_arr, 'raw_tau': tau_arr, 'raw_eta': eta_arr, # Raw Data
+                'raw_mass': np.array(massas), 'raw_time': np.array(tempos), 'raw_pressure': np.array(pressoes),
                 'model_fits': model_fits, 'best_model': best_model, 'best_r2': best_r2,
                 'comportamento': comportamento, 'n_prime': n_prime if aplicar_weissenberg else 1.0,
-                'delta_p': np.array(delta_p_list)
+                'delta_p': np.array(delta_p_list),
+                'stats_details': stats_details
             }
 
             if save:
                 params_storage = {
                     'best_model': best_model, 'n_prime': n_prime, 'is_weissenberg': aplicar_weissenberg,
+                    'statistical_treatment': {
+                        'method': 'grouped_by_shear_rate_log',
+                        'num_groups': len(fit_gd),
+                        'original_points': len(gd_true_arr)
+                    },
                     'fits': {m: {'params': f['params'].tolist() if f['params'] is not None else None, 
                                  'r2': f['r2']} for m, f in model_fits.items()}
                 }
@@ -1531,11 +1702,23 @@ class AnaliseFrame(ctk.CTkFrame):
             try:
                 self._generate_temp_graphs(temp_dir, timestamp, data_to_use)
                 
-                # Prepare data
+                # Prepare data (Statistical Means + StdDevs)
                 df_res = pd.DataFrame({
                     'Taxa Cisalhamento (s-1)': data_to_use['gamma_dot'],
                     'Tensao Cisalhamento (Pa)': data_to_use['tau_w'],
-                    'Viscosidade (Pa.s)': data_to_use['eta']
+                    'Desvio Padrao Tensao (Pa)': data_to_use.get('tau_w_std', np.zeros_like(data_to_use['tau_w'])),
+                    'Viscosidade (Pa.s)': data_to_use['eta'],
+                    'Desvio Padrao Viscosidade (Pa.s)': data_to_use.get('eta_std', np.zeros_like(data_to_use['eta']))
+                })
+                
+                # Prepare Raw Data (All Active Points)
+                df_raw_data = pd.DataFrame({
+                    'gamma_dot_w': data_to_use.get('raw_gamma', []),
+                    'tau_w': data_to_use.get('raw_tau', []),
+                    'eta_true': data_to_use.get('raw_eta', []),
+                    'tempo_s': data_to_use.get('raw_time', []),
+                    'massa_g': data_to_use.get('raw_mass', []),
+                    'pressao': data_to_use.get('raw_pressure', [])
                 })
                 
                 # Prepare model summary
@@ -1555,7 +1738,7 @@ class AnaliseFrame(ctk.CTkFrame):
                     timestamp_str=timestamp,
                     rho_g_cm3=data_to_use['amostra']['densidade_g_cm3'],
                     tempo_extrusao_info="Variavel",
-                    metodo_entrada="GUI",
+                    metodo_entrada="Média Estatística",
                     json_files=[],
                     csv_path="",
                     realizar_bagley=False,
@@ -1574,7 +1757,9 @@ class AnaliseFrame(ctk.CTkFrame):
                     lista_imgs=lista_imgs,
                     output_folder=folder,
                     fator_calibracao=1.0,
-                    output_filename=filepath
+                    output_filename=filepath,
+                    df_raw_data=df_raw_data,
+                    stats_details=data_to_use.get('stats_details')
                 )
                 tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
                 

@@ -120,44 +120,96 @@ class DataCleaningWindow(ctk.CTkToplevel):
                 self.tree.item(sid, tags=())
 
     def auto_detect_outliers(self):
-        """Implement IQR method to suggest outliers."""
+        """Implement IQR method to suggest outliers, grouped by Shear Rate (similar to script 2b)."""
         if len(self.points_data) < 4:
             messagebox.showwarning("Aviso", "Número insuficiente de pontos para detecção estatística (mín. 4).")
             return
             
-        # Calculate Wall Shear Stress (Tau) for each point to detect outliers based on stress
-        # Since we don't have all geometry here, we can use pressure as a proxy for stress outliers
-        # but let's try to be consistent with 2b script which uses Tau_w.
-        
         try:
-            D = self.amostra['d_capilar_mm']
-            L = self.amostra['l_capilar_mm']
-            R = (D / 2.0) / 1000.0
-            L_m = L / 1000.0
+            D_mm = self.amostra['d_capilar_mm']
+            L_mm = self.amostra['l_capilar_mm']
+            Rho = self.amostra['densidade_g_cm3']
             
-            vals = []
-            for p in self.points_data:
-                p_pa = p['pressao_pasta_bar'] * 1e5
-                tau_w = (p_pa * R) / (2 * L_m)
-                vals.append(tau_w)
-                
-            vals = np.array(vals)
-            Q1 = np.percentile(vals, 25)
-            Q3 = np.percentile(vals, 75)
-            IQR = Q3 - Q1
-            lower = Q1 - 1.5 * IQR
-            upper = Q3 + 1.5 * IQR
+            if not Rho or Rho <= 0:
+                messagebox.showerror("Erro", "Densidade inválida na amostra.")
+                return
+
+            R = (D_mm / 2.0) / 1000.0
+            L = L_mm / 1000.0
             
-            outliers_found = 0
+            # Prepare data for processing
+            processed_data = []
+            
             for i, p in enumerate(self.points_data):
-                if vals[i] < lower or vals[i] > upper:
-                    p['ativo'] = 0
-                    outliers_found += 1
+                massa = p['massa_g']
+                tempo = p['duracao_s']
+                p_bar = p['pressao_pasta_bar']
+                
+                # Skip invalid physics
+                if tempo <= 0 or massa <= 0 or p_bar <= 0: 
+                    continue
+                
+                # Calculate fundamental rheological properties
+                Q_m3s = (massa / (Rho * tempo)) * 1e-6
+                gd_app = (4 * Q_m3s) / (np.pi * R**3)
+                p_pa = p_bar * 1e5
+                tau_w = (p_pa * R) / (2 * L)
+                
+                # Log grouping key (round to 1 decimal place)
+                log_gd = round(np.log10(gd_app), 1)
+                
+                processed_data.append({
+                    'original_index': i,
+                    'log_gd': log_gd,
+                    'tau_w': tau_w
+                })
+            
+            df = pd.DataFrame(processed_data)
+            
+            if df.empty:
+                messagebox.showwarning("Aviso", "Não foi possível calcular propriedades reológicas (dados inválidos).")
+                return
+
+            outliers_found = 0
+            
+            # Group by Shear Rate (log_gd) and apply IQR per group
+            grouped = df.groupby('log_gd')
+            
+            for log_val, group in grouped:
+                # Need at least 3 points to calculate meaningful statistics
+                if len(group) < 3:
+                    continue
+                    
+                vals = group['tau_w'].values
+                Q1 = np.percentile(vals, 25)
+                Q3 = np.percentile(vals, 75)
+                IQR = Q3 - Q1
+                
+                # Script 2b uses 1.5 * IQR
+                lower = Q1 - 1.5 * IQR
+                upper = Q3 + 1.5 * IQR
+                
+                # Identify outliers in this group
+                outliers_mask = (vals < lower) | (vals > upper)
+                outliers_indices = group.loc[outliers_mask, 'original_index'].tolist()
+                
+                # Deactivate found outliers
+                for idx in outliers_indices:
+                    # Only count if it was currently active
+                    if self.points_data[idx].get('ativo', 1) == 1:
+                        self.points_data[idx]['ativo'] = 0
+                        outliers_found += 1
             
             self.update_tree_visuals()
-            messagebox.showinfo("Auto-Detecção", f"Foram detectados e desativados {outliers_found} potenciais outliers.")
+            
+            if outliers_found > 0:
+                messagebox.showinfo("Auto-Detecção", f"Foram detectados e desativados {outliers_found} potenciais outliers.")
+            else:
+                messagebox.showinfo("Auto-Detecção", "Nenhum outlier estatístico detectado com os critérios atuais (IQR 1.5x por grupo de taxa).")
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Erro", f"Erro ao processar outliers: {e}")
 
     def save_and_close(self):
