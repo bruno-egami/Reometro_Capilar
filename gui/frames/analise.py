@@ -280,6 +280,15 @@ class AnaliseFrame(ctk.CTkFrame):
             self.btn_export_png.configure(state="normal")
             self.btn_export_pdf.configure(state="normal")
             self.btn_view_report.configure(state="normal")
+            
+            # Atualiza o status na tabela para "Analisado" dinamicamente para preservar selecao
+            if not auto:
+                item_iid = str(self.selected_amostra_id)
+                if self.tree.exists(item_iid):
+                    vals = list(self.tree.item(item_iid, "values"))
+                    if len(vals) >= 8:
+                        vals[7] = "Analisado"
+                        self.tree.item(item_iid, values=vals)
         else:
             if not auto: tk.messagebox.showerror("Erro na Análise", result['error'])
             self._set_result(f"Erro: {result['error']}")
@@ -313,7 +322,15 @@ class AnaliseFrame(ctk.CTkFrame):
         if tk.messagebox.askyesno("Confirmar Exclusão", f"Deseja realmente excluir a análise da amostra '{amostra_nome}'?\n\nA amostra e os ensaios brutos serão preservados."):
             if self.db.delete_all_analises(amostra_id):
                 tk.messagebox.showinfo("Sucesso", "Análise excluída com sucesso.")
-                self.refresh_list()
+                
+                # Atualiza o status na tabela para "Pendente" dinamicamente
+                item_iid = str(amostra_id)
+                if self.tree.exists(item_iid):
+                    vals = list(self.tree.item(item_iid, "values"))
+                    if len(vals) >= 8:
+                        vals[7] = "Pendente"
+                        self.tree.item(item_iid, values=vals)
+                
                 self._set_result("Análise removida. A amostra continua disponível para novo processamento.")
                 self.analysis_data = None
                 self.btn_export_png.configure(state="disabled")
@@ -534,7 +551,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 tau_std, eta_std = np.zeros_like(tau_arr), np.zeros_like(eta_arr)
                 stats_details = None
 
-            # Model Fitting (Weighted by inverse variance? For now, standard fit on means)
+            # Model Fitting (Weighted by standard deviation - WLS)
             model_fits = {}
             best_model = None
             best_r2 = -np.inf
@@ -543,11 +560,23 @@ class AnaliseFrame(ctk.CTkFrame):
             n_pts = len(fit_gd)
             from scipy.stats import t
             
+            # Prepare Sigma for WLS
+            # Avoid zeroes in sigma, replace with a small value or mean of std
+            valid_std = tau_std[tau_std > 0]
+            sigma_wls = None
+            if len(valid_std) > 0:
+                min_std = np.min(valid_std)
+                # Replace zeros with a fraction of the minimum valid std to give them high but not infinite weight
+                sigma_wls = np.where(tau_std == 0, min_std * 0.1, tau_std)
+            
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:
                     p0 = g_func(fit_gd, fit_tau)
-                    # Fit to means
-                    popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
+                    # Fit to means (WLS if sigma is available)
+                    if sigma_wls is not None:
+                        popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, sigma=sigma_wls, absolute_sigma=False, maxfev=10000)
+                    else:
+                        popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
                     
                     tau_pred = m_func(fit_gd, *popt)
                     r2 = r2_score(fit_tau, tau_pred)
@@ -581,8 +610,17 @@ class AnaliseFrame(ctk.CTkFrame):
 
             # Generate Text Result
             results_txt = f"═══════════════════════════════════════════\n"
-            results_txt += f"  ANÁLISE REOLÓGICA (ESTATÍSTICA): {nome}\n"
+            results_txt += f"  RESULTADO DA ANÁLISE: {nome}\n"
             results_txt += f"═══════════════════════════════════════════\n\n"
+            
+            # M12: Aviso de confiabilidade do modelo para poucos grupos de cisalhamento
+            if len(fit_gd) < 4:
+                results_txt += "⚠️ AVISO M12: O número de grupos de taxa de cisalhamento estabilizados é menor que 4.\n"
+                results_txt += "O ajuste dos modelos reológicos pode estar superdeterminado ou impreciso.\n"
+                results_txt += "Recomenda-se realizar mais ensaios em gradientes de base.\n\n"
+                
+            results_txt += f"1. TRATAMENTO DE SINAL (Regime Estacionário)\n"
+            results_txt += f"  - Pontos Estáveis Coletados: {len(gd_true_arr)}\n"
             results_txt += f"Capilar: D={D_mm} mm, L={L_mm} mm\n"
             results_txt += f"Densidade: {Rho} g/cm³\n"
             results_txt += f"Pontos Agrupados: {len(fit_gd)} níveis de taxa\n"

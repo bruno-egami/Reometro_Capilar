@@ -5,13 +5,14 @@ from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 from modelos_reologicos import MODELS
 
-def ajustar_modelos(gamma_dot, tau_w):
+def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
     """
     Ajusta todos os modelos reológicos disponíveis aos dados fornecidos.
     
     Args:
         gamma_dot (array): Taxa de cisalhamento (s-1).
         tau_w (array): Tensão de cisalhamento (Pa).
+        tau_std (array, opcional): Desvio padrão da tensão para WLS.
         
     Returns:
         tuple: (model_results, best_model_nome, df_sum_modelo)
@@ -30,6 +31,14 @@ def ajustar_modelos(gamma_dot, tau_w):
     gd_fit = gamma_dot[valid_fit]
     tau_fit = tau_w[valid_fit]
     
+    sigma_wls = None
+    if tau_std is not None:
+        std_fit = tau_std[valid_fit]
+        valid_std = std_fit[std_fit > 0]
+        if len(valid_std) > 0:
+            min_std = np.min(valid_std)
+            sigma_wls = np.where(std_fit == 0, min_std * 0.1, std_fit)
+    
     n_pts = len(gd_fit)
     if n_pts < 3:
         print("  AVISO: Pontos insuficientes para ajuste de modelos (mínimo 3).")
@@ -40,8 +49,11 @@ def ajustar_modelos(gamma_dot, tau_w):
     for nome_modelo, (func_modelo, param_names, initial_guess_func, bounds) in MODELS.items():
         try:
             p0 = initial_guess_func(gd_fit, tau_fit)
-            # Ajuste com limites (bounds) para garantir parâmetros físicos
-            popt, pcov = curve_fit(func_modelo, gd_fit, tau_fit, p0=p0, bounds=bounds, maxfev=10000)
+            # Ajuste com limites (bounds) para garantir parâmetros físicos (WLS if sigma_wls passed)
+            if sigma_wls is not None:
+                popt, pcov = curve_fit(func_modelo, gd_fit, tau_fit, p0=p0, bounds=bounds, sigma=sigma_wls, absolute_sigma=False, maxfev=10000)
+            else:
+                popt, pcov = curve_fit(func_modelo, gd_fit, tau_fit, p0=p0, bounds=bounds, maxfev=10000)
             
             tau_pred = func_modelo(gd_fit, *popt)
             r2 = r2_score(tau_fit, tau_pred)

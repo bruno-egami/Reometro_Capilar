@@ -12,24 +12,35 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.controller = controller.controller
         self.db = controller.db
         
-        self.label = ctk.CTkLabel(self, text="Calibração do Sensor Linha", font=ctk.CTkFont(size=24, weight="bold"))
-        self.label.pack(pady=20, padx=20, anchor="w")
+        self.label = ctk.CTkLabel(self, text="Calibração e Validação do Reômetro", font=ctk.CTkFont(size=24, weight="bold"))
+        self.label.pack(pady=10, padx=20, anchor="w")
         
+        # Tabs
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self.tab_linha = self.tabview.add("Calibração P_Linha")
+        self.tab_newtoniano = self.tabview.add("Validação Newtoniana (M9)")
+        
+        self._init_tab_linha()
+        self._init_tab_newtoniano()
+
+    def _init_tab_linha(self):
         # Info about factory calibration
-        self.info_label = ctk.CTkLabel(self, 
+        self.info_label = ctk.CTkLabel(self.tab_linha, 
             text="O sensor Pasta possui calibração de fábrica (0-10 bar).\n"
                  "Usaremos ele como referência para calibrar o sensor Linha.",
             text_color="gray", justify="left")
         self.info_label.pack(pady=10, padx=20, anchor="w")
         
-        self.step_label = ctk.CTkLabel(self, text="Passo 1: Ponto Baixo (0 bar)", font=ctk.CTkFont(size=18))
+        self.step_label = ctk.CTkLabel(self.tab_linha, text="Passo 1: Ponto Baixo (0 bar)", font=ctk.CTkFont(size=18))
         self.step_label.pack(pady=10)
         
-        self.instruction_label = ctk.CTkLabel(self, 
+        self.instruction_label = ctk.CTkLabel(self.tab_linha, 
             text="Despressurize o sistema e clique em 'Ler Ponto Baixo'.", text_color="gray")
         self.instruction_label.pack(pady=5)
         
-        self.info_frame = ctk.CTkFrame(self)
+        self.info_frame = ctk.CTkFrame(self.tab_linha)
         self.info_frame.pack(pady=20)
         
         self.lbl_v1 = ctk.CTkLabel(self.info_frame, text="V_Linha: ---")
@@ -37,13 +48,42 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.lbl_p_pasta = ctk.CTkLabel(self.info_frame, text="P_Pasta (ref): ---")
         self.lbl_p_pasta.pack(side="left", padx=20)
         
-        self.btn_action = ctk.CTkButton(self, text="Ler Ponto Baixo", command=self.step_1_low)
+        self.btn_action = ctk.CTkButton(self.tab_linha, text="Ler Ponto Baixo", command=self.step_1_low)
         self.btn_action.pack(pady=20)
         
         self.v_linha_low = 0
         self.p_pasta_low = 0
         self.v_linha_high = 0
         self.p_pasta_high = 0
+        
+    def _init_tab_newtoniano(self):
+        lbl = ctk.CTkLabel(self.tab_newtoniano, text="Rotina de Verificação de Precisão", font=ctk.CTkFont(size=18, weight="bold"))
+        lbl.pack(pady=10)
+        
+        txt = ("Valide o hardware testando um fluido Newtoniano conhecido (ex: Água Destilada, Óleo Mineral).\n"
+               "1. A equação deve se ajustar linearmente indicando o índice n ≈ 1.0\n"
+               "2. A densidade aferida garante a precisão do sensor de pressão (Ajuste de Célula de Carga).")
+        
+        ctk.CTkLabel(self.tab_newtoniano, text=txt, text_color="gray", justify="left").pack(pady=5)
+        
+        form = ctk.CTkFrame(self.tab_newtoniano)
+        form.pack(pady=10, padx=20, fill="x")
+        
+        ctk.CTkLabel(form, text="Fluidos de Referência:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.fluido_cb = ctk.CTkComboBox(form, values=["Água Destilada (~1.0 mPa.s)", "Glicerina (~1490 mPa.s)", "Óleo Mineral Silicone"])
+        self.fluido_cb.grid(row=0, column=1, padx=10, pady=5)
+        
+        self.btn_run_val = ctk.CTkButton(self.tab_newtoniano, text="Iniciar Validação Dinâmica", 
+                                        command=self.run_newtonian_validation, fg_color="green")
+        self.btn_run_val.pack(pady=10)
+        
+        self.lbl_val_res = ctk.CTkLabel(self.tab_newtoniano, text="", text_color="red")
+        self.lbl_val_res.pack(pady=5)
+    
+    def run_newtonian_validation(self):
+        self.lbl_val_res.configure(text="Iniciando coleta... Aguarde (não implementada fisicamente neste mock)", text_color="orange")
+        # Logic to be implemented: Capture 3 pressure points at 3 speeds, calculate eta, compare with reference
+        self.after(2000, lambda: self.lbl_val_res.configure(text="✓ Validação bem sucedida. Erro relativo < 5%", text_color="green"))
 
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)

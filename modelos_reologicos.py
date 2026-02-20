@@ -139,9 +139,19 @@ def guess_bingham(gd, tau):
         return [0.0, 1.0]
 
 def guess_hb(gd, tau):
-    # Difícil estimar t0, K, n juntos. Chute inicial genérico.
-    # Assume t0 pequeno, e ajusta PL no restante
-    return [np.min(tau)*0.5, 1.0, 0.5]
+    # Estima tau0 observando as tensões nas menores taxas de cisalhamento
+    idx_sorted = np.argsort(gd)
+    tau0_guess = np.mean(tau[idx_sorted][:3]) if len(tau) >= 3 else tau[idx_sorted][0] * 0.9
+    
+    # Para K e n, estimativa aproximada subtraindo o tau0
+    tau_eff = np.maximum(tau - tau0_guess, 1e-9)
+    try:
+        slope, intercept, _, _, _ = linregress(np.log(gd), np.log(tau_eff))
+        K_guess = np.exp(intercept)
+        n_guess = slope
+        return [max(0, tau0_guess), max(1e-9, K_guess), max(0, min(5.0, n_guess))]
+    except:
+        return [max(0, tau0_guess), 1.0, 0.8]
 
 def guess_casson(gd, tau):
     # Linearização: sqrt(tau) = sqrt(t0) + sqrt(eta)*sqrt(gd)

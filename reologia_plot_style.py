@@ -6,14 +6,14 @@ Módulo de estilo e funções de plotagem para o Reômetro Capilar.
 
 Contém:
   - STYLE: dicionário central com todas as configurações visuais
-  - apply_dark_style(): aplica o tema escuro globalmente ao matplotlib
+  - apply_scientific_style(): aplica o tema claro cientifico globalmente ao matplotlib
   - make_figure() / make_subplots(): cria figuras já estilizadas
   - Funções de plotagem prontas: plot_flow_curve, plot_viscosity,
     plot_nprime, plot_bagley, plot_mooney, plot_overlay
 
 Uso mínimo no app:
-    from reologia_plot_style import apply_dark_style, make_figure, STYLE
-    apply_dark_style()
+    from reologia_plot_style import apply_scientific_style, make_figure, STYLE
+    apply_scientific_style()
     fig, ax = make_figure()
     ax.scatter(gd, tau, **STYLE['scatter']['data'])
 """
@@ -29,26 +29,26 @@ from matplotlib.ticker import LogLocator, LogFormatter
 # 1. PALETA E CONFIGURAÇÕES CENTRAIS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Cores base — escuras para fundo do customtkinter
-BG_DARK   = "#1e1e2e"   # fundo da figura (combine com a cor do frame CTk)
-BG_AXES   = "#2a2a3e"   # fundo do painel de plot
-FG_TEXT   = "#cdd6f4"   # cor do texto / rótulos
-FG_GRID   = "#45475a"   # linhas de grade
-FG_SPINE  = "#585b70"   # bordas dos eixos (spines)
-FG_TICK   = "#cdd6f4"   # marcações dos eixos
+# Cores base — Tema Claro de Publicação Científica
+BG_DARK   = "#ffffff"   # fundo da figura
+BG_AXES   = "#ffffff"   # fundo do painel de plot
+FG_TEXT   = "#000000"   # cor do texto / rótulos
+FG_GRID   = "#e0e0e0"   # linhas de grade
+FG_SPINE  = "#000000"   # bordas dos eixos (spines)
+FG_TICK   = "#000000"   # marcações dos eixos
 
-# Paleta de dados — alta visibilidade no fundo escuro
+# Paleta de dados — cores científicas tradicionais
 PALETTE = {
-    "data"    : "#89b4fa",   # azul suave (pontos experimentais principais)
-    "fit"     : "#f38ba8",   # rosa/vermelho (curva ajustada / melhor modelo)
-    "alt1"    : "#a6e3a1",   # verde (modelo alternativo 1)
-    "alt2"    : "#fab387",   # laranja (modelo alternativo 2)
-    "alt3"    : "#cba6f7",   # lilás (modelo alternativo 3)
-    "ref"     : "#f9e2af",   # amarelo claro (dado de referência / rotacional)
-    "std"     : "#89b4fa",   # mesmo azul para barras de erro (mais transparente)
-    "region"  : "#a6e3a1",   # verde para regiões sombreadas (axvspan)
-    "warning" : "#f38ba8",   # vermelho para pontos descartados / alertas
-    "neutral" : "#6c7086",   # cinza para pontos desativados / fora da faixa
+    "data"    : "#000000",   # preto (pontos experimentais principais)
+    "fit"     : "#d62728",   # vermelho (melhor ajuste / Herschel-Bulkley)
+    "alt1"    : "#2ca02c",   # verde (modelo alternativo 1 / Lei da Potência)
+    "alt2"    : "#1f77b4",   # azul (modelo alternativo 2 / Bingham)
+    "alt3"    : "#9467bd",   # roxo (modelo alternativo 3 / Casson)
+    "ref"     : "#7f7f7f",   # cinza (dado de referência / rotacional)
+    "std"     : "#555555",   # cinza escuro para barras de erro
+    "region"  : "#e8f5e9",   # verde bem claro para regiões sombreadas (axvspan)
+    "warning" : "#d62728",   # vermelho para pontos descartados / alertas
+    "neutral" : "#cccccc",   # cinza para pontos desativados / fora da faixa
 }
 
 # Configurações por tipo de elemento
@@ -59,7 +59,7 @@ STYLE = {
             color=PALETTE["data"],
             s=60,
             zorder=7,
-            edgecolors="#1e1e2e",
+            edgecolors="#000000",
             linewidths=0.6,
         ),
         "reference": dict(         # dado do rotacional / referência externa
@@ -92,27 +92,27 @@ STYLE = {
         "best_fit": dict(
             color=PALETTE["fit"],
             linewidth=2.4,
-            linestyle="-",
+            linestyle="--",
             zorder=9,
         ),
         "alt1": dict(
             color=PALETTE["alt1"],
-            linewidth=1.7,
-            linestyle="--",
+            linewidth=2.0,
+            linestyle="-",
             zorder=8,
             alpha=0.85,
         ),
         "alt2": dict(
             color=PALETTE["alt2"],
             linewidth=1.7,
-            linestyle="-.",
+            linestyle="--",
             zorder=8,
             alpha=0.85,
         ),
         "alt3": dict(
             color=PALETTE["alt3"],
             linewidth=1.5,
-            linestyle=":",
+            linestyle="--",
             zorder=8,
             alpha=0.80,
         ),
@@ -146,7 +146,7 @@ STYLE = {
     # ── anotações de texto inline ─────────────────────────────────────────────
     "annotation_box": dict(
         boxstyle="round,pad=0.4",
-        facecolor="#313244",
+        facecolor="#ffffe0",
         edgecolor=FG_SPINE,
         alpha=0.90,
     ),
@@ -172,8 +172,8 @@ STYLE = {
     # ── legenda ───────────────────────────────────────────────────────────────
     "legend": dict(
         fontsize=8.5,
-        framealpha=0.85,
-        facecolor="#313244",
+        framealpha=0.90,
+        facecolor="#ffffff",
         edgecolor=FG_SPINE,
         labelcolor=FG_TEXT,
         handlelength=1.8,
@@ -191,17 +191,17 @@ STYLE = {
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. APLICAR TEMA ESCURO GLOBALMENTE
+# 2. APLICAR TEMA GLOBALMENTE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def apply_dark_style():
+def apply_scientific_style():
     """
-    Aplica o tema escuro ao matplotlib via rcParams.
+    Aplica o tema científico (claro) ao matplotlib via rcParams.
     Chamar UMA VEZ na inicialização do app (antes de criar qualquer figura).
 
     Exemplo:
         import reologia_plot_style as rps
-        rps.apply_dark_style()
+        rps.apply_scientific_style()
     """
     plt.rcParams.update({
         # fundo
@@ -247,8 +247,8 @@ def apply_dark_style():
         "lines.markersize"      : 6,
 
         # legenda
-        "legend.framealpha"     : 0.85,
-        "legend.facecolor"      : "#313244",
+        "legend.framealpha"     : 0.90,
+        "legend.facecolor"      : "#ffffff",
         "legend.edgecolor"      : FG_SPINE,
         "legend.labelcolor"     : FG_TEXT,
         "legend.fontsize"       : 9,
@@ -624,7 +624,7 @@ if __name__ == "__main__":
     from scipy.optimize import curve_fit
     from sklearn.metrics import r2_score
 
-    apply_dark_style()
+    apply_scientific_style()
 
     # Dados sintéticos (HB: tau0=50, K=10, n=0.4)
     np.random.seed(42)
@@ -664,6 +664,6 @@ if __name__ == "__main__":
     })
 
     fig.tight_layout(pad=1.5)
-    fig.savefig("/tmp/demo_style.png", dpi=130, bbox_inches="tight")
-    print("Demo salvo em /tmp/demo_style.png")
-    plt.show()
+    fig.savefig("demo_style.png", dpi=130, bbox_inches="tight")
+    print("Demo salvo em demo_style.png")
+    # plt.show()

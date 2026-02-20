@@ -62,6 +62,12 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
         tuple: (tau_w_corrigido, gamma_targets) - Arrays de tensão corrigida e taxa
     """
     print("\n--- Iniciando Análise de Correção de Bagley ---")
+    
+    # M11: Validação de Mínimo 3 Capilares
+    if len(lista_cap_data_bagley) < 3:
+        print("ERRO (Bagley): Mínimo 3 capilares necessários para ajuste linear (R²) confiável.")
+        return np.array([]), np.array([])
+        
     min_gamma_overall, max_gamma_overall = np.inf, -np.inf
 
     for cap_data in lista_cap_data_bagley:
@@ -144,6 +150,11 @@ def perform_mooney_correction(capilares_data, common_L_mm, rho_si, t_ext_s_array
     """
     print("\n--- Iniciando Análise de Correção de Mooney ---")
     
+    # M11: Validação de Mínimo 3 Capilares
+    if len(capilares_data) < 3:
+        print("ERRO (Mooney): Mínimo 3 capilares necessários para ajuste linear (R²) confiável.")
+        return np.array([]), np.array([])
+        
     # 1. Pré-processamento: Calcula gamma_aw e tau_w_aparente para cada capilar
     min_tau_overall, max_tau_overall = np.inf, -np.inf
     

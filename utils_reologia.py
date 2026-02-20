@@ -23,11 +23,11 @@ CONSTANTS = {
 # --- CONFIGURAÇÃO DE PLOTAGEM ---
 # -----------------------------------------------------------------------------
 def setup_graficos():
-    """Configura o backend do Matplotlib para QtAgg, se disponível."""
+    """Configura o backend do Matplotlib para TkAgg, se necessário."""
     try:
-        matplotlib.use('QtAgg')
+        pass # UI principal usa backend_tkagg nativamente
     except ImportError:
-        print("Aviso: Backend QtAgg não encontrado, usando o padrão do sistema.")
+        print("Aviso: Falha ao configurar backend de gráficos.")
 
 def gerar_timestamp():
     """Gera uma string de timestamp atual (YYYYMMDD_HHMMSS)."""

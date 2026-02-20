@@ -98,11 +98,24 @@ class App(ctk.CTk):
     def show_correcoes(self): self.show_frame("CorrecoesFrame")
 
     def check_connection(self):
-        """Periodically updates connection status label."""
+        """Periodically updates connection status label and checks calibration state."""
+        # 1. Check Arduino Connection
         if self.controller.is_connected:
             self.status_label.configure(text="Arduino: Conectado", text_color="green")
         else:
             self.status_label.configure(text="Arduino: Desconectado", text_color="red")
+            
+        # 2. Check Calibration Status (C11 Alert)
+        cal = self.db.get_latest_calibracao()
+        if not cal or (abs(cal['slope_linha'] - 1.0) < 0.001 and abs(cal['intercept_linha'] - 0.0) < 0.001):
+            if not hasattr(self, 'cal_alert_label'):
+                self.cal_alert_label = ctk.CTkLabel(self.sidebar_frame, text="⚠️ Sensor Não Calibrado", text_color="orange", font=ctk.CTkFont(weight="bold"))
+                self.cal_alert_label.grid(row=8, column=0, padx=20, pady=10)
+        else:
+            if hasattr(self, 'cal_alert_label'):
+                self.cal_alert_label.destroy()
+                del self.cal_alert_label
+
         self.after(2000, self.check_connection)
 
     def on_close(self):

@@ -495,7 +495,9 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                 'Tensao de Cisalhamento (Pa)': 'Tensao (Pa)',
                 'Viscosidade Real (Pa.s)': 'Visc Real (Pa.s)',
                 'Desvio Padrao Tensao (Pa)': 'Std Tensao',
-                'Desvio Padrao Viscosidade (Pa.s)': 'Std Visc'
+                'Desvio Padrao Viscosidade (Pa.s)': 'Std Visc',
+                'Delta P (bar)': 'Delta P (bar)',
+                'Pressao Media (bar)': 'Delta P (bar)'
             }
             
             df_print = df_res.copy()
@@ -512,7 +514,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
             df_print.columns = new_cols
             
             # Define colunas de interesse (incluindo estatísticas se existirem)
-            possible_cols = ['Taxa (s-1)', 'Tensao (Pa)', 'Std Tensao', 'Visc. (Pa.s)', 'Std Visc']
+            possible_cols = ['Taxa (s-1)', 'Delta P (bar)', 'Tensao (Pa)', 'Std Tensao', 'Visc. (Pa.s)', 'Std Visc']
             cols_final = [c for c in possible_cols if c in df_print.columns]
             
             if not cols_final: cols_final = df_print.columns[:5] # Fallback

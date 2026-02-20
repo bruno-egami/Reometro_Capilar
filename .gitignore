@@ -22,12 +22,13 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual Environments
+# Virtual Environments & Caches
 venv/
 env/
 ENV/
 .env
 .venv/
+.pytest_cache/
 
 # IDEs
 .vscode/
@@ -38,9 +39,13 @@ ENV/
 # Project Specific - Data & Outputs
 reometria.db
 *.db
+*.sqlite
 *.log
 *.pdf
 *.png
+
+# Drafts and Analysis Folders
+Analise-melhorias/
 
 # Output Directories (Results)
 resultados_analise_reologica/
