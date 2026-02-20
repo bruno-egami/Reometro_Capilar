@@ -67,9 +67,12 @@ class RelatorioWindow(ctk.CTkToplevel):
         text += "PARÂMETROS DOS MODELOS:\n"
         for model_name, fit in d['model_fits'].items():
             if fit.get('params') is not None:
-                text += f"{model_name}: R²={fit['r2']:.4f}\n"
-                for n, v in zip(fit['param_names'], fit['params']):
-                    text += f"  {n}: {v:.4g}\n"
+                text += f"{model_name}: R²={fit.get('r2', 0):.4f}, AIC={fit.get('aic', 0):.1f}\n"
+                for i, n in enumerate(fit['param_names']):
+                    v = fit['params'][i]
+                    margin = fit.get('ic', {}).get(n, 0.0)
+                    marg_str = f" ± {margin:.2g}" if margin > 0 else ""
+                    text += f"  {n}: {v:.4g}{marg_str}\n"
                 text += "\n"
         
         text += "-"*40 + "\n"

@@ -181,11 +181,11 @@ class TestAjusteModelos:
         results, best_model, df = fitting.ajustar_modelos(gamma_dot, tau_w)
         
         # Lei de Potência deve ter bom ajuste
-        assert 'Lei de Potencia' in results
-        assert results['Lei de Potencia']['R2'] > 0.99
+        assert 'Lei da Potência' in results
+        assert results['Lei da Potência']['R2'] > 0.99
         
         # Parâmetros devem estar próximos dos originais
-        params = results['Lei de Potencia']['params']
+        params = results['Lei da Potência']['params']
         assert_allclose(params[0], K, rtol=0.1)  # K
         assert_allclose(params[1], n, rtol=0.1)  # n
     
@@ -221,14 +221,14 @@ class TestInferenciaComportamento:
     
     def test_pseudoplastic(self):
         """Detecta comportamento pseudoplástico (n < 1)."""
-        results = {'Lei de Potencia': {'params': np.array([10.0, 0.4]), 'R2': 0.99}}
-        comportamento = fitting.inferir_comportamento_fluido('Lei de Potencia', results)
+        results = {'Lei da Potência': {'params': np.array([10.0, 0.4]), 'R2': 0.99}}
+        comportamento = fitting.inferir_comportamento_fluido('Lei da Potência', results)
         assert 'Pseudoplastico' in comportamento
     
     def test_dilatant(self):
         """Detecta comportamento dilatante (n > 1)."""
-        results = {'Lei de Potencia': {'params': np.array([5.0, 1.5]), 'R2': 0.99}}
-        comportamento = fitting.inferir_comportamento_fluido('Lei de Potencia', results)
+        results = {'Lei da Potência': {'params': np.array([5.0, 1.5]), 'R2': 0.99}}
+        comportamento = fitting.inferir_comportamento_fluido('Lei da Potência', results)
         assert 'Dilatante' in comportamento
     
     def test_viscoplastic(self):

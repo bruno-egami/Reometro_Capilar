@@ -40,22 +40,16 @@ class ColetaFrame(ctk.CTkFrame):
         self.graph_frame = ctk.CTkFrame(self)
         self.graph_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
-        # Matplotlib Figure
-        self.fig = Figure(figsize=(5, 4), dpi=100, facecolor="#2b2b2b") # Dark background matching ctk
+        # Matplotlib Figure with inherited style
+        self.fig = Figure(figsize=(5, 4), dpi=100)
         self.ax = self.fig.add_subplot(111)
-        self.ax.set_facecolor("#2b2b2b")
-        self.ax.tick_params(axis='x', colors='white')
-        self.ax.tick_params(axis='y', colors='white')
-        self.ax.spines['bottom'].set_color('white')
-        self.ax.spines['top'].set_color('white') 
-        self.ax.spines['right'].set_color('white')
-        self.ax.spines['left'].set_color('white')
-        self.ax.set_title("Pressão Real-time", color='white')
-        self.ax.set_xlabel("Tempo (s)", color='white')
-        self.ax.set_ylabel("Pressão (bar)", color='white')
         
-        self.line_l, = self.ax.plot([], [], 'c-', label='Linha') # Cyan
-        self.line_p, = self.ax.plot([], [], 'm-', label='Pasta') # Magenta
+        self.ax.set_title("Pressão Real-time")
+        self.ax.set_xlabel("Tempo (s)")
+        self.ax.set_ylabel("Pressão (bar)")
+        
+        self.line_l, = self.ax.plot([], [], label='Linha') 
+        self.line_p, = self.ax.plot([], [], label='Pasta') 
         self.ax.legend()
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_frame)
@@ -260,10 +254,38 @@ class ColetaFrame(ctk.CTkFrame):
 
             # 2. Calculate Averages
             import numpy as np
-            p1_avg = np.mean(self.p1_data) if self.p1_data else 0
-            p2_avg = np.mean(self.p2_data) if self.p2_data else 0
-            v1_avg = np.mean(self.v1_data) if self.v1_data else 0
-            v2_avg = np.mean(self.v2_data) if self.v2_data else 0
+            
+            # --- M2: Detecção Automática de Regime Estacionário ---
+            # Encontrar a janela com menor desvio padrão (mais estável)
+            window_size = min(30, len(self.p2_data)) # Janela de até 30 pontos (3 segundos)
+            if window_size >= 10:
+                best_start_idx = 0
+                min_std = float('inf')
+                
+                # Desliza a janela pela segunda metade dos dados (geralmente onde estabiliza)
+                start_search = max(0, len(self.p2_data) // 2 - window_size)
+                
+                for i in range(start_search, len(self.p2_data) - window_size + 1):
+                    window = self.p2_data[i: i + window_size]
+                    current_std = np.std(window)
+                    if current_std < min_std:
+                        min_std = current_std
+                        best_start_idx = i
+                        
+                end_idx = best_start_idx + window_size
+                p1_avg = np.mean(self.p1_data[best_start_idx:end_idx])
+                p2_avg = np.mean(self.p2_data[best_start_idx:end_idx])
+                v1_avg = np.mean(self.v1_data[best_start_idx:end_idx])
+                v2_avg = np.mean(self.v2_data[best_start_idx:end_idx])
+                
+                print(f"Regime estacionário detectado: pontos {best_start_idx} a {end_idx}. Desvio: {min_std:.4f}")
+            else:
+                # Fallback para média simples se poucos pontos
+                p1_avg = np.mean(self.p1_data) if self.p1_data else 0
+                p2_avg = np.mean(self.p2_data) if self.p2_data else 0
+                v1_avg = np.mean(self.v1_data) if self.v1_data else 0
+                v2_avg = np.mean(self.v2_data) if self.v2_data else 0
+                
             duracao = self.times[-1] if self.times else 0
             
             # Determine point number (count existing + 1)

@@ -26,69 +26,71 @@ class DatabaseManager:
     def init_db(self) -> None:
         """Initialize the database with the required tables."""
         self.connect()
-        cursor = self.conn.cursor()
+        try:
+            cursor = self.conn.cursor()
 
-        # Table: Amostras
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS amostras (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT UNIQUE NOT NULL,
-                descricao TEXT,
-                data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
-                d_capilar_mm REAL,
-                l_capilar_mm REAL,
-                densidade_g_cm3 REAL
-            )
-        ''')
+            # Table: Amostras
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS amostras (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome TEXT UNIQUE NOT NULL,
+                    descricao TEXT,
+                    data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    d_capilar_mm REAL,
+                    l_capilar_mm REAL,
+                    densidade_g_cm3 REAL
+                )
+            ''')
 
-        # Table: Calibracoes
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS calibracoes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                data DATETIME DEFAULT CURRENT_TIMESTAMP,
-                slope_linha REAL NOT NULL,
-                intercept_linha REAL NOT NULL,
-                slope_pasta REAL NOT NULL,
-                intercept_pasta REAL NOT NULL,
-                ativa INTEGER DEFAULT 1
-            )
-        ''')
+            # Table: Calibracoes
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS calibracoes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    slope_linha REAL NOT NULL,
+                    intercept_linha REAL NOT NULL,
+                    slope_pasta REAL NOT NULL,
+                    intercept_pasta REAL NOT NULL,
+                    ativa INTEGER DEFAULT 1
+                )
+            ''')
 
-        # Table: Ensaios
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ensaios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                amostra_id INTEGER NOT NULL,
-                ponto_n INTEGER NOT NULL,
-                pressao_linha_bar REAL,
-                pressao_pasta_bar REAL,
-                massa_g REAL,
-                duracao_s REAL,
-                tensao_linha_v REAL,
-                tensao_pasta_v REAL,
-                data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP,
-                ativo INTEGER DEFAULT 1,
-                FOREIGN KEY (amostra_id) REFERENCES amostras (id)
-            )
-        ''')
+            # Table: Ensaios
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ensaios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    amostra_id INTEGER NOT NULL,
+                    ponto_n INTEGER NOT NULL,
+                    pressao_linha_bar REAL,
+                    pressao_pasta_bar REAL,
+                    massa_g REAL,
+                    duracao_s REAL,
+                    tensao_linha_v REAL,
+                    tensao_pasta_v REAL,
+                    data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    ativo INTEGER DEFAULT 1,
+                    FOREIGN KEY (amostra_id) REFERENCES amostras (id)
+                )
+            ''')
 
-        # Table: Analises
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS analises (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                amostra_id INTEGER NOT NULL,
-                data_analise DATETIME DEFAULT CURRENT_TIMESTAMP,
-                modelo_melhor TEXT,
-                r2_melhor REAL,
-                n_prime REAL,
-                comportamento TEXT,
-                parametros_json TEXT,
-                FOREIGN KEY (amostra_id) REFERENCES amostras (id)
-            )
-        ''')
+            # Table: Analises
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS analises (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    amostra_id INTEGER NOT NULL,
+                    data_analise DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    modelo_melhor TEXT,
+                    r2_melhor REAL,
+                    n_prime REAL,
+                    comportamento TEXT,
+                    parametros_json TEXT,
+                    FOREIGN KEY (amostra_id) REFERENCES amostras (id)
+                )
+            ''')
 
-        self.conn.commit()
-        self.close()
+            self.conn.commit()
+        finally:
+            self.close()
         
         # Migration for existing DB
         self._migrate_db()
@@ -96,20 +98,21 @@ class DatabaseManager:
     def _migrate_db(self) -> None:
         """Adds missing columns to existing tables."""
         self.connect()
-        cursor = self.conn.cursor()
-        
-        # Check if 'ativo' exists in 'ensaios'
-        cursor.execute("PRAGMA table_info(ensaios)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if 'ativo' not in columns:
-            print("Migrando banco de dados: Adicionando coluna 'ativo' na tabela 'ensaios'...")
-            try:
-                cursor.execute("ALTER TABLE ensaios ADD COLUMN ativo INTEGER DEFAULT 1")
-                self.conn.commit()
-            except Exception as e:
-                print(f"Erro na migração: {e}")
-        
-        self.close()
+        try:
+            cursor = self.conn.cursor()
+            
+            # Check if 'ativo' exists in 'ensaios'
+            cursor.execute("PRAGMA table_info(ensaios)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'ativo' not in columns:
+                print("Migrando banco de dados: Adicionando coluna 'ativo' na tabela 'ensaios'...")
+                try:
+                    cursor.execute("ALTER TABLE ensaios ADD COLUMN ativo INTEGER DEFAULT 1")
+                    self.conn.commit()
+                except Exception as e:
+                    print(f"Erro na migração: {e}")
+        finally:
+            self.close()
 
     # --- Analises ---
 

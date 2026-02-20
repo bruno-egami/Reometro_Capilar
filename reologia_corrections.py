@@ -91,7 +91,7 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
     tau_w_corr_list, gamma_aw_targets_ok_list = [], []
 
     for target_gamma_k_val in targets_gamma_aw:
-        P_target_list, L_R_target_list = [], []
+        P_target_list, L_D_target_list = [], []
         for cap_data in lista_cap_data_bagley:
             # Devemos ter certeza que o cap_data['gamma_dot_aw'] foi calculado
             if 'gamma_dot_aw' not in cap_data: continue 
@@ -104,17 +104,17 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
             if g_sorted.size > 1 and g_sorted[0] <= target_gamma_k_val <= g_sorted[-1]:
                 P_interp = np.interp(target_gamma_k_val, g_sorted, P_sorted)
                 P_target_list.append(P_interp)
-                L_R_target_list.append(cap_data['L_mm'] / cap_data['D_mm'])
+                L_D_target_list.append(cap_data['L_mm'] / cap_data['D_mm'])
         
         if len(P_target_list) >= 2:
-            slope, intercept, r_value, _, _ = linregress(L_R_target_list, P_target_list)
+            slope, intercept, r_value, _, _ = linregress(L_D_target_list, P_target_list)
             if slope > 0:
                 tau_w_corr = slope / 2.0 # Definição de Bagley: Slope = 2 * tau_w
                 tau_w_corr_list.append(tau_w_corr)
                 gamma_aw_targets_ok_list.append(target_gamma_k_val)
                 # Plota um exemplo de ajuste de Bagley (opcional, para não gerar muitos gráficos)
                 if target_gamma_k_val == targets_gamma_aw[len(targets_gamma_aw)//2]:
-                     reologia_plot.plotar_ajuste_bagley(L_R_target_list, P_target_list, slope, intercept, str(target_gamma_k_val), output_folder, timestamp)
+                     reologia_plot.plotar_ajuste_bagley(L_D_target_list, P_target_list, slope, intercept, str(target_gamma_k_val), output_folder, timestamp)
 
     return np.array(tau_w_corr_list), np.array(gamma_aw_targets_ok_list)
 

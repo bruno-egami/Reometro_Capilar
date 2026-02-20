@@ -86,7 +86,7 @@ class ReometerController:
             self.ser = serial.Serial(port, BAUD_RATE, timeout=TIMEOUT_SERIAL)
             time.sleep(2) # Wait for Arduino reset
             
-            if self.ser.isOpen():
+            if self.ser.is_open:
                 self.ser.flushInput()
                 self.ser.flushOutput()
                 self.ser.write(b"PING\n")
@@ -105,7 +105,7 @@ class ReometerController:
     def disconnect(self) -> None:
         """Disconnects the serial port and stops the reading thread."""
         self.stop_reading()
-        if self.ser and self.ser.isOpen():
+        if self.ser and self.ser.is_open:
             self.ser.close()
         self.is_connected = False
         self.ser = None
@@ -138,33 +138,31 @@ class ReometerController:
         Internal loop running in a background thread.
         continuously requests voltage readings from the Arduino (READ_VOLTAGE command).
         """
-        while self.is_reading and self.ser and self.ser.isOpen():
+        while self.is_reading and self.ser and self.ser.is_open:
             try:
                 # Command to request voltage
                 self.ser.write(b"READ_VOLTAGE\n")
                 self.ser.flush()
                 
-                # Simple non-blocking read line with timeout logic handling in serial
-                if self.ser.in_waiting > 0:
-                    line = self.ser.readline().decode('utf-8', 'ignore').strip()
-                    if not line: continue
-                    
-                    try:
-                        # Format: "V1;V2" e.g. "0.004;0.002"
-                        parts = line.split(';')
-                        if len(parts) == 2:
-                            v1 = float(parts[0])
-                            v2 = float(parts[1])
-                            
-                            # Apply calibration
-                            p_linha = self._convert_voltage_to_pressure(v1, 'linha')
-                            p_pasta = self._convert_voltage_to_pressure(v2, 'pasta')
-                            
-                            # Emit callback
-                            if self.on_pressure_reading:
-                                self.on_pressure_reading(p_linha, p_pasta, v1, v2)
-                    except ValueError:
-                        pass
+                line = self.ser.readline().decode('utf-8', 'ignore').strip()
+                if not line: continue
+                
+                try:
+                    # Format: "V1;V2" e.g. "0.004;0.002"
+                    parts = line.split(';')
+                    if len(parts) == 2:
+                        v1 = float(parts[0])
+                        v2 = float(parts[1])
+                        
+                        # Apply calibration
+                        p_linha = self._convert_voltage_to_pressure(v1, 'linha')
+                        p_pasta = self._convert_voltage_to_pressure(v2, 'pasta')
+                        
+                        # Emit callback
+                        if self.on_pressure_reading:
+                            self.on_pressure_reading(p_linha, p_pasta, v1, v2)
+                except ValueError:
+                    pass
                 
                 time.sleep(0.1) # Approx 10Hz sampling rate
             except Exception as e:

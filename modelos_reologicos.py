@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import linregress
 
 # -----------------------------------------------------------------------------
 # --- DEFINIÇÕES DOS MODELOS REOLÓGICOS ---
@@ -150,13 +151,11 @@ def guess_casson(gd, tau):
     except:
         return [0.0, 1.0]
 
-from scipy.stats import linregress
-
 # Dicionário contendo as funções, nomes dos parâmetros, função de estimativa inicial e limites (bounds)
 # Formato: "Nome": (funcao_modelo, lista_nomes_params, funcao_chute_inicial, bounds)
 MODELS = {
     "Newtoniano": (model_newtonian, ["eta"], guess_newtonian, ([1e-9], [np.inf])),
-    "Lei de Potencia": (model_power_law, ["K", "n"], guess_power_law, ([1e-9, 1e-9], [np.inf, 5.0])),
+    "Lei da Potência": (model_power_law, ["K", "n"], guess_power_law, ([1e-9, 1e-9], [np.inf, 5.0])),
     "Bingham": (model_bingham, ["tau0", "eta_p"], guess_bingham, ([0, 1e-9], [np.inf, np.inf])),
     "Herschel-Bulkley": (model_hb, ["tau0", "K", "n"], guess_hb, ([0, 1e-9, 1e-9], [np.inf, np.inf, 5.0])),
     "Casson": (model_casson, ["tau0", "eta_c"], guess_casson, ([0, 1e-9], [np.inf, np.inf]))

@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
+import logging
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 from modelos_reologicos import MODELS
@@ -22,6 +22,7 @@ def ajustar_modelos(gamma_dot, tau_w):
     model_results = {}
     best_model_nome = ""
     best_r2 = -np.inf
+    best_aic = np.inf
     summary_list = []
     
     # Filtra dados válidos para ajuste
@@ -29,9 +30,12 @@ def ajustar_modelos(gamma_dot, tau_w):
     gd_fit = gamma_dot[valid_fit]
     tau_fit = tau_w[valid_fit]
     
-    if len(gd_fit) < 3:
+    n_pts = len(gd_fit)
+    if n_pts < 3:
         print("  AVISO: Pontos insuficientes para ajuste de modelos (mínimo 3).")
         return {}, "", pd.DataFrame()
+        
+    from scipy.stats import t
 
     for nome_modelo, (func_modelo, param_names, initial_guess_func, bounds) in MODELS.items():
         try:
@@ -42,22 +46,37 @@ def ajustar_modelos(gamma_dot, tau_w):
             tau_pred = func_modelo(gd_fit, *popt)
             r2 = r2_score(tau_fit, tau_pred)
             
-            model_results[nome_modelo] = {'params': popt, 'R2': r2}
+            # M6: Calculo de AIC/BIC
+            rss = np.sum((tau_fit - tau_pred)**2)
+            k = len(popt)
+            rss_safe = rss if rss > 1e-10 else 1e-10
+            aic_val = 2*k + n_pts * np.log(rss_safe/n_pts)
+            bic_val = k * np.log(n_pts) + n_pts * np.log(rss_safe/n_pts)
+            
+            # M7: Intervalo de Confianca 95% usando pcov
+            ic_dict = {}
+            if not np.isinf(pcov).all():
+                dof = max(1, n_pts - k)
+                t_val = t.ppf(0.975, dof)
+                std_errs = np.sqrt(np.diag(pcov))
+                for idx, p_n in enumerate(param_names):
+                    ic_dict[p_n] = t_val * std_errs[idx]
+            
+            model_results[nome_modelo] = {'params': popt, 'R2': r2, 'AIC': aic_val, 'BIC': bic_val, 'IC_95': ic_dict}
             
             # Formata parâmetros para o resumo
-            params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, popt)])
-            summary_list.append({'Modelo': nome_modelo, 'R2': r2, 'Parametros': params_str})
+            params_str = ", ".join([f"{n}={v:.4g}±{ic_dict.get(n, 0):.2g}" if ic_dict.get(n, 0) > 0 else f"{n}={v:.4g}" for n, v in zip(param_names, popt)])
+            summary_list.append({'Modelo': nome_modelo, 'R2': r2, 'AIC': aic_val, 'BIC': bic_val, 'Parametros': params_str})
             
-            if r2 > best_r2:
-                best_r2 = r2
+            if aic_val < best_aic:
+                best_aic = aic_val
                 best_model_nome = nome_modelo
                 
         except Exception as e:
             # Falhas pontuais em um modelo não devem parar o processo
-            # print(f"  Falha ao ajustar {nome_modelo}: {e}") 
-            pass
+            logging.warning(f"Falha ao ajustar {nome_modelo}: {e}")
 
-    df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
+    df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='AIC', ascending=True) if summary_list else pd.DataFrame()
     
     return model_results, best_model_nome, df_sum_modelo
 
@@ -70,7 +89,7 @@ def inferir_comportamento_fluido(best_model_nome, model_results):
         
     params = model_results[best_model_nome]['params']
     
-    if best_model_nome == "Lei de Potencia":
+    if best_model_nome == "Lei da Potência":
         # params: [K, n]
         n_val = params[1]
         if n_val < 1: return "Pseudoplastico (Shear Thinning)"

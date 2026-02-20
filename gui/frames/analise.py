@@ -311,7 +311,7 @@ class AnaliseFrame(ctk.CTkFrame):
             return
 
         if tk.messagebox.askyesno("Confirmar Exclusão", f"Deseja realmente excluir a análise da amostra '{amostra_nome}'?\n\nA amostra e os ensaios brutos serão preservados."):
-            if self.db.delete_analise(amostra_id):
+            if self.db.delete_all_analises(amostra_id):
                 tk.messagebox.showinfo("Sucesso", "Análise excluída com sucesso.")
                 self.refresh_list()
                 self._set_result("Análise removida. A amostra continua disponível para novo processamento.")
@@ -389,15 +389,31 @@ class AnaliseFrame(ctk.CTkFrame):
             
             # Corrections (Weissenberg) performed on RAW data first
             n_prime = 1.0
-            if aplicar_weissenberg:
+            gd_true_arr = gd_app_arr.copy()
+            
+            if aplicar_weissenberg and len(gd_app_arr) >= 3:
                 try:
                     log_gd = np.log(gd_app_arr)
                     log_tau = np.log(tau_arr)
-                    slope, _, _, _, _ = linregress(log_gd, log_tau)
-                    n_prime = slope
-                    gd_true_arr = gd_app_arr * ((3 * n_prime + 1) / (4 * n_prime))
-                except Exception: gd_true_arr = gd_app_arr
-            else: gd_true_arr = gd_app_arr
+                    
+                    # --- M3/M4: Weissenberg-Rabinowitsch Local ---
+                    # Usa gradiente (derivada central) no lugar do ajuste global
+                    # Para bordas, o numpy faz derivada unilateral aproximada
+                    local_n_primes = np.gradient(log_tau, log_gd)
+                    
+                    # Guarda limitadora (M4): 0.05 <= n' <= 3.0
+                    local_n_primes = np.clip(local_n_primes, 0.05, 3.0)
+                    
+                    # Correção ponto a ponto
+                    gd_true_arr = gd_app_arr * ((3 * local_n_primes + 1) / (4 * local_n_primes))
+                    
+                    # Para logs de relatórios ou fit global secundário (falso-n_prime),
+                    # podemos expor a média do log derivado como 'n_prime' global
+                    n_prime = np.mean(local_n_primes)
+                    
+                except Exception as e:
+                    print(f"Erro no Weissenberg-Rabinowitsch local: {e}")
+                    gd_true_arr = gd_app_arr.copy()
                 
             eta_arr = tau_arr / gd_true_arr
             
@@ -522,20 +538,44 @@ class AnaliseFrame(ctk.CTkFrame):
             model_fits = {}
             best_model = None
             best_r2 = -np.inf
+            best_aic = np.inf
+            
+            n_pts = len(fit_gd)
+            from scipy.stats import t
             
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:
                     p0 = g_func(fit_gd, fit_tau)
                     # Fit to means
-                    popt, _ = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
+                    popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
                     
                     tau_pred = m_func(fit_gd, *popt)
                     r2 = r2_score(fit_tau, tau_pred)
                     
-                    model_fits[m_name] = {'params': popt, 'r2': r2, 'param_names': p_names}
-                    if r2 > best_r2:
-                        best_r2 = r2
+                    # M6: Calculo de AIC/BIC
+                    rss = np.sum((fit_tau - tau_pred)**2)
+                    k = len(popt)
+                    rss_safe = rss if rss > 1e-10 else 1e-10
+                    aic_val = 2*k + n_pts * np.log(rss_safe/n_pts)
+                    bic_val = k * np.log(n_pts) + n_pts * np.log(rss_safe/n_pts)
+                    
+                    # M7: Intervalo de Confianca 95% usando pcov
+                    ic_dict = {}
+                    if not np.isinf(pcov).all():
+                        dof = max(1, n_pts - k)
+                        t_val = t.ppf(0.975, dof)
+                        std_errs = np.sqrt(np.diag(pcov))
+                        for idx, p_n in enumerate(p_names):
+                            ic_dict[p_n] = t_val * std_errs[idx]
+                    
+                    model_fits[m_name] = {'params': popt, 'r2': r2, 'aic': aic_val, 'bic': bic_val, 'ic': ic_dict, 'param_names': p_names}
+                    
+                    # OLS modificado para AIC (Menor e melhor)
+                    if aic_val < best_aic:
+                        best_aic = aic_val
                         best_model = m_name
+                        best_r2 = r2
+                        
                 except Exception as e:
                     model_fits[m_name] = {'params': None, 'r2': None, 'error': str(e)}
 
@@ -555,9 +595,11 @@ class AnaliseFrame(ctk.CTkFrame):
             for m_name, fit_data in model_fits.items():
                 if fit_data.get('params') is not None:
                     marker = "★" if m_name == best_model else " "
-                    results_txt += f"{marker} {m_name} (R²={fit_data['r2']:.4f})\n"
+                    results_txt += f"{marker} {m_name} (R²={fit_data['r2']:.4f}, AIC={fit_data.get('aic', 0):.1f})\n"
                     for i, pn in enumerate(fit_data['param_names']):
-                        results_txt += f"    {pn}: {fit_data['params'][i]:.4g}\n"
+                        margin = fit_data.get('ic', {}).get(pn, 0.0)
+                        marg_str = f" ± {margin:.2g}" if margin > 0 else ""
+                        results_txt += f"    {pn}: {fit_data['params'][i]:.4g}{marg_str}\n"
                 results_txt += "\n"
             
             comportamento = reologia_fitting.inferir_comportamento_fluido(best_model, 
@@ -638,7 +680,11 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 1. Flow Curve (log-log)
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.loglog(gamma, tau, 'o', markersize=8, label='Dados')
+        tau_std = self.analysis_data.get('tau_w_std', None)
+        if tau_std is not None and np.any(tau_std > 0):
+            ax.errorbar(gamma, tau, yerr=tau_std, fmt='o', markersize=8, capsize=4, label='Dados ± $\sigma$')
+        else:
+            ax.loglog(gamma, tau, 'o', markersize=8, label='Dados')
         
         # Add best model curve
         if best_model and self.analysis_data['model_fits'].get(best_model, {}).get('params') is not None:
@@ -661,7 +707,11 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 2. Viscosity Curve
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.loglog(gamma, eta, 's', markersize=8, color='green')
+        eta_std = self.analysis_data.get('eta_std', None)
+        if eta_std is not None and np.any(eta_std > 0):
+            ax.errorbar(gamma, eta, yerr=eta_std, fmt='s', markersize=8, color='green', capsize=4, label='Viscosidade ± $\sigma$')
+        else:
+            ax.loglog(gamma, eta, 's', markersize=8, color='green', label='Viscosidade')
         ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)', fontsize=12)
         ax.set_ylabel(r'Viscosidade $\eta$ (Pa.s)', fontsize=12)
         ax.set_title(f'Viscosidade vs Taxa de Cisalhamento - {amostra_nome}', fontsize=14)
@@ -674,7 +724,11 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 3. All Models Comparison
         fig, ax = plt.subplots(figsize=(10, 7))
-        ax.loglog(gamma, tau, 'ko', markersize=8, label='Dados')
+        tau_std = self.analysis_data.get('tau_w_std', None)
+        if tau_std is not None and np.any(tau_std > 0):
+            ax.errorbar(gamma, tau, yerr=tau_std, fmt='ko', markersize=8, capsize=4, label='Dados ± $\sigma$')
+        else:
+            ax.loglog(gamma, tau, 'ko', markersize=8, label='Dados')
         
         gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
