@@ -59,7 +59,11 @@ def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
             r2 = r2_score(tau_fit, tau_pred)
             
             # M6: Calculo de AIC/BIC
-            rss = np.sum((tau_fit - tau_pred)**2)
+            if sigma_wls is not None:
+                rss = np.sum(((tau_fit - tau_pred) / sigma_wls)**2)
+            else:
+                rss = np.sum((tau_fit - tau_pred)**2)
+                
             k = len(popt)
             rss_safe = rss if rss > 1e-10 else 1e-10
             aic_val = 2*k + n_pts * np.log(rss_safe/n_pts)

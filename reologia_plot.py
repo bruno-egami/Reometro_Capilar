@@ -3,6 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import utils_reologia
+from reologia_plot_style import STYLE, PALETTE
 
 # Importa modelos para plotagem
 from modelos_reologicos import MODELS
@@ -14,7 +15,7 @@ def plotar_ajuste_bagley(L_over_R_vals, P_vals, slope, intercept, target_gamma_a
     plt.scatter(L_over_R_vals, np.array(P_vals) / 1e5, marker='o', label='Dados Interpolados')
     line_x = np.array(sorted(L_over_R_vals))
     line_y_pa = slope * line_x + intercept
-    plt.plot(line_x, line_y_pa / 1e5, color='red', label=rf"Ajuste Linear ($\tau_{{w,\text{{corr}}}} = {slope/2:.1f}$ Pa)")
+    plt.plot(line_x, line_y_pa / 1e5, color=PALETTE['fit'], label=rf"Ajuste Linear ($\tau_{{w,\text{{corr}}}} = {slope/2:.1f}$ Pa)")
     plt.xlabel('Razão Comprimento/Raio (L/R) (adimensional)')
     plt.ylabel("Pressão Total Medida (" + r"$\Delta P$" + ") (bar)")
     title_str = f"Plot de Bagley para " + \
@@ -60,15 +61,15 @@ def gerar_graficos_finais(output_folder, timestamp_str,
             ax1.errorbar(gamma_dot_w_an_wr[valid_fit], tau_w_an[valid_fit], 
                         yerr=std_tau_w[valid_fit], 
                         label='Dados Experimentais (Corrigidos)', 
-                        fmt='o', color='b', markersize=6, capsize=4, 
+                        fmt='o', color=PALETTE['data'], markersize=6, capsize=4, 
                         elinewidth=1.5, alpha=0.7, zorder=10)
         else:
             ax1.scatter(gamma_dot_w_an_wr[valid_fit], tau_w_an[valid_fit], 
                        label='Dados Experimentais (Corrigidos)', 
-                       c='b', marker='o', s=60, zorder=10)
+                       c=PALETTE['data'], marker='o', s=60, zorder=10)
             # Linha conectando os pontos experimentais
             ax1.plot(gamma_dot_w_an_wr[valid_fit], tau_w_an[valid_fit], 
-                    c='b', linestyle='-', linewidth=1, alpha=0.5, zorder=9)
+                    c=PALETTE['data'], linestyle='-', linewidth=1, alpha=0.5, zorder=9)
 
     if len(gd_plot) > 0:
         for n_model_name, (func_modelo, param_names, initial_guess_func, bounds) in MODELS.items():
@@ -78,9 +79,9 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                 tau_m = func_modelo(gd_plot, *d_model_data['params'])
                 label_m = f"{n_model_name} (R²={d_model_data['R2']:.4f})"
                 if n_model_name == best_model_nome:
-                    ax1.plot(gd_plot, tau_m, label=label_m + " [MELHOR]", linestyle='-', linewidth=2.5, color='red', zorder=20)
+                    ax1.plot(gd_plot, tau_m, label=label_m + " [MELHOR]", linestyle='-', linewidth=2.5, color=PALETTE['fit'], zorder=20)
                 else:
-                    ax1.plot(gd_plot, tau_m, label=label_m, linestyle='--', linewidth=1.5, alpha=0.7)
+                    ax1.plot(gd_plot, tau_m, label=label_m, linestyle='--', linewidth=1.5, alpha=0.7, color=PALETTE['alt1'])
             except Exception as e_plot_model: print(f"  Aviso ao plotar modelo {n_model_name}: {e_plot_model}")
 
     ax1.set_xlabel("Taxa de Cisalhamento Corrigida (γ̇w, s⁻¹)")
@@ -106,16 +107,16 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                 log_err_y = std_tau_w[valid_log_np] / tau_w_an[valid_log_np]
                 ax2.errorbar(log_g_aw_p, log_t_p, yerr=log_err_y,
                            label='Dados Experimentais ln(γ̇aw) vs ln(τw)', 
-                           fmt='-x', color='r', markersize=8, capsize=4,
+                           fmt='-x', color=PALETTE['alt1'], markersize=8, capsize=4,
                            elinewidth=1.5, alpha=0.7)
             else:
-                ax2.scatter(log_g_aw_p, log_t_p, label='Dados Experimentais ln(γ̇aw) vs ln(τw)', c='r', marker='x', s=60)
+                ax2.scatter(log_g_aw_p, log_t_p, label='Dados Experimentais ln(γ̇aw) vs ln(τw)', c=PALETTE['alt1'], marker='x', s=60)
             
             if len(log_g_aw_p) > 1:
                 min_lg, max_lg = np.min(log_g_aw_p), np.max(log_g_aw_p)
                 if max_lg > min_lg: 
                     log_g_line = np.linspace(min_lg, max_lg, 50)
-                    ax2.plot(log_g_line, n_prime * log_g_line + log_K_prime, '--', c='b', lw=2, label=fr'Ajuste Linear (n\'={n_prime:.3f})')
+                    ax2.plot(log_g_line, n_prime * log_g_line + log_K_prime, '--', c=PALETTE['fit'], lw=2, label=fr'Ajuste Linear (n\'={n_prime:.3f})')
             
             ax2.set_xlabel("ln(Taxa de Cis. Apar. na Parede) (ln(γ̇aw))")
             ax2.set_ylabel("ln(Tensão de Cis. na Parede) (ln(τw))")
@@ -136,12 +137,12 @@ def gerar_graficos_finais(output_folder, timestamp_str,
             ax3.errorbar(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta],
                         yerr=std_eta[valid_eta],
                         label='Viscosidade Real Experimental (η)',
-                        fmt='-s', color='g', markersize=6, capsize=4,
+                        fmt='-s', color=PALETTE['data'], markersize=6, capsize=4,
                         elinewidth=1.5, alpha=0.7, zorder=10)
         else:
             ax3.plot(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta], 
                     label='Viscosidade Real Experimental (η)', 
-                    c='g', marker='s', linestyle='-', linewidth=1.5, markersize=8, zorder=10)
+                    c=PALETTE['data'], marker='s', linestyle='-', linewidth=1.5, markersize=8, zorder=10)
     
     if len(gd_plot) > 0:
         for n_model_name, (func_modelo, param_names, initial_guess_func, bounds) in MODELS.items():
@@ -179,11 +180,11 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                 if std_eta is not None and len(std_eta) == len(eta_true_an):
                     ax4.errorbar(P_Pa_plot, eta_plot, yerr=std_eta[valid_pv],
                                  label='Viscosidade Real Experimental',
-                                 fmt='-D', color='purple', markersize=6, capsize=4)
+                                 fmt='-D', color=PALETTE['alt3'], markersize=6, capsize=4)
                 else:
                     ax4.plot(P_Pa_plot, eta_plot,
                              label='Viscosidade Real Experimental',
-                             marker='D', color='purple', markersize=6)
+                             marker='D', color=PALETTE['alt3'], markersize=6)
 
                 # Plot model curve (pressure vs viscosity)
                 if model_results and best_model_nome:
@@ -210,7 +211,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                             if np.any(valid):
                                 ax4.plot(x_vals[valid], eta_modelo[valid],
                                          label=f'Modelo {best_model_nome}',
-                                         color='red', linestyle='-', linewidth=2.5, alpha=0.8, zorder=5)
+                                         color=PALETTE['fit'], linestyle='-', linewidth=2.5, alpha=0.8, zorder=5)
                     except Exception as e_plot_modelo:
                         print(f"  Aviso: Não foi possível plotar curva do modelo em P vs η: {e_plot_modelo}")
 
@@ -235,18 +236,18 @@ def gerar_graficos_finais(output_folder, timestamp_str,
     if np.any(valid_apparent_idx):
         ax5.plot(gamma_dot_aw_an[valid_apparent_idx], eta_a_an[valid_apparent_idx],
                  label='Viscosidade Aparente (η_a)',
-                 marker='^', linestyle='--', color='orange', alpha=0.7)
+                 marker='^', linestyle='--', color=PALETTE['alt2'], alpha=0.7)
 
     if np.any(valid_eta):
         if std_eta is not None and len(std_eta) == len(eta_true_an):
             ax5.errorbar(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta],
                         yerr=std_eta[valid_eta],
                         label='Viscosidade Real (η)',
-                        fmt='-s', color='g', markersize=6, capsize=4, alpha=0.9)
+                        fmt='-s', color=PALETTE['data'], markersize=6, capsize=4, alpha=0.9)
         else:
             ax5.plot(gamma_dot_w_an_wr[valid_eta], eta_true_an[valid_eta],
                     label='Viscosidade Real (η)',
-                    marker='s', linestyle='-', color='g', alpha=0.9)
+                    marker='s', linestyle='-', color=PALETTE['data'], alpha=0.9)
 
     ax5.set_xlabel("Taxa de Cisalhamento (s⁻¹)")
     ax5.set_ylabel("Viscosidade (Pa·s)")
@@ -263,7 +264,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
             else:
                 eta_modelo = tau_modelo / gd_plot
             ax5.plot(gd_plot, eta_modelo, label=f'Modelo {best_model_nome} (Real)', 
-                     color='red', linestyle='-', linewidth=2, alpha=0.6, zorder=5)
+                     color=PALETTE['fit'], linestyle='-', linewidth=2, alpha=0.6, zorder=5)
             # Atualiza legenda
             ax5.legend()
         except Exception: pass
@@ -289,8 +290,8 @@ def plotar_curva_fluxo_estatistica(gamma_dot_mean, tau_w_mean, tau_w_std, model_
     fig, ax = plt.subplots(figsize=(10, 7))
     
     # Plota dados experimentais com erro
-    ax.errorbar(gamma_dot_mean, tau_w_mean, yerr=tau_w_std, fmt='o', color='blue', 
-                ecolor='gray', elinewidth=2, capsize=4, label='Média Experimental ± Desvio Padrão')
+    ax.errorbar(gamma_dot_mean, tau_w_mean, yerr=tau_w_std, fmt='o', color=PALETTE['data'], 
+                ecolor=PALETTE['std'], elinewidth=2, capsize=4, label='Média Experimental ± Desvio Padrão')
     
     # Plota modelos
     if model_results and best_model_nome:
@@ -304,9 +305,9 @@ def plotar_curva_fluxo_estatistica(gamma_dot_mean, tau_w_mean, tau_w_std, model_
                 tau_m = func_modelo(gd_plot, *d_model_data['params'])
                 label_m = f"{n_model_name} (R²={d_model_data['R2']:.4f})"
                 if n_model_name == best_model_nome:
-                    ax.plot(gd_plot, tau_m, label=label_m + " [MELHOR]", linestyle='-', linewidth=2.5, color='red', zorder=20)
+                    ax.plot(gd_plot, tau_m, label=label_m + " [MELHOR]", linestyle='-', linewidth=2.5, color=PALETTE['fit'], zorder=20)
                 else:
-                    ax.plot(gd_plot, tau_m, label=label_m, linestyle='--', linewidth=1.5, alpha=0.7)
+                    ax.plot(gd_plot, tau_m, label=label_m, linestyle='--', linewidth=1.5, alpha=0.7, color=PALETTE['alt1'])
             except Exception: pass
 
     ax.set_xlabel("Taxa de Cisalhamento (s⁻¹)")
