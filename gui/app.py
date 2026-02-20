@@ -106,11 +106,30 @@ class App(ctk.CTk):
             self.status_label.configure(text="Arduino: Desconectado", text_color="red")
             
         # 2. Check Calibration Status (C11 Alert)
+        from datetime import datetime, timedelta
         cal = self.db.get_latest_calibracao()
-        if not cal or (abs(cal['slope_linha'] - 1.0) < 0.001 and abs(cal['intercept_linha'] - 0.0) < 0.001):
+        needs_cal = False
+        msg = "⚠️ Sensor Não Calibrado"
+        
+        if not cal:
+            needs_cal = True
+        else:
+            try:
+                # Assuming data is ISO format or compatible string
+                cal_date = datetime.fromisoformat(cal['data'])
+                if datetime.now() - cal_date > timedelta(days=30):
+                    needs_cal = True
+                    msg = "⚠️ Calibração Antiga (>30 dias)"
+            except Exception:
+                # If parsing fails or missing data column, fallback to warn
+                pass
+
+        if needs_cal:
             if not hasattr(self, 'cal_alert_label'):
-                self.cal_alert_label = ctk.CTkLabel(self.sidebar_frame, text="⚠️ Sensor Não Calibrado", text_color="orange", font=ctk.CTkFont(weight="bold"))
+                self.cal_alert_label = ctk.CTkLabel(self.sidebar_frame, text=msg, text_color="orange", font=ctk.CTkFont(weight="bold"))
                 self.cal_alert_label.grid(row=8, column=0, padx=20, pady=10)
+            else:
+                self.cal_alert_label.configure(text=msg)
         else:
             if hasattr(self, 'cal_alert_label'):
                 self.cal_alert_label.destroy()

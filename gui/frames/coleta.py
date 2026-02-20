@@ -5,6 +5,7 @@ from customtkinter import CTkInputDialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import time
+import numpy as np
 
 class ColetaFrame(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -253,7 +254,6 @@ class ColetaFrame(ctk.CTkFrame):
                 return
 
             # 2. Calculate Averages
-            import numpy as np
             
             # --- M2: Detecção Automática de Regime Estacionário ---
             # Encontrar a janela com menor desvio padrão (mais estável)

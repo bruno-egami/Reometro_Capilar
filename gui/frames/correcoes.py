@@ -184,25 +184,32 @@ class CorrecoesFrame(ctk.CTkFrame):
         return True
     
     def run_corrections(self):
-        """Execute Bagley and/or Mooney corrections."""
+        """Execute Bagley and/or Mooney corrections in a separate thread."""
+        if not hasattr(self, 'selected_samples') or not self.selected_samples:
+            self.lbl_status.configure(text="❌ Valide a seleção primeiro.", text_color="red")
+            return
+            
+        do_bagley = self.chk_bagley.get()
+        do_mooney = self.chk_mooney.get()
+        samples_list = list(self.selected_samples.values())
+        
+        self.btn_execute.configure(state="disabled", text="Executando...")
+        self.lbl_status.configure(text="⏳ Aguarde, calculando correções...", text_color="orange")
+        self._set_result("Iniciando cálculos. Por favor aguarde...\n")
+        
+        import threading
+        threading.Thread(target=self._do_run_corrections, args=(do_bagley, do_mooney, samples_list), daemon=True).start()
+        
+    def _do_run_corrections(self, do_bagley, do_mooney, samples_list):
         import reologia_corrections
         import tempfile
         import os
         from datetime import datetime
-        import modelos_reologicos as models
-        
-        if not self.selected_samples:
-            self.lbl_status.configure(text="❌ Valide a seleção primeiro.", text_color="red")
-            return
-        
-        do_bagley = self.chk_bagley.get()
-        do_mooney = self.chk_mooney.get()
+        import numpy as np
         
         results_txt = "═══════════════════════════════════════════\n"
         results_txt += "  CORREÇÕES AVANÇADAS\n"
         results_txt += "═══════════════════════════════════════════\n\n"
-        
-        samples_list = list(self.selected_samples.values())
         
         # Get common parameters
         rho_g_cm3 = samples_list[0]['rho']
@@ -288,39 +295,37 @@ class CorrecoesFrame(ctk.CTkFrame):
         final_gamma = gamma_true_mooney if len(gamma_true_mooney) > 0 else gamma_targets
         
         if len(final_tau) >= 3 and len(final_gamma) >= 3:
-            from scipy.optimize import curve_fit
-            from sklearn.metrics import r2_score
+            import reologia_fitting
             
             results_txt += f"───────────────────────────────────────────\n"
             results_txt += f"  AJUSTE DE MODELOS (Dados Corrigidos)\n"
             results_txt += f"───────────────────────────────────────────\n\n"
             
-            best_model = None
-            best_r2 = -np.inf
+            # Use unified fitting function
+            model_results, best_model_nome, df_sum_modelo = reologia_fitting.ajustar_modelos(final_gamma, final_tau)
             
-            for model_name, (model_func, param_names, guess_func, bounds) in models.MODELS.items():
-                try:
-                    p0 = guess_func(final_gamma, final_tau)
-                    popt, pcov = curve_fit(model_func, final_gamma, final_tau, p0=p0, bounds=bounds, maxfev=10000)
+            if model_results:
+                for idx, row in df_sum_modelo.iterrows():
+                    mod_name = row['Modelo']
+                    r2_val = row['R2']
+                    aic_val = row['AIC']
+                    params_txt = row['Parametros']
                     
-                    tau_pred = model_func(final_gamma, *popt)
-                    r2 = r2_score(final_tau, tau_pred)
-                    
-                    if r2 > best_r2:
-                        best_r2 = r2
-                        best_model = model_name
-                    
-                    results_txt += f"  {model_name} (R²={r2:.4f})\n"
-                    for i, pname in enumerate(param_names):
-                        results_txt += f"    {pname}: {popt[i]:.4g}\n"
+                    results_txt += f"  {mod_name} (R²={r2_val:.4f}, AIC={aic_val:.2f})\n"
+                    # Parâmetros já formatados na string "K=1.23, n=0.45"
+                    for p_str in params_txt.split(", "):
+                        results_txt += f"    {p_str}\n"
                     results_txt += "\n"
-                    
-                except Exception as e:
-                    results_txt += f"  {model_name}: Falha - {e}\n\n"
-            
-            if best_model:
-                results_txt += f"───────────────────────────────────────────\n"
-                results_txt += f"  ★ MELHOR MODELO: {best_model} (R²={best_r2:.4f})\n"
-                results_txt += f"───────────────────────────────────────────\n"
+                
+                if best_model_nome:
+                    best_r2_val = model_results[best_model_nome]['R2']
+                    results_txt += f"───────────────────────────────────────────\n"
+                    results_txt += f"  ★ MELHOR MODELO (AIC): {best_model_nome} (R²={best_r2_val:.4f})\n"
+                    results_txt += f"───────────────────────────────────────────\n"
         
+        self.after(0, lambda: self._on_corrections_done(results_txt))
+        
+    def _on_corrections_done(self, results_txt):
         self._set_result(results_txt)
+        self.lbl_status.configure(text="✅ Cálculos concluídos.", text_color="green")
+        self.btn_execute.configure(state="normal", text="Executar Selecionadas")

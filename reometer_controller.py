@@ -2,6 +2,7 @@ import serial
 import serial.tools.list_ports
 import time
 import threading
+import math
 import numpy as np
 from typing import Optional, Callable, Tuple, Any
 
@@ -34,8 +35,19 @@ class ReometerController:
         self.read_thread: Optional[threading.Thread] = None
         
         # Callbacks
-        self.on_pressure_reading: Optional[Callable[[float, float, float, float], None]] = None 
+        self._on_pressure_reading: Optional[Callable[[float, float, float, float], None]] = None 
         self.on_error: Optional[Callable[[str], None]] = None
+        self._callback_lock = threading.Lock()
+        
+    @property
+    def on_pressure_reading(self) -> Optional[Callable[[float, float, float, float], None]]:
+        with self._callback_lock:
+            return self._on_pressure_reading
+            
+    @on_pressure_reading.setter
+    def on_pressure_reading(self, callback: Optional[Callable[[float, float, float, float], None]]):
+        with self._callback_lock:
+            self._on_pressure_reading = callback
         
         # Calibration Parameters
         # Linha: user-calibrated
@@ -158,9 +170,10 @@ class ReometerController:
                         p_linha = self._convert_voltage_to_pressure(v1, 'linha')
                         p_pasta = self._convert_voltage_to_pressure(v2, 'pasta')
                         
-                        # Emit callback
-                        if self.on_pressure_reading:
-                            self.on_pressure_reading(p_linha, p_pasta, v1, v2)
+                        # Emit callback safely
+                        cb = self.on_pressure_reading
+                        if cb:
+                            cb(p_linha, p_pasta, v1, v2)
                 except ValueError:
                     pass
                 
@@ -208,14 +221,14 @@ class MockReometerController(ReometerController):
         t = 0
         while self.is_reading:
             # Generate fake sine wave pressure
-            import math
             p_linha = 5.0 + 2.0 * math.sin(t * 0.1)
             p_pasta = 4.8 + 1.9 * math.sin(t * 0.1)
             v1 = (p_linha - self.calib_intercept_linha) / self.calib_slope_linha if self.calib_slope_linha else 0
             v2 = (p_pasta - self.calib_intercept_pasta) / self.calib_slope_pasta if self.calib_slope_pasta else 0
             
-            if self.on_pressure_reading:
-                self.on_pressure_reading(p_linha, p_pasta, v1, v2)
+            cb = self.on_pressure_reading
+            if cb:
+                cb(p_linha, p_pasta, v1, v2)
             
             time.sleep(0.1)
             t += 1
