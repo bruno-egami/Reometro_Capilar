@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import utils_reologia
@@ -267,7 +268,8 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                      color=PALETTE['fit'], linestyle='-', linewidth=2, alpha=0.6, zorder=5)
             # Atualiza legenda
             ax5.legend()
-        except Exception: pass
+        except Exception as e:
+            logging.warning(f"Erro ao plotar modelo de viscosidade: {e}")
 
     if not only_show:
         f5_name = os.path.join(output_folder, f"{timestamp_str}_comparativo_viscosidades.png")
@@ -308,7 +310,8 @@ def plotar_curva_fluxo_estatistica(gamma_dot_mean, tau_w_mean, tau_w_std, model_
                     ax.plot(gd_plot, tau_m, label=label_m + " [MELHOR]", linestyle='-', linewidth=2.5, color=PALETTE['fit'], zorder=20)
                 else:
                     ax.plot(gd_plot, tau_m, label=label_m, linestyle='--', linewidth=1.5, alpha=0.7, color=PALETTE['alt1'])
-            except Exception: pass
+            except Exception as e:
+                logging.warning(f"Erro ao plotar modelo {n_model_name}: {e}")
 
     ax.set_xlabel("Taxa de Cisalhamento (s⁻¹)")
     ax.set_ylabel("Tensão de Cisalhamento (Pa)")

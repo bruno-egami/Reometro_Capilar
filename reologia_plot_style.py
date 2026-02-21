@@ -22,6 +22,7 @@ PALETTE = {
     "alt4"   : "#94e2d5",   # TEAL — 5º modelo
     "ref"    : "#f9e2af",   # AMARELO — dado de referência externo (MCR102)
     "warn"   : "#f38ba8",   # VERMELHO — pontos descartados / alertas
+    "std"    : "#7f849c",   # CINZA MÉDIO — barras de erro / desvio padrão
 }
  
 # ─── Kwargs reutilizáveis ─────────────────────────────────────────────
