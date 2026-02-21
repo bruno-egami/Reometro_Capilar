@@ -16,9 +16,14 @@ def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
         
     Returns:
         tuple: (model_results, best_model_nome, df_sum_modelo)
-            - model_results: Dicionário com params e R2 de cada modelo.
-            - best_model_nome: Nome do modelo com maior R2.
-            - df_sum_modelo: DataFrame com resumo dos ajustes.
+            - model_results: Dicionário com params, r2, aic e bic (minúsculos) de cada modelo.
+            - best_model_nome: Nome do modelo com menor AIC.
+            - df_sum_modelo: DataFrame com resumo dos ajustes (ordenado por AIC).
+            
+    Nota sobre AIC (Akaike Information Criterion):
+        A implementação utiliza a variante simplificada para Mínimos Quadrados Ordinários (OLS) / WLS:
+        AIC = 2k + n * ln(RSS / n). A constante foi omitida, o que é matemática e internamente
+        válido para comparar modelos sob o mesmo dataset.
     """
     model_results = {}
     best_model_nome = ""
@@ -78,7 +83,7 @@ def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
                 for idx, p_n in enumerate(param_names):
                     ic_dict[p_n] = t_val * std_errs[idx]
             
-            model_results[nome_modelo] = {'params': popt, 'R2': r2, 'AIC': aic_val, 'BIC': bic_val, 'IC_95': ic_dict}
+            model_results[nome_modelo] = {'params': popt, 'r2': r2, 'aic': aic_val, 'bic': bic_val, 'ic': ic_dict, 'param_names': param_names}
             
             # Formata parâmetros para o resumo
             params_str = ", ".join([f"{n}={v:.4g}±{ic_dict.get(n, 0):.2g}" if ic_dict.get(n, 0) > 0 else f"{n}={v:.4g}" for n, v in zip(param_names, popt)])

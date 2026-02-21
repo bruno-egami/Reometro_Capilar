@@ -169,7 +169,7 @@ class TestAjusteModelos:
         
         # Newtoniano deve ter R² ≈ 1.0
         assert 'Newtoniano' in results
-        assert results['Newtoniano']['R2'] > 0.99
+        assert results['Newtoniano']['r2'] > 0.99
     
     def test_ajustar_power_law_synthetic(self):
         """Ajuste de Lei da Potência com dados sintéticos."""
@@ -182,7 +182,7 @@ class TestAjusteModelos:
         
         # Lei de Potência deve ter bom ajuste
         assert 'Lei da Potência' in results
-        assert results['Lei da Potência']['R2'] > 0.99
+        assert results['Lei da Potência']['r2'] > 0.99
         
         # Parâmetros devem estar próximos dos originais
         params = results['Lei da Potência']['params']

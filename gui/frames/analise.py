@@ -423,67 +423,72 @@ class AnaliseFrame(ctk.CTkFrame):
                 (u_m_kg / massas_kg)**2 + (u_t / tempos_arr)**2 + (3 * u_R / R)**2
             )
             
-            # Corrections (Weissenberg) performed on RAW data first
-            n_prime = 1.0
-            gd_true_arr = gd_app_arr.copy()
+            # --- M3/M4/M14: Weissenberg-Rabinowitsch e Agrupamento ---
+            # A W-R deve ser aplicada nas médias estatísticas após o agrupamento,
+            # para evitar o uso da derivada ruidosa dos dados brutos.
             
-            if aplicar_weissenberg and len(gd_app_arr) >= 3:
-                try:
-                    log_gd = np.log(gd_app_arr)
-                    log_tau = np.log(tau_arr)
-                    
-                    # --- M3/M4: Weissenberg-Rabinowitsch Local ---
-                    # Usa gradiente (derivada central) no lugar do ajuste global
-                    # Para bordas, o numpy faz derivada unilateral aproximada
-                    local_n_primes = np.gradient(log_tau, log_gd)
-                    
-                    # Guarda limitadora (M4): 0.05 <= n' <= 3.0
-                    local_n_primes = np.clip(local_n_primes, 0.05, 3.0)
-                    
-                    # Correção ponto a ponto
-                    gd_true_arr = gd_app_arr * ((3 * local_n_primes + 1) / (4 * local_n_primes))
-                    
-                    # Para logs de relatórios ou fit global secundário (falso-n_prime),
-                    # podemos expor a média do log derivado como 'n_prime' global
-                    n_prime = np.mean(local_n_primes)
-                    
-                except Exception as e:
-                    print(f"Erro no Weissenberg-Rabinowitsch local: {e}")
-                    gd_true_arr = gd_app_arr.copy()
-                
-            eta_arr = tau_arr / gd_true_arr
+            n_prime_global = 1.0 # default fallback
+            gd_true_arr = gd_app_arr.copy() # fallback raw array
             
-            # --- STATISTICAL GROUPING ---
             try:
-                # Create DataFrame for statistical grouping
+                # Create DataFrame for statistical grouping FIRST (using Apparent Rates)
                 df_calc = pd.DataFrame({
-                    'gamma_dot': gd_true_arr, # True Shear Rate
+                    'gamma_dot_app': gd_app_arr,
                     'tau_w': tau_arr,
-                    'eta': eta_arr, # True Viscosity
-                    'gamma_dot_app': gd_app_arr, # Apparent Shear Rate
-                    'eta_app': tau_arr / gd_app_arr, # Apparent Viscosity
                     'massa_g': np.array(massas),
                     'tempo_s': np.array(tempos),
                     'pressao': np.array(pressoes)
                 })
-                # Group by log of shear rate (rounded to 1 decimal)
-                df_calc['log_gd'] = np.round(np.log10(df_calc['gamma_dot']), 1)
-                
+                # Group by log of APPARENT shear rate (rounded to 1 decimal)
+                df_calc['log_gd'] = np.round(np.log10(df_calc['gamma_dot_app']), 1)
                 grouped = df_calc.groupby('log_gd')
                 
-                # Extract vectors for fitting and plotting (Means)
-                gd_mean = grouped['gamma_dot'].mean().values
+                # Extract Means (Apparent)
+                gd_app_mean = grouped['gamma_dot_app'].mean().values
                 tau_mean = grouped['tau_w'].mean().values
                 tau_std = grouped['tau_w'].std().fillna(0).values
-                eta_mean = grouped['eta'].mean().values
-                eta_std = grouped['eta'].std().fillna(0).values
-                
-                # Additional Means for Report
-                gd_app_mean = grouped['gamma_dot_app'].mean().values
-                eta_app_mean = grouped['eta_app'].mean().values
-                pressao_mean = grouped['pressao'].mean().values # Ensure this is calculated
+                pressao_mean = grouped['pressao'].mean().values 
                 tempo_mean = grouped['tempo_s'].mean().values
                 massa_mean = grouped['massa_g'].mean().values
+                
+                # --- M14: Aplicando Weissenberg sobre as Médias (Curva Suave) ---
+                gd_mean = gd_app_mean.copy()
+                
+                if aplicar_weissenberg and len(gd_app_mean) >= 3:
+                    try:
+                        # Ordena para garantir que a derivada não oscile em loops (embora o groupby já costume ordenar a chave log_gd)
+                        idx_sort = np.argsort(gd_app_mean)
+                        gd_app_sorted = gd_app_mean[idx_sort]
+                        tau_sorted = tau_mean[idx_sort]
+                        
+                        log_gd_mean = np.log(gd_app_sorted)
+                        log_tau_mean = np.log(tau_sorted)
+                        
+                        local_n_primes = np.gradient(log_tau_mean, log_gd_mean)
+                        local_n_primes = np.clip(local_n_primes, 0.05, 3.0)
+                        n_prime_global = np.mean(local_n_primes)
+                        
+                        gd_true_sorted = gd_app_sorted * ((3 * local_n_primes + 1) / (4 * local_n_primes))
+                        
+                        # Retorna gd_true para a ordem original das médias (caso as chaves do dict não tivessem saído ordenadas)
+                        gd_mean_true = np.zeros_like(gd_app_mean)
+                        for orig_i, sort_i in enumerate(idx_sort):
+                            gd_mean_true[sort_i] = gd_true_sorted[orig_i]
+                        gd_mean = gd_mean_true
+                        
+                        # E aplique uma correção aproximada usando n_prime_global aos dados brutos
+                        # (A GUI / PDF depende do vetor bruto estar corrigido também)
+                        gd_true_arr = gd_app_arr * ((3 * n_prime_global + 1) / (4 * n_prime_global))
+                    except Exception as e:
+                        print(f"Erro no Weissenberg-Rabinowitsch das médias: {e}")
+                        pass
+                
+                eta_mean = tau_mean / gd_mean
+                eta_std = np.where(gd_mean > 0, tau_std / gd_mean, 0.0)
+                eta_app_mean = tau_mean / gd_app_mean
+                
+                # Preenche arrays brutos de eta 
+                eta_arr = tau_arr / gd_true_arr
                 
                 # --- Advanced Statistics (CVs) ---
                 # Avoid division by zero
@@ -579,14 +584,27 @@ class AnaliseFrame(ctk.CTkFrame):
             n_pts = len(fit_gd)
             from scipy.stats import t
             
+            # --- M15: Mínimos Quadrados Ponderados (WLS) ---
             # Prepare Sigma for WLS
-            # Avoid zeroes in sigma, replace with a small value or mean of std
-            valid_std = tau_std[tau_std > 0]
             sigma_wls = None
-            if len(valid_std) > 0:
-                min_std = np.min(valid_std)
-                # Replace zeros with a fraction of the minimum valid std to give them high but not infinite weight
-                sigma_wls = np.where(tau_std == 0, min_std * 0.1, tau_std)
+            if len(tau_std) > 0:
+                # Determina N de cada grupo para verificar se não há réplicas
+                num_pontos_por_grupo = np.array([len(grouped.get_group(k)) for k in sorted(grouped.groups.keys())])
+                
+                # M16: Aviso se a grande maioria tem N=1 (sem réplicas)
+                if np.sum(num_pontos_por_grupo == 1) > len(num_pontos_por_grupo) * 0.7:
+                     if 'parecer' in stats_details:
+                         stats_details['parecer'] += "\n\n⚠️ ATENÇÃO: A grande maioria dos pontos não tem réplicas (medidos apenas 1 vez). A reprodutibilidade (CV = 0) não pode ser avaliada estatisticamente. As barras horizontais de erro refletem incerteza teórica (instrumental)."
+                
+                # Corrige pesos:
+                # Se N > 1 (tau_std > 0), usa o desvio padrão do grupo.
+                # Se N = 1 (tau_std == 0), a incerteza estatística é desconhecida,
+                # logo usa a incerteza metrológica (pior caso instrumental) propagada M5: ~5.4% de tau
+                unc_teorica = fit_tau * 0.054 # aprox 5.4% propagada instrumental
+                
+                sigma_wls = np.where(tau_std > 0, tau_std, unc_teorica)
+                # Safeguard double-zero
+                sigma_wls = np.maximum(sigma_wls, 1e-6)
             
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:
@@ -871,8 +889,13 @@ class AnaliseFrame(ctk.CTkFrame):
                     if fit_data.get('params') is not None:
                         param_names = fit_data['param_names']
                         params_str = ", ".join([f"{n}={v:.4g}" for n, v in zip(param_names, fit_data['params'])])
-                        summary_list.append({'Modelo': model_name, 'R2': fit_data['r2'], 'Parametros': params_str})
-                df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='R2', ascending=False)
+                        summary_list.append({
+                            'Modelo': model_name, 
+                            'R2': fit_data['r2'], 
+                            'AIC': fit_data.get('aic', 999),
+                            'Parametros': params_str
+                        })
+                df_sum_modelo = pd.DataFrame(summary_list).sort_values(by='AIC', ascending=True)
                 
                 lista_imgs = [os.path.join(temp_dir, f"{timestamp}_curva_fluxo.png"),
                               os.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
