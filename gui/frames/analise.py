@@ -687,7 +687,8 @@ class AnaliseFrame(ctk.CTkFrame):
             # Prepare data object (Storing means as primary data, raw as secondary)
             analysis_data = {
                 'amostra': amostra, 
-                'gamma_dot': gd_mean, 'tau_w': tau_mean, 'eta': eta_mean, # Means
+                'gamma_dot': gd_mean, 'tau_w': tau_mean, 'eta': eta_mean, # Means (W-R corrected)
+                'gamma_dot_app': gd_app_mean, 'eta_app': eta_app_mean, # Apparent (pre-W-R)
                 'gamma_dot_std': np.zeros_like(gd_mean), # Assume negligible x-error for now or calc it
                 'tau_w_std': tau_std, 'eta_std': eta_std, # Standard Deviations
                 'raw_gamma': gd_true_arr, 'raw_tau': tau_arr, 'raw_eta': eta_arr, # Raw Data
@@ -793,7 +794,10 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 2. Viscosity Curve
         n_p = d.get('n_prime', 1.0)
-        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, titulo=f'Viscosidade - {amostra_nome}')
+        # Use apparent viscosity as main series (blue), function adds real (pink)
+        gd_med_app = np.array(d.get('gamma_dot_app', gd_med))
+        eta_med_app = np.array(d.get('eta_app', eta_med))
+        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med_app, eta_med_app, eta_err, n_prime=n_p if n_p != 1.0 else None, titulo=f'Viscosidade - {amostra_nome}')
         path2 = f"{folder}/{timestamp}_{amostra_nome}_viscosidade.png"
         fig2.savefig(path2, dpi=300, bbox_inches='tight')
         plt.close(fig2)
@@ -1007,7 +1011,9 @@ class AnaliseFrame(ctk.CTkFrame):
         plt.close(fig1)
         
         # 2. Viscosidade
-        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err)
+        gamma_app = np.array(data.get('gamma_dot_app', gamma))
+        eta_app = np.array(data.get('eta_app', eta))
+        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma_app, eta_app, eta_err, n_prime=n_prime if n_prime != 1.0 else None)
         fig2.savefig(os.path.join(folder, f'{timestamp}_viscosidade.png'), dpi=150, bbox_inches='tight')
         plt.close(fig2)
         

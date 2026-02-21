@@ -193,10 +193,13 @@ class RelatorioWindow(ctk.CTkToplevel):
         d = self.analysis_data
         gd_brutos = np.array(d.get('raw_gamma', []))
         eta_brutos = np.array(d.get('raw_eta', []))
-        gd_med = np.array(d['gamma_dot'])
-        eta_med = np.array(d['eta'])
+        # Use apparent viscosity as the main series (blue circles)
+        gd_med = np.array(d.get('gamma_dot_app', d['gamma_dot']))
+        eta_med = np.array(d.get('eta_app', d['eta']))
         eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
-        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err)
+        n_p = d.get('n_prime', 1.0)
+
+        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None)
         return fig
 
     def _get_models_list(self, d, gd_fit):
