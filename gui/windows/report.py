@@ -130,192 +130,127 @@ class RelatorioWindow(ctk.CTkToplevel):
     def _init_graficos(self):
         self.graph_tabs = ctk.CTkTabview(self.tab_graficos)
         self.graph_tabs.pack(fill="both", expand=True)
-        
+
         t1 = self.graph_tabs.add("Curva de Fluxo")
         t2 = self.graph_tabs.add("Viscosidade")
-        t3 = self.graph_tabs.add("Ajuste de Modelos")
-        
+        t3 = self.graph_tabs.add("Modelos (Tensão)")
+        t4 = self.graph_tabs.add("Modelos (Viscosidade)")
+
         desc_fluxo = "Explicação: Relaciona a Tensão (τ) vs Taxa (γ̇). O formato da curva define se o fluido é Newtoniano, Pseudoplástico ou Viscoplástico."
         desc_visc = "Explicação: Mostra a Viscosidade (Real ou Aparente) vs Taxa. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
-        desc_modelos = f"Explicação: Comparação dos dados experimentais (pontos) com os modelos teóricos (linhas). O melhor ajuste foi o modelo {self.analysis_data.get('best_model')}."
-        
+        desc_modelos = f"Explicação: Comparação dos dados experimentais com os modelos. O melhor ajuste foi {self.analysis_data.get('best_model')}."
+        desc_mod_visc = "Explicação: Comparação das curvas de viscosidade dos modelos ajustados em relação aos dados experimentais."
+
         self._plot_figure(t1, self._create_flow_curve(), desc_fluxo)
         self._plot_figure(t2, self._create_viscosity_curve(), desc_visc)
         self._plot_figure(t3, self._create_model_curve(), desc_modelos)
-        
+        self._plot_figure(t4, self._create_model_visc_curve(), desc_mod_visc)
+
     def _plot_figure(self, parent, fig, description=None):
         if description:
             lbl = ctk.CTkLabel(parent, text=description, font=ctk.CTkFont(slant="italic", size=11), wraplength=800)
             lbl.pack(side="bottom", fill="x", padx=10, pady=5)
-            
+
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _create_flow_curve(self):
-        fig = Figure(figsize=(5, 4), dpi=100)
-        ax = fig.add_subplot(111)
-        
-        # Plot Raw Data (Light background)
-        if 'raw_gamma' in self.analysis_data:
-            ax.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_tau'], 'o', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
-            
-        # Plot Means with Error Bars
-        x = self.analysis_data['gamma_dot']
-        y = self.analysis_data['tau_w']
-        yerr = self.analysis_data.get('tau_w_std', None)
-        
-        ax.errorbar(x, y, yerr=yerr, fmt='o-', capsize=5, label='Média ± DesvPad', color='blue')
-        
-        ax.set_title("Curva de Fluxo (Estatística)")
-        ax.set_xlabel("Taxa de Cisalhamento (1/s)")
-        ax.set_ylabel("Tensão de Cisalhamento (Pa)")
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        
-        # Better Ticks
-        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        ax.grid(True, which="both", alpha=0.3)
-        ax.legend()
+        import reologia_plot as rp
+        d = self.analysis_data
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        tau_brutos = np.array(d.get('raw_tau', []))
+        gd_med = np.array(d['gamma_dot'])
+        tau_med = np.array(d['tau_w'])
+        tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
+
+        bm = d.get('best_model')
+        fit = d.get('model_fits', {}).get(bm, {}) if bm else {}
+
+        if len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
+        else:
+            gd_fit = np.array([1, 10, 100])
+
+        tau_fit = np.zeros_like(gd_fit)
+        texto = ""
+        r2 = 0.0
+
+        if bm and fit.get('params') is not None:
+            func = models.MODELS[bm][0]
+            tau_fit = func(gd_fit, *fit['params'])
+            r2 = fit.get('r2', 0.0)
+            p_n = fit.get('param_names', [])
+            p_v = fit['params']
+            texto = "\n".join([f"{n} = {v:.4g}" for n, v in zip(p_n, p_v)])
+
+        fig, ax = rp.plotar_curva_fluxo(gd_brutos, tau_brutos, gd_med, tau_med, tau_err,
+                              gd_fit, tau_fit, bm or "Nenhum ajustado", r2, texto)
         return fig
 
     def _create_viscosity_curve(self):
-        fig = Figure(figsize=(5, 4), dpi=100)
-        ax = fig.add_subplot(111)
-        
-        # Plot Raw Data (Light background)
-        if 'raw_gamma' in self.analysis_data and 'raw_eta' in self.analysis_data:
-            ax.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_eta'], 's', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
-        
-        # Plot Means with Error Bars
-        x = self.analysis_data['gamma_dot']
-        y = self.analysis_data['eta']
-        yerr = self.analysis_data.get('eta_std', None)
-        
-        ax.errorbar(x, y, yerr=yerr, fmt='s-', capsize=5, color='orange', label='Viscosidade Real')
-        
-        # Dual Plot (Always active if n' != 1)
-        n_prime = self.analysis_data.get('n_prime', 1.0)
-        if n_prime != 1.0:
-            # Calculate Apparent
-            factor = (3*n_prime + 1) / (4*n_prime)
-            x_app = x / factor
-            y_app = self.analysis_data['tau_w'] / x_app
-            ax.loglog(x_app, y_app, 'b^--', markersize=5, label='Viscosidade Aparente', alpha=0.7)
-            ax.set_title(f"Viscosidade: Real (n'={n_prime:.2f}) vs Aparente")
-        else:
-            ax.set_title("Viscosidade Aparente (Fluido Newtoniano)")
-            
-        ax.set_xlabel("Taxa de Cisalhamento (1/s)")
-        ax.set_ylabel("Viscosidade (Pa.s)")
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        
-        # Better Ticks
-        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        ax.grid(True, which="both", ls="-", alpha=0.3)
-        ax.legend()
+        import reologia_plot as rp
+        d = self.analysis_data
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        eta_brutos = np.array(d.get('raw_eta', []))
+        gd_med = np.array(d['gamma_dot'])
+        eta_med = np.array(d['eta'])
+        eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
+        n_p = d.get('n_prime', 1.0)
+
+        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None)
         return fig
 
+    def _get_models_list(self, d, gd_fit):
+        mods = []
+        fits = [(k, v) for k, v in d.get('model_fits', {}).items() if v.get('params') is not None]
+        fits.sort(key=lambda x: x[1].get('r2', -99), reverse=True)
+        for k, v in fits:
+            func = models.MODELS[k][0]
+            try:
+                t_fit = func(gd_fit, *v['params'])
+                p_n = v.get('param_names', [])
+                p_v = v['params']
+                p_str = " | ".join([f"{n}={val:.3g}" for n, val in zip(p_n, p_v)])
+                mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
+            except Exception as e:
+                print(f"Erro no modelo {k}: {e}")
+        return mods
+
     def _create_model_curve(self):
-        # Create subplot 1x2 (Flow Curve | Viscosity Curve)
-        fig = Figure(figsize=(10, 4), dpi=100)
-        
-        # --- Plot 1: Flow Curve (Stress vs Rate) ---
-        ax1 = fig.add_subplot(121)
-        x = self.analysis_data['gamma_dot']
-        y = self.analysis_data['tau_w']
-        yerr = self.analysis_data.get('tau_w_std', None)
-        
-        # Plot Raw Data Shadow (Flow)
-        if 'raw_gamma' in self.analysis_data and 'raw_tau' in self.analysis_data:
-            ax1.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_tau'], 'o', color='lightgray', markersize=3, alpha=0.4)
-            
-        ax1.errorbar(x, y, yerr=yerr, fmt='ko-', capsize=3, label='Dados experimentais', alpha=0.7)
-        
-        # Prepare smooth x for models
-        if len(x) > 0:
-            x_min = max(1e-3, min(x))
-            x_max = max(x)
-            if x_max > x_min:
-                x_smooth = np.logspace(np.log10(x_min), np.log10(x_max), 100)
-            else:
-                x_smooth = np.array([x_min])
+        import reologia_plot as rp
+        d = self.analysis_data
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        tau_brutos = np.array(d.get('raw_tau', []))
+        gd_med = np.array(d['gamma_dot'])
+        tau_med = np.array(d['tau_w'])
+        tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
+
+        if len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
         else:
-            x_smooth = np.array([1, 10, 100])
-        
-        colors = ['r', 'g', 'b', 'm', 'c']
-        color_idx = 0
-        
-        # --- Plot Models on Both Graphs ---
-        # We need to calculate Viscosity Prediction for the models too: eta_pred = tau_pred / gamma
-        
-        ax2 = fig.add_subplot(122) # Viscosity Plot
-        # Plot Exp Viscosity
-        eta = self.analysis_data['eta']
-        eta_err = self.analysis_data.get('eta_std', None)
-        
-        # Plot Raw Data Shadow (Viscosity)
-        if 'raw_gamma' in self.analysis_data and 'raw_eta' in self.analysis_data:
-            ax2.plot(self.analysis_data['raw_gamma'], self.analysis_data['raw_eta'], 's', color='lightgray', markersize=3, alpha=0.4)
-            
-        # Plot Means with Error Bars
-        ax2.errorbar(x, eta, yerr=eta_err, fmt='ks-', capsize=3, label='Viscosidade Real', alpha=0.7)
-        
-        for name, fit in self.analysis_data['model_fits'].items():
-            if fit.get('params') is not None:
-                if name in models.MODELS:
-                    func = models.MODELS[name][0]
-                    try:
-                        # Calculate Preds
-                        y_pred = func(x_smooth, *fit['params'])
-                        eta_pred = y_pred / x_smooth
-                        
-                        color = colors[color_idx % len(colors)]
-                        
-                        # Plot 1 (Flow)
-                        ax1.loglog(x_smooth, y_pred, linestyle='--', label=f"{name}", color=color)
-                        
-                        # Plot 2 (Viscosity)
-                        ax2.loglog(x_smooth, eta_pred, linestyle='--', label=f"{name}", color=color)
-                        
-                        color_idx += 1
-                    except Exception as e:
-                        print(f"Erro ao plotar modelo {name}: {e}")
-                    
-        # Formatting Plot 1
-        ax1.set_title("Curva de Fluxo")
-        ax1.set_xlabel("Taxa (1/s)")
-        ax1.set_ylabel("Tensão (Pa)")
-        ax1.set_xscale('log')
-        ax1.set_yscale('log')
-        ax1.legend(fontsize='small')
-        
-        # Better Ticks
-        ax1.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        ax1.grid(True, which="both", alpha=0.3)
-        
-        # Formatting Plot 2
-        ax2.set_title("Viscosidade")
-        ax2.set_xlabel("Taxa (1/s)")
-        ax2.set_ylabel("Viscosidade (Pa.s)")
-        ax2.set_xscale('log')
-        ax2.set_yscale('log')
-        ax2.legend(fontsize='small')
-        
-        # Better Ticks
-        ax2.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax2.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        ax2.grid(True, which="both", alpha=0.3)
-        
-        fig.tight_layout()
+            gd_fit = np.array([1, 10, 100])
+
+        mods = self._get_models_list(d, gd_fit)
+        fig, ax = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods)
+        return fig
+
+    def _create_model_visc_curve(self):
+        import reologia_plot as rp
+        d = self.analysis_data
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        eta_brutos = np.array(d.get('raw_eta', []))
+        gd_med = np.array(d['gamma_dot'])
+        eta_med = np.array(d['eta'])
+        eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
+
+        if len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
+        else:
+            gd_fit = np.array([1, 10, 100])
+
+        mods = self._get_models_list(d, gd_fit)
+        fig, ax = rp.plotar_ajuste_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, gd_fit, mods)
         return fig
 
     def _init_dados(self):

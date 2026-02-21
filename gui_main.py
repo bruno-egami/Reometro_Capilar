@@ -7,10 +7,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
 
-import reologia_plot_style
+import reologia_plot_style as rps
 
 if __name__ == "__main__":
-    reologia_plot_style.apply_scientific_style()
+    rps.apply_dark_style()
     app = App()
     app.protocol("WM_DELETE_WINDOW", app.on_close)
     app.mainloop()

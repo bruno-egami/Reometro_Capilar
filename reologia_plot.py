@@ -3,7 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import utils_reologia
-from reologia_plot_style import STYLE, PALETTE
+from reologia_plot_style import PALETTE
 
 # Importa modelos para plotagem
 from modelos_reologicos import MODELS
@@ -489,3 +489,168 @@ def plotar_comparativo_real_vs_aparente(dados_analises, output_folder, timestamp
         
     plt.close(fig)
     return f_name
+
+# --- NOVAS FUNÇÕES PADRONIZADAS CONFORME INSTRUÇÕES (SEÇÕES 3 a 6) ---
+import reologia_plot_style as rps
+
+def plotar_curva_fluxo(gd_brutos, tau_brutos,
+                        gd_medios, tau_medios, tau_desvio,
+                        gd_fit, tau_modelo, nome_modelo, r2,
+                        params_texto, titulo='Curva de Fluxo'):
+    fig, ax = rps.make_fig(figsize=(9, 6))
+
+    # 1. Dados brutos (cinza, pequenos, semi-transparentes — ficam atrás)
+    ax.scatter(gd_brutos, tau_brutos, label='Dados Brutos', **rps.SC_RAW)
+
+    # 2. Barras de erro (mesma cor dos pontos de média, antes do scatter)
+    mask_err = tau_desvio > 0
+    ax.errorbar(gd_medios[mask_err], tau_medios[mask_err],
+                yerr=tau_desvio[mask_err],
+                color=rps.PALETTE['data'], **rps.EB_KW)
+
+    # 3. Pontos de média (azul, maiores, borda escura — ficam na frente)
+    ax.scatter(gd_medios, tau_medios,
+               label='Média ± σ', **rps.SC_DATA)
+
+    # 4. Curva do modelo
+    ax.plot(gd_fit, tau_modelo,
+            color=rps.PALETTE['fit'],
+            label=f'{nome_modelo}  R²={r2:.4f}  ★',
+            **rps.LN_BEST)
+
+    # 5. Escala log-log com minor ticks
+    rps.log_axes(ax)
+
+    # 6. Rótulos, título, legenda
+    ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
+    ax.set_ylabel('Tensão de Cisalhamento τ_w (Pa)', **rps.YLABEL_KW)
+    ax.set_title(titulo, **rps.TITLE_KW)
+    ax.legend(loc='lower right', **rps.LEGEND_KW)
+
+    # 7. Caixa de parâmetros dentro do gráfico (canto inferior direito)
+    rps.annot(ax, params_texto, pos='lower right')
+
+    fig.tight_layout(pad=1.5)
+    return fig, ax
+
+def plotar_viscosidade(gd_brutos, eta_brutos,
+                        gd_medios, eta_medios, eta_desvio,
+                        n_prime=None, titulo='Viscosidade Aparente'):
+    fig, ax = rps.make_fig(figsize=(9, 6))
+
+    # Dados brutos
+    ax.scatter(gd_brutos, eta_brutos, label='Dados Brutos', **rps.SC_RAW)
+
+    # Barras de erro
+    mask_err = eta_desvio > 0
+    ax.errorbar(gd_medios[mask_err], eta_medios[mask_err],
+                yerr=eta_desvio[mask_err],
+                color=rps.PALETTE['data'], **rps.EB_KW)
+
+    # Viscosidade aparente — pontos
+    lbl = 'Viscosidade Aparente η = τ/γ̇'
+    ax.scatter(gd_medios, eta_medios, label=lbl, **rps.SC_DATA)
+
+    # Viscosidade real (correção W-R) — pontos quadrados, cor secundária
+    if n_prime is not None:
+        fator_wr = (3 * n_prime + 1) / (4 * n_prime)
+        eta_real  = eta_medios / fator_wr
+        sc_real = {**rps.SC_DATA,
+                   'color': rps.PALETTE['fit'],
+                   'marker': 's',
+                   's': 50}
+        ax.scatter(gd_medios, eta_real,
+                   label=f"Viscosidade Real (n'={n_prime:.2f})",
+                   **sc_real)
+
+    rps.log_axes(ax)
+    ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
+    ax.set_ylabel('Viscosidade η (Pa·s)', **rps.YLABEL_KW)
+    ax.set_title(titulo, **rps.TITLE_KW)
+    ax.legend(loc='upper right', **rps.LEGEND_KW)
+    fig.tight_layout(pad=1.5)
+    return fig, ax
+
+def plotar_ajuste_modelos(gd_brutos, tau_brutos,
+                           gd_medios, tau_medios, tau_desvio,
+                           gd_fit, modelos_dict, titulo='Ajuste de Modelos'):
+    fig, ax = rps.make_fig(figsize=(9, 6))
+
+    # ── Dados brutos e médios ──────────────────────────────────────────
+    ax.scatter(gd_brutos, tau_brutos, label='Dados Brutos', **rps.SC_RAW)
+    mask_err = tau_desvio > 0
+    ax.errorbar(gd_medios[mask_err], tau_medios[mask_err],
+                yerr=tau_desvio[mask_err],
+                color=rps.PALETTE['data'], **rps.EB_KW)
+    ax.scatter(gd_medios, tau_medios, label='Dados Experimentais',
+               **rps.SC_DATA)
+
+    # ── Estilos de linha por posição no ranking ───────────────────────
+    cores   = [rps.PALETTE['fit'], rps.PALETTE['alt1'],
+               rps.PALETTE['alt2'], rps.PALETTE['alt3'], rps.PALETTE['alt4']]
+    estilos = [rps.LN_BEST, rps.LN_ALT1, rps.LN_ALT2, rps.LN_ALT3, rps.LN_ALT4]
+
+    for i, m in enumerate(modelos_dict):
+        # Modelos com R² negativo ficam ainda mais transparentes
+        idx = min(i, len(cores)-1)
+        kw = {**estilos[idx], 'color': cores[idx]}
+        if m['r2'] < 0:
+            kw['alpha'] = kw.get('alpha', 1.0) * 0.4   # reduzir 60% extra
+        estrela = '  ★' if i == 0 else ''
+        t_fit = m['tau_fit']
+        # Remove NaN and Inf to prevent matplotlib errors
+        valid = np.isfinite(t_fit)
+        if np.any(valid):
+            ax.plot(gd_fit[valid], t_fit[valid], label=f"{m['nome']}  R²={m['r2']:.4f}{estrela}", **kw)
+
+    rps.log_axes(ax)
+    ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
+    ax.set_ylabel('Tensão de Cisalhamento τ_w (Pa)', **rps.YLABEL_KW)
+    ax.set_title(titulo, **rps.TITLE_KW)
+    ax.legend(loc='lower right', **rps.LEGEND_KW)
+
+    # Anotação com parâmetros do melhor modelo
+    if modelos_dict:
+        melhor = modelos_dict[0]
+        rps.annot(ax,
+                  f"★ {melhor['nome']}\n{melhor['params']}\nR² = {melhor['r2']:.4f}",
+                  pos='upper left')
+
+    fig.tight_layout(pad=1.5)
+    return fig, ax
+
+def plotar_ajuste_viscosidade(gd_brutos, eta_brutos,
+                               gd_medios, eta_medios, eta_desvio,
+                               gd_fit, modelos_dict, titulo='Viscosidade — Ajuste'):
+    fig, ax = rps.make_fig(figsize=(9, 6))
+
+    ax.scatter(gd_brutos, eta_brutos, label='Dados Brutos', **rps.SC_RAW)
+    mask_err = eta_desvio > 0
+    ax.errorbar(gd_medios[mask_err], eta_medios[mask_err],
+                yerr=eta_desvio[mask_err],
+                color=rps.PALETTE['data'], **rps.EB_KW)
+    ax.scatter(gd_medios, eta_medios,
+               label='Viscosidade Experimental', **rps.SC_DATA)
+
+    cores   = [rps.PALETTE['fit'], rps.PALETTE['alt1'],
+               rps.PALETTE['alt2'], rps.PALETTE['alt3'], rps.PALETTE['alt4']]
+    estilos = [rps.LN_BEST, rps.LN_ALT1, rps.LN_ALT2, rps.LN_ALT3, rps.LN_ALT4]
+
+    for i, m in enumerate(modelos_dict):
+        eta_fit = m['tau_fit'] / gd_fit
+        idx = min(i, len(cores)-1)
+        kw = {**estilos[idx], 'color': cores[idx]}
+        if m['r2'] < 0:
+            kw['alpha'] = kw.get('alpha', 1.0) * 0.4
+        estrela = '  ★' if i == 0 else ''
+        valid = np.isfinite(eta_fit)
+        if np.any(valid):
+            ax.plot(gd_fit[valid], eta_fit[valid], label=f"{m['nome']}  R²={m['r2']:.4f}{estrela}", **kw)
+
+    rps.log_axes(ax)
+    ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
+    ax.set_ylabel('Viscosidade η (Pa·s)', **rps.YLABEL_KW)
+    ax.set_title(titulo, **rps.TITLE_KW)
+    ax.legend(loc='upper right', **rps.LEGEND_KW)
+    fig.tight_layout(pad=1.5)
+    return fig, ax

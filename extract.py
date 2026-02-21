@@ -1,17 +1,21 @@
+import sys
 import zipfile
 import xml.etree.ElementTree as ET
 
-def extract(docx_path):
-    z = zipfile.ZipFile(docx_path)
-    xml_content = z.read('word/document.xml')
-    tree = ET.fromstring(xml_content)
-    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-    lines = []
-    for p in tree.findall('.//w:p', ns):
-        texts = [t.text for r in p.findall('.//w:r', ns) for t in r.findall('.//w:t', ns) if t.text]
-        if texts:
-            lines.append(''.join(texts))
-    return '\n'.join(lines)
+def get_docx_text(path):
+    try:
+        with zipfile.ZipFile(path) as docx:
+            tree = ET.XML(docx.read('word/document.xml'))
+            text = ''
+            for paragraph in tree.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
+                texts = [node.text for node in paragraph.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t') if node.text]
+                if texts:
+                    text += ''.join(texts) + '\n'
+            return text
+    except Exception as e:
+        return str(e)
 
-with open('extracted_text.txt', 'w', encoding='utf-8') as f:
-    f.write(extract(r'D:\GitHub\Reometro_Capilar\Analise-melhorias\Analise_Completa_Reometro_Capilar_v2.docx'))
+if __name__ == '__main__':
+    text = get_docx_text(sys.argv[1])
+    with open(sys.argv[2], 'w', encoding='utf-8') as f:
+        f.write(text)

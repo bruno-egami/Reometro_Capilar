@@ -696,6 +696,8 @@ class AnaliseFrame(ctk.CTkFrame):
     
     def export_graphs(self):
         """Export analysis graphs as PNG files."""
+        import reologia_plot as rp
+        import matplotlib.pyplot as plt
         
         if not self.analysis_data:
             tk.messagebox.showerror("Erro", "Execute uma análise primeiro.")
@@ -707,87 +709,76 @@ class AnaliseFrame(ctk.CTkFrame):
             return
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        amostra_nome = self.analysis_data['amostra']['nome']
-        
-        gamma = self.analysis_data['gamma_dot']
-        tau = self.analysis_data['tau_w']
-        eta = self.analysis_data['eta']
-        best_model = self.analysis_data['best_model']
+        d = self.analysis_data
+        amostra_nome = d['amostra']['nome']
         
         imgs_generated = []
         
-        # 1. Flow Curve (log-log)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        tau_std = self.analysis_data.get('tau_w_std', None)
-        if tau_std is not None and np.any(tau_std > 0):
-            ax.errorbar(gamma, tau, yerr=tau_std, fmt='o', markersize=8, capsize=4, label='Dados ± $\sigma$')
+        # Helper to extract variables
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        tau_brutos = np.array(d.get('raw_tau', []))
+        eta_brutos = np.array(d.get('raw_eta', []))
+        
+        gd_med = np.array(d['gamma_dot'])
+        tau_med = np.array(d['tau_w'])
+        eta_med = np.array(d['eta'])
+        
+        tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
+        eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
+        
+        bm = d.get('best_model')
+        fit = d.get('model_fits', {}).get(bm, {}) if bm else {}
+        
+        if len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
         else:
-            ax.loglog(gamma, tau, 'o', markersize=8, label='Dados')
+            gd_fit = np.array([1, 10, 100])
         
-        # Add best model curve
-        if best_model and self.analysis_data['model_fits'].get(best_model, {}).get('params') is not None:
-            gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
-            model_func = models.MODELS[best_model][0]
-            params = self.analysis_data['model_fits'][best_model]['params']
-            tau_model = model_func(gamma_smooth, *params)
-            ax.loglog(gamma_smooth, tau_model, '-', linewidth=2, label=f'{best_model}')
-        
-        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)', fontsize=12)
-        ax.set_ylabel(r'Tensão de Cisalhamento $\tau_w$ (Pa)', fontsize=12)
-        ax.set_title(f'Curva de Fluxo - {amostra_nome}', fontsize=14)
-        ax.legend()
-        ax.grid(True, which='both', alpha=0.3)
-        
+        # 1. Flow Curve
+        tau_fit = np.zeros_like(gd_fit)
+        texto = ""
+        r2 = 0.0
+        if bm and fit.get('params') is not None:
+            func = models.MODELS[bm][0]
+            tau_fit = func(gd_fit, *fit['params'])
+            r2 = fit.get('r2', 0.0)
+            p_n = fit.get('param_names', [])
+            p_v = fit['params']
+            texto = "\n".join([f"{n} = {v:.4g}" for n, v in zip(p_n, p_v)])
+            
+        fig1, _ = rp.plotar_curva_fluxo(gd_brutos, tau_brutos, gd_med, tau_med, tau_err,
+                              gd_fit, tau_fit, bm or "Nenhum", r2, texto, titulo=f'Curva de Fluxo - {amostra_nome}')
         path1 = f"{folder}/{timestamp}_{amostra_nome}_curva_fluxo.png"
-        fig.savefig(path1, dpi=150, bbox_inches='tight')
-        plt.close(fig)
+        fig1.savefig(path1, dpi=300, bbox_inches='tight')
+        plt.close(fig1)
         imgs_generated.append(path1)
         
         # 2. Viscosity Curve
-        fig, ax = plt.subplots(figsize=(8, 6))
-        eta_std = self.analysis_data.get('eta_std', None)
-        if eta_std is not None and np.any(eta_std > 0):
-            ax.errorbar(gamma, eta, yerr=eta_std, fmt='s', markersize=8, color='green', capsize=4, label='Viscosidade ± $\sigma$')
-        else:
-            ax.loglog(gamma, eta, 's', markersize=8, color='green', label='Viscosidade')
-        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)', fontsize=12)
-        ax.set_ylabel(r'Viscosidade $\eta$ (Pa.s)', fontsize=12)
-        ax.set_title(f'Viscosidade vs Taxa de Cisalhamento - {amostra_nome}', fontsize=14)
-        ax.grid(True, which='both', alpha=0.3)
-        
+        n_p = d.get('n_prime', 1.0)
+        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None, titulo=f'Viscosidade - {amostra_nome}')
         path2 = f"{folder}/{timestamp}_{amostra_nome}_viscosidade.png"
-        fig.savefig(path2, dpi=150, bbox_inches='tight')
-        plt.close(fig)
+        fig2.savefig(path2, dpi=300, bbox_inches='tight')
+        plt.close(fig2)
         imgs_generated.append(path2)
         
-        # 3. All Models Comparison
-        fig, ax = plt.subplots(figsize=(10, 7))
-        tau_std = self.analysis_data.get('tau_w_std', None)
-        if tau_std is not None and np.any(tau_std > 0):
-            ax.errorbar(gamma, tau, yerr=tau_std, fmt='ko', markersize=8, capsize=4, label='Dados ± $\sigma$')
-        else:
-            ax.loglog(gamma, tau, 'ko', markersize=8, label='Dados')
-        
-        gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-        
-        for i, (model_name, fit_data) in enumerate(self.analysis_data['model_fits'].items()):
-            if fit_data.get('params') is not None:
-                model_func = models.MODELS[model_name][0]
-                tau_model = model_func(gamma_smooth, *fit_data['params'])
-                r2 = fit_data['r2']
-                ax.loglog(gamma_smooth, tau_model, '-', linewidth=2, color=colors[i % len(colors)],
-                         label=f'{model_name} (R²={r2:.4f})')
-        
-        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)', fontsize=12)
-        ax.set_ylabel(r'Tensão de Cisalhamento $\tau_w$ (Pa)', fontsize=12)
-        ax.set_title(f'Comparação de Modelos - {amostra_nome}', fontsize=14)
-        ax.legend(loc='best')
-        ax.grid(True, which='both', alpha=0.3)
-        
+        # 3. All Models
+        mods = []
+        fits = [(k, v) for k, v in d.get('model_fits', {}).items() if v.get('params') is not None]
+        fits.sort(key=lambda x: x[1].get('r2', -99), reverse=True)
+        for k, v in fits:
+            func = models.MODELS[k][0]
+            try:
+                t_fit = func(gd_fit, *v['params'])
+                p_n = v.get('param_names', [])
+                p_v = v['params']
+                p_str = " | ".join([f"{n}={val:.3g}" for n, val in zip(p_n, p_v)])
+                mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
+            except: pass
+            
+        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}')
         path3 = f"{folder}/{timestamp}_{amostra_nome}_modelos.png"
-        fig.savefig(path3, dpi=150, bbox_inches='tight')
-        plt.close(fig)
+        fig3.savefig(path3, dpi=300, bbox_inches='tight')
+        plt.close(fig3)
         imgs_generated.append(path3)
         
         tk.messagebox.showinfo("Sucesso", f"{len(imgs_generated)} gráficos exportados para:\n{folder}")

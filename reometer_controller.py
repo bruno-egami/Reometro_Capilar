@@ -1,8 +1,11 @@
+
 import serial
 import serial.tools.list_ports
 import time
 import threading
 import math
+import logging
+from logger_config import logger
 import numpy as np
 from typing import Optional, Callable, Tuple, Any
 
@@ -39,6 +42,15 @@ class ReometerController:
         self.on_error: Optional[Callable[[str], None]] = None
         self._callback_lock = threading.Lock()
         
+        # Calibration Parameters
+        # Linha: user-calibrated
+        self.calib_slope_linha: float = 1.0
+        self.calib_intercept_linha: float = 0.0
+        # Pasta: factory calibration (fixed)
+        self.calib_slope_pasta: float = FACTORY_PASTA_SLOPE
+        self.calib_intercept_pasta: float = FACTORY_PASTA_INTERCEPT
+        self.calibration_loaded: bool = True  # Pasta is always calibrated
+        
     @property
     def on_pressure_reading(self) -> Optional[Callable[[float, float, float, float], None]]:
         with self._callback_lock:
@@ -49,20 +61,21 @@ class ReometerController:
         with self._callback_lock:
             self._on_pressure_reading = callback
         
-        # Calibration Parameters
-        # Linha: user-calibrated
-        self.calib_slope_linha: float = 1.0
-        self.calib_intercept_linha: float = 0.0
-        # Pasta: factory calibration (fixed)
-        self.calib_slope_pasta: float = FACTORY_PASTA_SLOPE
-        self.calib_intercept_pasta: float = FACTORY_PASTA_INTERCEPT
-        self.calibration_loaded: bool = True  # Pasta is always calibrated
+    def log_message(self, msg: str, level: int = logging.INFO) -> None:
+        """Centralized logging for the controller."""
+        if level == logging.ERROR:
+            logger.error(f"[ReometerController] {msg}")
+        elif level == logging.WARNING:
+            logger.warning(f"[ReometerController] {msg}")
+        else:
+            logger.info(f"[ReometerController] {msg}")
 
     def load_calibration_linha(self, slope_l: float, intercept_l: float) -> None:
         """Loads calibration parameters for Linha sensor only (Pasta uses factory)."""
         self.calib_slope_linha = slope_l
         self.calib_intercept_linha = intercept_l
         self.calibration_loaded = True
+        self.log_message(f"Calibration loaded for Linha: Slope={slope_l}, Intercept={intercept_l}")
     
     def load_calibration(self, slope_l: float, intercept_l: float, slope_p: Optional[float] = None, intercept_p: Optional[float] = None) -> None:
         """
@@ -73,20 +86,27 @@ class ReometerController:
         self.calib_intercept_linha = intercept_l
         # Pasta is always factory calibrated, ignore provided values
         self.calibration_loaded = True
+        self.log_message(f"Legacy calibration loaded for Linha: Slope={slope_l}, Intercept={intercept_l}. Pasta uses factory calibration.")
 
     def find_and_connect(self) -> Tuple[bool, str]:
         """
         Attempts to auto-connect to an Arduino device.
         Scans available COM ports for descriptions containing 'USB', 'ARDUINO', or 'CH340'.
         """
+        self.log_message("Searching for Arduino device...")
         ports = serial.tools.list_ports.comports()
         for p in ports:
             # Common Arduino descriptions/IDs
             if any(x in p.description.upper() for x in ["USB", "ARDUINO", "CH340"]):
                 try:
-                    return self.connect(p.device)
-                except Exception:
+                    self.log_message(f"Found potential device: {p.device} ({p.description}). Attempting to connect...")
+                    success, msg = self.connect(p.device)
+                    if success:
+                        return True, msg
+                except Exception as e:
+                    self.log_message(f"Error connecting to {p.device}: {e}", level=logging.ERROR)
                     continue
+        self.log_message("No Arduino device found.", level=logging.WARNING)
         return False, "Arduino não encontrado."
 
     def connect(self, port: str) -> Tuple[bool, str]:
@@ -95,6 +115,7 @@ class ReometerController:
         Performs a handshake ("PING" -> "ACK_PING_OK") to verify the device.
         """
         try:
+            self.log_message(f"Attempting to connect to {port}...")
             self.ser = serial.Serial(port, BAUD_RATE, timeout=TIMEOUT_SERIAL)
             time.sleep(2) # Wait for Arduino reset
             
@@ -106,12 +127,16 @@ class ReometerController:
                 
                 if "ACK_PING_OK" in response:
                     self.is_connected = True
+                    self.log_message(f"Successfully connected to {port}.")
                     return True, f"Conectado em {port}"
                 else:
                     self.disconnect()
+                    self.log_message(f"Handshake failed with {port}. Response: '{response}'", level=logging.ERROR)
                     return False, f"Falha no handshake com {port}."
         except Exception as e:
+            self.log_message(f"Error connecting to {port}: {e}", level=logging.ERROR)
             return False, str(e)
+        self.log_message("Unknown error during connection attempt.", level=logging.ERROR)
         return False, "Erro desconhecido."
 
     def disconnect(self) -> None:
@@ -119,6 +144,7 @@ class ReometerController:
         self.stop_reading()
         if self.ser and self.ser.is_open:
             self.ser.close()
+            self.log_message(f"Disconnected from {self.ser.port}.")
         self.is_connected = False
         self.ser = None
 
@@ -128,22 +154,43 @@ class ReometerController:
         Returns True if started successfully or already running.
         """
         if not self.is_connected or not self.ser:
+            self.log_message("Cannot start reading: Not connected to Arduino.", level=logging.WARNING)
             return False
             
         if self.is_reading:
+            self.log_message("Reading already in progress.")
             return True
 
         self.is_reading = True
         self.read_thread = threading.Thread(target=self._read_loop, daemon=True)
         self.read_thread.start()
+        self.log_message("Started background reading thread.")
         return True
 
     def stop_reading(self) -> None:
         """Stops the background reading thread safely."""
-        self.is_reading = False
-        if self.read_thread:
-            self.read_thread.join(timeout=1.0)
+        if self.is_reading:
+            self.is_reading = False
+            if self.read_thread:
+                self.read_thread.join(timeout=1.0)
+                if self.read_thread.is_alive():
+                    self.log_message("Reading thread did not terminate gracefully.", level=logging.WARNING)
+                else:
+                    self.log_message("Stopped background reading thread.")
             self.read_thread = None
+        else:
+            self.log_message("Reading is not active.")
+
+    def _safe_callback_emit(self, p1: float, p2: float, v1: float, v2: float):
+        """Safely emits the on_pressure_reading callback."""
+        cb = self.on_pressure_reading
+        if cb:
+            try:
+                cb(p1, p2, v1, v2)
+            except Exception as e:
+                self.log_message(f"Error in on_pressure_reading callback: {e}", level=logging.ERROR)
+                if self.on_error:
+                    self.on_error(f"Callback error: {e}")
 
     def _read_loop(self) -> None:
         """
@@ -171,14 +218,19 @@ class ReometerController:
                         p_pasta = self._convert_voltage_to_pressure(v2, 'pasta')
                         
                         # Emit callback safely
-                        cb = self.on_pressure_reading
-                        if cb:
-                            cb(p_linha, p_pasta, v1, v2)
+                        self._safe_callback_emit(p_linha, p_pasta, v1, v2)
                 except ValueError:
-                    pass
+                    self.log_message(f"Could not parse line from Arduino: '{line}'", level=logging.WARNING)
                 
                 time.sleep(0.1) # Approx 10Hz sampling rate
+            except serial.SerialException as e:
+                self.log_message(f"Serial communication error: {e}", level=logging.ERROR)
+                if self.on_error:
+                    self.on_error(str(e))
+                self.stop_reading()
+                break
             except Exception as e:
+                self.log_message(f"An unexpected error occurred in read loop: {e}", level=logging.ERROR)
                 if self.on_error:
                     self.on_error(str(e))
                 self.stop_reading()
@@ -187,6 +239,7 @@ class ReometerController:
     def _convert_voltage_to_pressure(self, voltage: float, sensor_type: str) -> float:
         """Converts raw voltage to pressure (bar) using loaded calibration."""
         if not self.calibration_loaded:
+            self.log_message("Calibration not loaded, returning 0.0 for pressure.", level=logging.WARNING)
             return 0.0
             
         if sensor_type == 'linha':
@@ -212,6 +265,7 @@ class MockReometerController(ReometerController):
     def connect(self, port: str = "MockPort") -> Tuple[bool, str]:
         self.is_connected = True
         self.ser = MockSerial() # type: ignore
+        self.log_message("Mock connection established.")
         return True, "Conectado (Mock)"
         
     def find_and_connect(self) -> Tuple[bool, str]:
@@ -226,9 +280,7 @@ class MockReometerController(ReometerController):
             v1 = (p_linha - self.calib_intercept_linha) / self.calib_slope_linha if self.calib_slope_linha else 0
             v2 = (p_pasta - self.calib_intercept_pasta) / self.calib_slope_pasta if self.calib_slope_pasta else 0
             
-            cb = self.on_pressure_reading
-            if cb:
-                cb(p_linha, p_pasta, v1, v2)
+            self._safe_callback_emit(p_linha, p_pasta, v1, v2)
             
             time.sleep(0.1)
             t += 1
@@ -237,10 +289,10 @@ if __name__ == "__main__":
     # Test Mock Controller
     controller = MockReometerController()
     success, msg = controller.connect()
-    print(msg)
+    logger.info(f"Connection result: {msg}")
     
     def print_pressure(p1: float, p2: float, v1: float, v2: float) -> None:
-        print(f"L: {p1:.2f} bar | P: {p2:.2f} bar")
+        logger.info(f"L: {p1:.2f} bar | P: {p2:.2f} bar | V1: {v1:.3f}V | V2: {v2:.3f}V")
         
     controller.on_pressure_reading = print_pressure
     controller.load_calibration(100.0, 0, 100.0, 0)
