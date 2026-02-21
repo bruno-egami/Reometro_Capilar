@@ -540,7 +540,7 @@ def plotar_curva_fluxo(gd_brutos, tau_brutos,
 
 def plotar_viscosidade(gd_brutos, eta_brutos,
                         gd_medios, eta_medios, eta_desvio,
-                        n_prime=None, titulo='Viscosidade Aparente'):
+                        titulo='Viscosidade Experimental'):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
     # Dados brutos
@@ -552,21 +552,9 @@ def plotar_viscosidade(gd_brutos, eta_brutos,
                 yerr=eta_desvio[mask_err],
                 color=rps.PALETTE['data'], **rps.EB_KW)
 
-    # Viscosidade aparente — pontos
-    lbl = 'Viscosidade Aparente η = τ/γ̇'
+    # Viscosidade ajustada (Média) — pontos
+    lbl = 'Viscosidade Experimental η'
     ax.scatter(gd_medios, eta_medios, label=lbl, **rps.SC_DATA)
-
-    # Viscosidade real (correção W-R) — pontos quadrados, cor secundária
-    if n_prime is not None:
-        fator_wr = (3 * n_prime + 1) / (4 * n_prime)
-        eta_real  = eta_medios / fator_wr
-        sc_real = {**rps.SC_DATA,
-                   'color': rps.PALETTE['fit'],
-                   'marker': 's',
-                   's': 50}
-        ax.scatter(gd_medios, eta_real,
-                   label=f"Viscosidade Real (n'={n_prime:.2f})",
-                   **sc_real)
 
     rps.log_axes(ax)
     ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)

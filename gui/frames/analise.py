@@ -793,7 +793,7 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 2. Viscosity Curve
         n_p = d.get('n_prime', 1.0)
-        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None, titulo=f'Viscosidade - {amostra_nome}')
+        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, titulo=f'Viscosidade - {amostra_nome}')
         path2 = f"{folder}/{timestamp}_{amostra_nome}_viscosidade.png"
         fig2.savefig(path2, dpi=300, bbox_inches='tight')
         plt.close(fig2)
@@ -1007,7 +1007,7 @@ class AnaliseFrame(ctk.CTkFrame):
         plt.close(fig1)
         
         # 2. Viscosidade
-        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, n_prime=n_prime if n_prime != 1.0 else None)
+        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err)
         fig2.savefig(os.path.join(folder, f'{timestamp}_viscosidade.png'), dpi=150, bbox_inches='tight')
         plt.close(fig2)
         
