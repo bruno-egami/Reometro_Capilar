@@ -941,164 +941,69 @@ class AnaliseFrame(ctk.CTkFrame):
     
     def _generate_temp_graphs(self, folder, timestamp, analysis_data=None):
         """Generate temporary graphs for PDF report."""
+        import reologia_plot as rp
+        import matplotlib.pyplot as plt
+        import modelos_reologicos as models
+        import numpy as np
+        import os
         
         data = analysis_data if analysis_data else self.analysis_data
         
-        gamma = data['gamma_dot']
-        tau = data['tau_w']
-        eta = data['eta']
-        best_model = data['best_model']
+        gamma = np.array(data['gamma_dot'])
+        tau = np.array(data['tau_w'])
+        eta = np.array(data['eta'])
         
-        # 1. Flow Curve
-        fig, ax = plt.subplots(figsize=(8, 6))
+        tau_err = np.array(data.get('tau_w_std', np.zeros_like(tau)))
+        eta_err = np.array(data.get('eta_std', np.zeros_like(eta)))
         
-        # Raw Data Shadow
-        if 'raw_gamma' in data and 'raw_tau' in data:
-            ax.loglog(data['raw_gamma'], data['raw_tau'], 'o', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
-            
-        ax.loglog(gamma, tau, 'ko-', markersize=6, label='Dados experimentais')
+        gd_raw = np.array(data.get('raw_gamma', []))
+        tau_raw = np.array(data.get('raw_tau', []))
+        eta_raw = np.array(data.get('raw_eta', []))
         
-        if best_model and data['model_fits'].get(best_model, {}).get('params') is not None:
-            gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
-            model_func = models.MODELS[best_model][0]
-            params = data['model_fits'][best_model]['params']
-            tau_model = model_func(gamma_smooth, *params)
-            ax.loglog(gamma_smooth, tau_model, 'r-', linewidth=2, label=f'Modelo: {best_model}')
-            
-        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)')
-        ax.set_ylabel(r'Tensão de Cisalhamento $\tau_w$ (Pa)')
-        
-        # Better Ticks
-        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        ax.legend()
-        ax.grid(True, which='both', alpha=0.3)
-        fig.savefig(os.path.join(folder, f"{timestamp}_curva_fluxo.png"), dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        
-        # 2. Viscosity (Dual Axis or Double Series)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        
-        # Raw Data Shadow
-        if 'raw_gamma' in data and 'raw_eta' in data:
-            ax.loglog(data['raw_gamma'], data['raw_eta'], 's', color='lightgray', markersize=4, alpha=0.5, label='Dados Brutos')
-
-        # Plot Apparent vs Real
+        bm = data.get('best_model')
+        fit = data.get('model_fits', {}).get(bm, {}) if bm else {}
         n_prime = data.get('n_prime', 1.0)
-        is_weissenberg = n_prime != 1.0 
         
-        if is_weissenberg:
-             factor = (3*n_prime + 1) / (4*n_prime)
-             gamma_app = gamma / factor
-             eta_app = tau / gamma_app
-             ax.loglog(gamma_app, eta_app, 'b^--', markersize=6, label='Viscosidade Aparente' )
-             ax.loglog(gamma, eta, 'rs-', markersize=6, label=f'Viscosidade Real (n\'={n_prime:.2f})')
+        # Cria dominio suave para plot de modelos
+        if len(gamma) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, gamma.min())), np.log10(gamma.max()), 100)
         else:
-             ax.loglog(gamma, eta, 's-', markersize=6, color='orange', label='Viscosidade Aparente')
-
-        ax.set_xlabel(r'Taxa de Cisalhamento $\dot{\gamma}$ (s$^{-1}$)')
-        ax.set_ylabel(r'Viscosidade $\eta$ (Pa.s)')
+            gd_fit = np.array([1, 10, 100])
         
-        # Better Ticks
-        ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        ax.legend()
-        ax.grid(True, which='both', alpha=0.3)
-        fig.savefig(os.path.join(folder, f"{timestamp}_viscosidade.png"), dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        
-        # 3. Model Fitting Comparison (Canvas style)
-        fig = plt.figure(figsize=(12, 5))
-        
-        # Helper for setting limits with padding
-        def set_smart_limits(ax, x_data, y_data):
-            if len(x_data) > 0 and len(y_data) > 0:
-                # Log limits
-                x_min, x_max = x_data.min(), x_data.max()
-                y_min, y_max = y_data.min(), y_data.max()
-                
-                # Add 20% padding on log scale
-                x_pad = (np.log10(x_max) - np.log10(x_min)) * 0.1
-                y_pad = (np.log10(y_max) - np.log10(y_min)) * 0.1
-                
-                # Handle single point or zero range
-                if x_pad == 0: x_pad = 0.5
-                if y_pad == 0: y_pad = 0.5
-                
-                ax.set_xlim(10**(np.log10(x_min) - x_pad), 10**(np.log10(x_max) + x_pad))
-                ax.set_ylim(10**(np.log10(y_min) - y_pad), 10**(np.log10(y_max) + y_pad))
-
-        # 1. Flow Curve (Models)
-        fig1, ax1 = plt.subplots(figsize=(6, 5))
-        
-        if 'raw_gamma' in data and 'raw_tau' in data:
-            ax1.loglog(data['raw_gamma'], data['raw_tau'], 'o', color='lightgray', markersize=3, alpha=0.4)
+        # 1. Curva de Fluxo
+        tau_fit = np.zeros_like(gd_fit)
+        texto = ''
+        r2 = 0.0
+        if bm and fit.get('params') is not None:
+            tau_fit = models.MODELS[bm][0](gd_fit, *fit['params'])
+            r2 = fit.get('r2', 0.0)
+            texto = '\n'.join([f'{n}={v:.4g}' for n, v in zip(fit['param_names'], fit['params'])])
             
-        ax1.errorbar(gamma, tau, yerr=data.get('tau_w_std'), fmt='ko-', capsize=3, label='Dados experimentais', alpha=0.7)
-        
-        gamma_smooth = np.logspace(np.log10(gamma.min()), np.log10(gamma.max()), 100)
-        colors_list = ['r', 'g', 'b', 'c', 'm']
-        
-        # Plot all models on Stress Graph
-        i = 0
-        for model_name, fit_data in data['model_fits'].items():
-            if fit_data.get('params') is not None:
-                model_func = models.MODELS[model_name][0]
-                tau_model = model_func(gamma_smooth, *fit_data['params'])
-                ax1.loglog(gamma_smooth, tau_model, '-', linewidth=1.5, color=colors_list[i % 5],
-                         label=f'{model_name} (R²={fit_data["r2"]:.4f})')
-                i += 1
-                
-        ax1.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
-        ax1.set_ylabel(r'$\tau_w$ (Pa)')
-        ax1.set_title('Curva de Fluxo (Ajuste)')
-        ax1.legend(fontsize='small')
-        
-        # Set limits based on EXPERIMENTAL data only
-        set_smart_limits(ax1, gamma, tau)
-        
-        # Better Ticks
-        ax1.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax1.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        ax1.grid(True, which='both', alpha=0.3)
-        
-        plt.tight_layout()
-        fig1.savefig(os.path.join(folder, f"{timestamp}_modelos_fluxo.png"), dpi=150, bbox_inches='tight')
+        fig1, _ = rp.plotar_curva_fluxo(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, tau_fit, bm or 'Nenhum', r2, texto)
+        fig1.savefig(os.path.join(folder, f'{timestamp}_curva_fluxo.png'), dpi=150, bbox_inches='tight')
         plt.close(fig1)
-
-        # 2. Viscosity (Models)
-        fig2, ax2 = plt.subplots(figsize=(6, 5))
         
-        if 'raw_gamma' in data and 'raw_eta' in data:
-            ax2.loglog(data['raw_gamma'], data['raw_eta'], 's', color='lightgray', markersize=3, alpha=0.4)
-            
-        ax2.errorbar(gamma, eta, yerr=data.get('eta_std'), fmt='ks-', capsize=3, label='Viscosidade Real', alpha=0.7)
-        
-        # Plot all models on Viscosity Graph
-        i = 0
-        for model_name, fit_data in data['model_fits'].items():
-            if fit_data.get('params') is not None:
-                model_func = models.MODELS[model_name][0]
-                tau_model = model_func(gamma_smooth, *fit_data['params'])
-                eta_model = tau_model / gamma_smooth
-                ax2.loglog(gamma_smooth, eta_model, '-', linewidth=1.5, color=colors_list[i % 5], label=model_name)
-                i += 1
-                
-        ax2.set_xlabel(r'$\dot{\gamma}$ (s$^{-1}$)')
-        ax2.set_ylabel(r'$\eta$ (Pa.s)')
-        ax2.set_title('Viscosidade (Ajuste)')
-        ax2.legend(fontsize='small')
-        ax2.grid(True, which='both', alpha=0.3)
-        
-        # Set limits based on EXPERIMENTAL data only
-        set_smart_limits(ax2, gamma, eta)
-        
-        # Better Ticks
-        ax2.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
-        ax2.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(0.1, 1.0, 0.1), numticks=15))
-        
-        plt.tight_layout()
-        fig2.savefig(os.path.join(folder, f"{timestamp}_modelos_visc.png"), dpi=150, bbox_inches='tight')
+        # 2. Viscosidade
+        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, n_prime=n_prime if n_prime != 1.0 else None)
+        fig2.savefig(os.path.join(folder, f'{timestamp}_viscosidade.png'), dpi=150, bbox_inches='tight')
         plt.close(fig2)
+        
+        # 3 e 4. Modelos Comparativos
+        fits_sorted = sorted([(k, v) for k, v in data.get('model_fits', {}).items() if v.get('params') is not None],
+                             key=lambda x: x[1].get('r2', -99), reverse=True)
+        mods = []
+        for k, v in fits_sorted:
+            try:
+                t_fit = models.MODELS[k][0](gd_fit, *v['params'])
+                p_str = ' | '.join([f'{nm}={val:.3g}' for nm, val in zip(v['param_names'], v['params'])])
+                mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
+            except Exception:
+                pass
+                
+        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, mods)
+        fig3.savefig(os.path.join(folder, f'{timestamp}_modelos_fluxo.png'), dpi=150, bbox_inches='tight')
+        plt.close(fig3)
+        
+        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit, mods)
+        fig4.savefig(os.path.join(folder, f'{timestamp}_modelos_visc.png'), dpi=150, bbox_inches='tight')
+        plt.close(fig4)

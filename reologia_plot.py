@@ -339,7 +339,8 @@ def plotar_comparativo_multiplo(dados_analises, coluna_x, coluna_y, titulo, xlab
     dados_analises: dict {nome_legenda: df}
     modelos_dict: dict {nome_legenda: {'model_name': str, 'params': list}} (Opcional)
     """
-    fig, ax = plt.subplots(figsize=(12, 8))
+    import reologia_plot_style as rps
+    fig, ax = rps.make_fig(figsize=(12, 8))
     
     marcadores = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
     cores = plt.cm.tab10(np.linspace(0, 1, len(dados_analises)))
@@ -397,13 +398,11 @@ def plotar_comparativo_multiplo(dados_analises, coluna_x, coluna_y, titulo, xlab
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(titulo)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax.grid(True, which="both", ls="--")
-    
     if usar_log:
-        ax.set_xscale('log'); ax.set_yscale('log')
+        rps.log_axes(ax)
         
-    plt.tight_layout()
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', **rps.LEGEND_KW)
+    fig.tight_layout(pad=1.5)
     
     f_name = None
     if not only_show:
