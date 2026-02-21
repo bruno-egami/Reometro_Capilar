@@ -859,6 +859,7 @@ class AnaliseFrame(ctk.CTkFrame):
                     'gamma_dot_w': data_to_use.get('raw_gamma', []),
                     'tau_w': data_to_use.get('raw_tau', []),
                     'eta_true': data_to_use.get('raw_eta', []),
+                    'delta_p': data_to_use.get('delta_p', []),
                     'tempo_s': data_to_use.get('raw_time', []),
                     'massa_g': data_to_use.get('raw_mass', []),
                     'pressao': data_to_use.get('raw_pressure', [])

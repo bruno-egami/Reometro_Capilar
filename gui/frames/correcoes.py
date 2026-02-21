@@ -127,6 +127,15 @@ class CorrecoesFrame(ctk.CTkFrame):
             self.btn_execute.configure(state="disabled")
             return False
         
+        # M11: Aviso quando < 3 capilares (R²=1.0 com apenas 2 pontos)
+        if len(selected_ids) < 3:
+            messagebox.showwarning('Aviso — Validade Estatística',
+                'Apenas 2 capilares selecionados.\n\n'
+                'Com 2 pontos a regressão linear é exata (R²=1.0)\n'
+                'sem graus de liberdade residuais.\n\n'
+                'Recomenda-se mínimo 3 capilares para\n'
+                'validade estatística de Bagley/Mooney.')
+        
         # Get sample details
         samples = []
         for sid in selected_ids:

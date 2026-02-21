@@ -10,7 +10,8 @@ from reologia_plot_style import PALETTE
 from modelos_reologicos import MODELS
 
 def plotar_ajuste_bagley(L_over_R_vals, P_vals, slope, intercept, target_gamma_aw_str, output_folder, timestamp):
-    """Gera e salva um gráfico do ajuste de Bagley para uma taxa de cisalhamento específica."""
+    """DEPRECATED: Use plotar_curva_fluxo() (seção padronizada).
+    Gera e salva um gráfico do ajuste de Bagley para uma taxa de cisalhamento específica."""
     if len(L_over_R_vals) < 2: return
     plt.figure(figsize=(8, 6))
     plt.scatter(L_over_R_vals, np.array(P_vals) / 1e5, marker='o', label='Dados Interpolados')
@@ -41,6 +42,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
                           std_tau_w=None, std_eta=None,
                           show_plots=False):
     """
+    DEPRECATED: Use plotar_curva_fluxo/plotar_viscosidade/plotar_ajuste_modelos (seção padronizada).
     Gera e salva os 5 gráficos principais da análise reológica.
     """
     
@@ -287,6 +289,7 @@ def gerar_graficos_finais(output_folder, timestamp_str,
 
 def plotar_curva_fluxo_estatistica(gamma_dot_mean, tau_w_mean, tau_w_std, model_results, best_model_nome, output_folder, timestamp_str):
     """
+    DEPRECATED: Use plotar_curva_fluxo() + plotar_ajuste_modelos() (seção padronizada).
     Plota curva de fluxo com barras de erro (desvio padrão).
     """
     fig, ax = plt.subplots(figsize=(10, 7))
