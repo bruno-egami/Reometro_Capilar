@@ -50,6 +50,7 @@ class ReometerController:
         self.calib_slope_pasta: float = FACTORY_PASTA_SLOPE
         self.calib_intercept_pasta: float = FACTORY_PASTA_INTERCEPT
         self.calibration_loaded: bool = True  # Pasta is always calibrated
+        self.linha_calibrada: bool = False  # C11: aviso até sensor Linha ser calibrado
         
     @property
     def on_pressure_reading(self) -> Optional[Callable[[float, float, float, float], None]]:
@@ -75,6 +76,7 @@ class ReometerController:
         self.calib_slope_linha = slope_l
         self.calib_intercept_linha = intercept_l
         self.calibration_loaded = True
+        self.linha_calibrada = True
         self.log_message(f"Calibration loaded for Linha: Slope={slope_l}, Intercept={intercept_l}")
     
     def load_calibration(self, slope_l: float, intercept_l: float, slope_p: Optional[float] = None, intercept_p: Optional[float] = None) -> None:
@@ -86,6 +88,7 @@ class ReometerController:
         self.calib_intercept_linha = intercept_l
         # Pasta is always factory calibrated, ignore provided values
         self.calibration_loaded = True
+        self.linha_calibrada = True
         self.log_message(f"Legacy calibration loaded for Linha: Slope={slope_l}, Intercept={intercept_l}. Pasta uses factory calibration.")
 
     def find_and_connect(self) -> Tuple[bool, str]:

@@ -23,11 +23,9 @@ CONSTANTS = {
 # --- CONFIGURAÇÃO DE PLOTAGEM ---
 # -----------------------------------------------------------------------------
 def setup_graficos():
-    """Configura o backend do Matplotlib para TkAgg, se necessário."""
-    try:
-        pass # UI principal usa backend_tkagg nativamente
-    except ImportError:
-        print("Aviso: Falha ao configurar backend de gráficos.")
+    """DEPRECATED: mantida para compatibilidade com scripts em legacy/.
+    A GUI principal usa apply_dark_style() de reologia_plot_style.py."""
+    pass
 
 def gerar_timestamp():
     """Gera uma string de timestamp atual (YYYYMMDD_HHMMSS)."""

@@ -129,6 +129,15 @@ class ColetaFrame(ctk.CTkFrame):
             self.btn_start.configure(state="normal")
             # Start background reading
             self.controller.start_reading()
+            # C11: Aviso de calibração pendente
+            if not self.controller.linha_calibrada:
+                if not hasattr(self, '_calib_banner'):
+                    self._calib_banner = ctk.CTkLabel(
+                        self, text="⚠  Sensor Linha sem calibração! Vá à aba Calibração antes de coletar.",
+                        font=ctk.CTkFont(size=13, weight="bold"),
+                        text_color="#1e1e2e", fg_color="#f9e2af",
+                        corner_radius=6, height=32)
+                    self._calib_banner.pack(fill="x", padx=20, pady=(0, 5), before=self.graph_frame)
         else:
             tk.messagebox.showerror("Erro", f"Falha ao conectar: {msg}")
 
