@@ -287,7 +287,20 @@ class ColetaFrame(ctk.CTkFrame):
                 v1_avg = np.mean(self.v1_data[best_start_idx:end_idx])
                 v2_avg = np.mean(self.v2_data[best_start_idx:end_idx])
                 
-                print(f"Regime estacionário detectado: pontos {best_start_idx} a {end_idx}. Desvio: {min_std:.4f}")
+                # Calcular CV para feedback ao usuário
+                p2_mean_window = np.mean(self.p2_data[best_start_idx:end_idx])
+                cv_percent = (min_std / p2_mean_window * 100) if p2_mean_window > 0 else 0
+                
+                print(f"Regime estacionário detectado: pontos {best_start_idx} a {end_idx}. CV: {cv_percent:.2f}%")
+                
+                # M2: Destaque visual da janela no gráfico
+                if self.times and len(self.times) > end_idx:
+                    t_start = self.times[best_start_idx]
+                    t_end = self.times[end_idx - 1]
+                    self.ax.axvspan(t_start, t_end, alpha=0.18, color='#a6e3a1', zorder=0,
+                                   label=f'Regime Estável (CV={cv_percent:.1f}%)')
+                    self.ax.legend(fontsize=8)
+                    self.canvas.draw_idle()
             else:
                 # Fallback para média simples se poucos pontos
                 p1_avg = np.mean(self.p1_data) if self.p1_data else 0

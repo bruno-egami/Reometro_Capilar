@@ -404,6 +404,25 @@ class AnaliseFrame(ctk.CTkFrame):
             gd_app_arr = np.array(gamma_dots_app)
             tau_arr = np.array(taus)
             
+            # --- M5: Propagação de Incerteza Metrológica ---
+            # Incertezas padrão dos instrumentos
+            u_R = 0.025e-3   # 0.025 mm (paquímetro digital) em metros
+            u_L = 0.05e-3    # 0.05 mm em metros
+            u_P_rel = 0.02   # 2% fundo de escala do sensor (classe C)
+            u_m_kg = 0.01e-3 # 0.01 g em kg
+            u_t = 0.2        # 0.2 s (trigger manual)
+            
+            # u(tau_w) / tau_w = sqrt( (u_P/P)^2 + (u_R/R)^2 + (u_L/L)^2 )
+            u_tau_arr = tau_arr * np.sqrt(
+                u_P_rel**2 + (u_R / R)**2 + (u_L / L)**2
+            )
+            # u(gd) / gd = sqrt( (u_m/m)^2 + (u_t/t)^2 + (3*u_R/R)^2 )
+            massas_kg = np.array(massas) / 1000.0
+            tempos_arr = np.array(tempos)
+            u_gd_arr = gd_app_arr * np.sqrt(
+                (u_m_kg / massas_kg)**2 + (u_t / tempos_arr)**2 + (3 * u_R / R)**2
+            )
+            
             # Corrections (Weissenberg) performed on RAW data first
             n_prime = 1.0
             gd_true_arr = gd_app_arr.copy()
@@ -655,6 +674,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 'tau_w_std': tau_std, 'eta_std': eta_std, # Standard Deviations
                 'raw_gamma': gd_true_arr, 'raw_tau': tau_arr, 'raw_eta': eta_arr, # Raw Data
                 'raw_mass': np.array(massas), 'raw_time': np.array(tempos), 'raw_pressure': np.array(pressoes),
+                'u_tau': u_tau_arr, 'u_gd': u_gd_arr, # M5: Incertezas metrológicas
                 'model_fits': model_fits, 'best_model': best_model, 'best_r2': best_r2,
                 'comportamento': comportamento, 'n_prime': n_prime if aplicar_weissenberg else 1.0,
                 'delta_p': np.array(delta_p_list),
