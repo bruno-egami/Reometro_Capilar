@@ -661,7 +661,7 @@ class AnaliseFrame(ctk.CTkFrame):
             results_txt += f"Capilar: D={D_mm} mm, L={L_mm} mm\n"
             results_txt += f"Densidade: {Rho} g/cm³\n"
             results_txt += f"Pontos Agrupados: {len(fit_gd)} níveis de taxa\n"
-            results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime) if aplicar_weissenberg else 'Não'}\n\n"
+            results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime_global) if aplicar_weissenberg else 'Não'}\n\n"
             
             results_txt += "───────────────────────────────────────────\n"
             results_txt += "  AJUSTE DOS MODELOS (MÉDIAS)\n"
@@ -694,7 +694,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 'raw_mass': np.array(massas), 'raw_time': np.array(tempos), 'raw_pressure': np.array(pressoes),
                 'u_tau': u_tau_arr, 'u_gd': u_gd_arr, # M5: Incertezas metrológicas
                 'model_fits': model_fits, 'best_model': best_model, 'best_r2': best_r2,
-                'comportamento': comportamento, 'n_prime': n_prime if aplicar_weissenberg else 1.0,
+                'comportamento': comportamento, 'n_prime': n_prime_global if aplicar_weissenberg else 1.0,
                 'delta_p': np.array(delta_p_list),
                 'pressao_mean': pressao_mean if stats_details else np.array(delta_p_list), # Fallback if no stats
                 'stats_details': stats_details
@@ -702,7 +702,7 @@ class AnaliseFrame(ctk.CTkFrame):
 
             if save:
                 params_storage = {
-                    'best_model': best_model, 'n_prime': n_prime, 'is_weissenberg': aplicar_weissenberg,
+                    'best_model': best_model, 'n_prime': n_prime_global, 'is_weissenberg': aplicar_weissenberg,
                     'statistical_treatment': {
                         'method': 'grouped_by_shear_rate_log',
                         'num_groups': len(fit_gd),
@@ -711,7 +711,7 @@ class AnaliseFrame(ctk.CTkFrame):
                     'fits': {m: {'params': f['params'].tolist() if f['params'] is not None else None, 
                                  'r2': f['r2']} for m, f in model_fits.items()}
                 }
-                self.db.add_analise(amostra_id, best_model, best_r2, n_prime if aplicar_weissenberg else 1.0, 
+                self.db.add_analise(amostra_id, best_model, best_r2, n_prime_global if aplicar_weissenberg else 1.0, 
                                    comportamento, json.dumps(params_storage))
 
             return {
