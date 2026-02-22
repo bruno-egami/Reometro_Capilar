@@ -184,8 +184,9 @@ class RelatorioWindow(ctk.CTkToplevel):
             p_v = fit['params']
             texto = "\n".join([f"{n} = {v:.4g}" for n, v in zip(p_n, p_v)])
 
+        ref_data = d.get('dados_referencia', None)
         fig, ax = rp.plotar_curva_fluxo(gd_brutos, tau_brutos, gd_med, tau_med, tau_err,
-                              gd_fit, tau_fit, bm or "Nenhum ajustado", r2, texto)
+                              gd_fit, tau_fit, bm or "Nenhum ajustado", r2, texto, dados_referencia=ref_data)
         return fig
 
     def _create_viscosity_curve(self):
@@ -199,7 +200,8 @@ class RelatorioWindow(ctk.CTkToplevel):
         eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
         n_p = d.get('n_prime', 1.0)
 
-        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None)
+        ref_data = d.get('dados_referencia', None)
+        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None, dados_referencia=ref_data)
         return fig
 
     def _get_models_list(self, d, gd_fit):
@@ -233,7 +235,8 @@ class RelatorioWindow(ctk.CTkToplevel):
             gd_fit = np.array([1, 10, 100])
 
         mods = self._get_models_list(d, gd_fit)
-        fig, ax = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods)
+        ref_data = d.get('dados_referencia', None)
+        fig, ax = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods, dados_referencia=ref_data)
         return fig
 
     def _create_model_visc_curve(self):
@@ -251,7 +254,8 @@ class RelatorioWindow(ctk.CTkToplevel):
             gd_fit = np.array([1, 10, 100])
 
         mods = self._get_models_list(d, gd_fit)
-        fig, ax = rp.plotar_ajuste_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, gd_fit, mods)
+        ref_data = d.get('dados_referencia', None)
+        fig, ax = rp.plotar_ajuste_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, gd_fit, mods, dados_referencia=ref_data)
         return fig
 
     def _init_dados(self):

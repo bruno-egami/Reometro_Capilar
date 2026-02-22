@@ -121,3 +121,37 @@ def selecionar_arquivo(diretorio_base, padrao_busca="*", mensagem_prompt="Seleci
                 print("ERRO: Escolha inválida.")
         except ValueError:
             print("ERRO: Entrada inválida. Digite um número.")
+
+# -----------------------------------------------------------------------------
+# --- LEITURA DE DADOS DE REFERÊNCIA (ROTACIONAL) ---
+# -----------------------------------------------------------------------------
+def read_reference_csv(filepath):
+    """
+    Lê um arquivo CSV exportado de reômetros rotacionais (ex: Anton Paar MCR)
+    e retorna um dicionário com arrays numpy (Taxa, Tensão, Viscosidade).
+    """
+    import pandas as pd
+    try:
+        df = pd.read_csv(filepath, sep=';', decimal=',', encoding='utf-8')
+        df.columns = [str(c).strip() for c in df.columns]
+        if len(df.columns) < 3: return None
+            
+        col_gd, col_tau, col_eta = df.columns[0], df.columns[1], df.columns[2]
+        
+        for col in [col_gd, col_tau, col_eta]:
+            if df[col].dtype == 'O':
+                df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+        df = df.dropna(subset=[col_gd, col_tau, col_eta])
+        if len(df) == 0: return None
+        
+        return {
+            'nome': os.path.basename(filepath),
+            'gd': df[col_gd].values,
+            'tau': df[col_tau].values,
+            'eta': df[col_eta].values
+        }
+    except Exception as e:
+        print(f"Erro referência: {e}")
+        return None

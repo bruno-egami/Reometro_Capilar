@@ -106,8 +106,14 @@ class AnaliseFrame(ctk.CTkFrame):
         self.btn_export_pdf = ctk.CTkButton(self.export_frame, text="Gerar Relatório (PDF)", 
                                              command=self.export_pdf, state="disabled")
         self.btn_export_pdf.pack(side="left", padx=10)
-
         
+        # Reference CSV selection
+        self.btn_ref_csv = ctk.CTkButton(self.export_frame, text="Selecionar Ref. (CSV)", 
+                                             command=self.select_ref_csv, fg_color="#5a5a5a", hover_color="#404040")
+        self.btn_ref_csv.pack(side="left", padx=(30, 10))
+        
+        self.lbl_ref_csv = ctk.CTkLabel(self.export_frame, text="MCR102: Nenhum", text_color="gray")
+        self.lbl_ref_csv.pack(side="left", padx=5)        
         # Results (Scrollable Textbox - allows text selection)
         self.txt_result = ctk.CTkTextbox(self, height=350, font=("Consolas", 14), wrap="word")
         self.txt_result.pack(fill="both", expand=True, padx=20, pady=10)
@@ -117,6 +123,7 @@ class AnaliseFrame(ctk.CTkFrame):
         # Store analysis data for export
         self.analysis_data = None
         self.selected_amostra_id = None
+        self.ref_csv_path = None
         
         self.refresh_list()
 
@@ -729,11 +736,39 @@ class AnaliseFrame(ctk.CTkFrame):
             return
         
         # Capture current data for the callback
-        current_data = self.analysis_data
+        current_data = self.analysis_data.copy()
+        
+        # Inject reference data if selected
+        if self.ref_csv_path:
+            import utils_reologia
+            ref_data = utils_reologia.read_reference_csv(self.ref_csv_path)
+            if ref_data:
+                current_data['dados_referencia'] = ref_data
+
         RelatorioWindow(self, current_data, export_callback=lambda: self.export_pdf(current_data))
     
+    def select_ref_csv(self):
+        """Abre um diálogo para selecionar arquivo CSV de referência do MCR102."""
+        import utils_reologia
+        filepath = filedialog.askopenfilename(
+            title="Selecione o CSV do Rotacional (Anton Paar)",
+            filetypes=[("Arquivos CSV", "*.csv")],
+        )
+        if filepath:
+            # Tentar ler para validar
+            dados = utils_reologia.read_reference_csv(filepath)
+            if dados is None:
+                tk.messagebox.showerror("Erro de Leitura", "Não foi possível extrair Taxa, Tensão e Viscosidade do CSV.\nVerifique o formato do arquivo.")
+            else:
+                self.ref_csv_path = filepath
+                nome = os.path.basename(filepath)
+                # Truncate text se muito grande
+                if len(nome) > 25: nome = nome[:22] + "..."
+                self.lbl_ref_csv.configure(text=f"MCR102: {nome}", text_color="black")
+                
     def export_graphs(self):
-        """Export analysis graphs as PNG files."""
+        """Gera e salva os graficos de analise como PNGs na pasta escolhida.
+        Agora suporta sobreposição de dados de referência."""
         import reologia_plot as rp
         import matplotlib.pyplot as plt
         
@@ -772,6 +807,12 @@ class AnaliseFrame(ctk.CTkFrame):
         else:
             gd_fit = np.array([1, 10, 100])
         
+        # Carrega dados de referência se existir um CSV válido selecionado
+        ref_data = None
+        if self.ref_csv_path:
+            import utils_reologia
+            ref_data = utils_reologia.read_reference_csv(self.ref_csv_path)
+            
         # 1. Flow Curve
         tau_fit = np.zeros_like(gd_fit)
         texto = ""
@@ -785,7 +826,7 @@ class AnaliseFrame(ctk.CTkFrame):
             texto = "\n".join([f"{n} = {v:.4g}" for n, v in zip(p_n, p_v)])
             
         fig1, _ = rp.plotar_curva_fluxo(gd_brutos, tau_brutos, gd_med, tau_med, tau_err,
-                              gd_fit, tau_fit, bm or "Nenhum", r2, texto, titulo=f'Curva de Fluxo - {amostra_nome}')
+                              gd_fit, tau_fit, bm or "Nenhum", r2, texto, titulo=f'Curva de Fluxo - {amostra_nome}', dados_referencia=ref_data)
         path1 = f"{folder}/{timestamp}_{amostra_nome}_curva_fluxo.png"
         fig1.savefig(path1, dpi=300, bbox_inches='tight')
         plt.close(fig1)
@@ -796,7 +837,7 @@ class AnaliseFrame(ctk.CTkFrame):
         # Use apparent viscosity as main series (blue), function adds real (pink)
         gd_med_app = np.array(d.get('gamma_dot_app', gd_med))
         eta_med_app = np.array(d.get('eta_app', eta_med))
-        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med_app, eta_med_app, eta_err, n_prime=n_p if n_p != 1.0 else None, titulo=f'Viscosidade - {amostra_nome}')
+        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med_app, eta_med_app, eta_err, n_prime=n_p if n_p != 1.0 else None, titulo=f'Viscosidade - {amostra_nome}', dados_referencia=ref_data)
         path2 = f"{folder}/{timestamp}_{amostra_nome}_viscosidade.png"
         fig2.savefig(path2, dpi=300, bbox_inches='tight')
         plt.close(fig2)
@@ -816,7 +857,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
             except: pass
             
-        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}')
+        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}', dados_referencia=ref_data)
         path3 = f"{folder}/{timestamp}_{amostra_nome}_modelos.png"
         fig3.savefig(path3, dpi=300, bbox_inches='tight')
         plt.close(fig3)
@@ -908,20 +949,63 @@ class AnaliseFrame(ctk.CTkFrame):
                 # Prepare Outlier Dataframe for Report - From Block 2
                 df_outliers_report = None
                 try:
-                    # Use selected_amostra_id from controller if matches data
-                    # Or better: data_to_use['amostra']['id']
                     amostra_id = data_to_use['amostra']['id']
+                    df_all = self.db.get_ensaios_by_amostra(amostra_id, apenas_ativos=False)
                     
-                    query_out = """
-                        SELECT gamma_dot_w, tau_w, eta_true, tempo_s, 
-                               NULL as limite_inf, NULL as limite_sup, -- Placeholder if limits not stored per point
-                               ' IQR / Manual' as motivo
-                        FROM pontos_ensaio 
-                        WHERE amostra_id = ? AND (ativo = 0 OR outlier = 1)
-                    """
-                    rows_out = self.db.fetch_all(query_out, (amostra_id,))
-                    if rows_out:
-                        df_outliers_report = pd.DataFrame(rows_out, columns=['gamma_dot_w', 'tau_w', 'eta_true', 'tempo_s', 'Limite Inf', 'Limite Sup', 'motivo'])
+                    if not df_all.empty:
+                        outliers_data = []
+                        D_mm = data_to_use['amostra']['d_capilar_mm']
+                        L_mm = data_to_use['amostra']['l_capilar_mm']
+                        Rho = data_to_use['amostra']['densidade_g_cm3']
+                        R = (D_mm / 2.0) / 1000.0
+                        L = L_mm / 1000.0
+                        
+                        # Calcular gd_app e tau_w para todos
+                        df_valid = df_all[(df_all['duracao_s'] > 0) & (df_all['massa_g'] > 0) & (df_all['pressao_pasta_bar'] > 0)].copy()
+                        
+                        if not df_valid.empty and Rho > 0:
+                            Q_m3s = (df_valid['massa_g'] / (Rho * df_valid['duracao_s'])) * 1e-6
+                            df_valid['gd_app'] = (4 * Q_m3s) / (np.pi * R**3)
+                            df_valid['tau_w'] = (df_valid['pressao_pasta_bar'] * 1e5 * R) / (2 * L)
+                            df_valid['log_gd'] = np.round(np.log10(df_valid['gd_app']), 1)
+                            
+                            # Obter IQR bounds p/ cada grupo de taxa
+                            iqr_bounds = {}
+                            for log_val, group in df_valid.groupby('log_gd'):
+                                vals = group['tau_w'].values
+                                if len(vals) >= 3:
+                                    Q1 = np.percentile(vals, 25)
+                                    Q3 = np.percentile(vals, 75)
+                                    IQR = Q3 - Q1
+                                    iqr_bounds[log_val] = {'lower': Q1 - 1.5 * IQR, 'upper': Q3 + 1.5 * IQR}
+                                else:
+                                    iqr_bounds[log_val] = {'lower': -np.inf, 'upper': np.inf}
+                            
+                            df_inativos = df_valid[df_valid['ativo'] == 0]
+                            
+                            for idx, row in df_inativos.iterrows():
+                                tau = row['tau_w']
+                                log_val = row['log_gd']
+                                gd_app = row['gd_app']
+                                eta = tau / gd_app if gd_app > 0 else 0
+                                tempo_s = row['duracao_s']
+                                
+                                bounds = iqr_bounds.get(log_val, {'lower': -np.inf, 'upper': np.inf})
+                                is_iqr = (tau < bounds['lower'] or tau > bounds['upper'])
+                                motivo = 'Rejeite IQR 1.5x' if is_iqr else 'Remoção Manual'
+                                
+                                outliers_data.append({
+                                    'gamma_dot_w': gd_app,
+                                    'tau_w': tau,
+                                    'eta_true': eta,
+                                    'tempo_s': tempo_s,
+                                    'Limite Inf': None if bounds['lower'] == -np.inf else bounds['lower'],
+                                    'Limite Sup': None if bounds['upper'] == np.inf else bounds['upper'],
+                                    'motivo': motivo
+                                })
+                        
+                        if outliers_data:
+                            df_outliers_report = pd.DataFrame(outliers_data)
                 except Exception as ex_out:
                     print(f"Erro ao buscar outliers: {ex_out}")
 
@@ -990,6 +1074,12 @@ class AnaliseFrame(ctk.CTkFrame):
         fit = data.get('model_fits', {}).get(bm, {}) if bm else {}
         n_prime = data.get('n_prime', 1.0)
         
+        # Obter dados de referencia
+        ref_data = data.get('dados_referencia', None)
+        if ref_data is None and hasattr(self, 'ref_csv_path') and self.ref_csv_path:
+            import utils_reologia
+            ref_data = utils_reologia.read_reference_csv(self.ref_csv_path)
+        
         # Cria dominio suave para plot de modelos
         if len(gamma) > 0:
             gd_fit = np.logspace(np.log10(max(1e-3, gamma.min())), np.log10(gamma.max()), 100)
@@ -1005,14 +1095,14 @@ class AnaliseFrame(ctk.CTkFrame):
             r2 = fit.get('r2', 0.0)
             texto = '\n'.join([f'{n}={v:.4g}' for n, v in zip(fit['param_names'], fit['params'])])
             
-        fig1, _ = rp.plotar_curva_fluxo(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, tau_fit, bm or 'Nenhum', r2, texto)
+        fig1, _ = rp.plotar_curva_fluxo(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, tau_fit, bm or 'Nenhum', r2, texto, dados_referencia=ref_data)
         fig1.savefig(os.path.join(folder, f'{timestamp}_curva_fluxo.png'), dpi=150, bbox_inches='tight')
         plt.close(fig1)
         
         # 2. Viscosidade
         gamma_app = np.array(data.get('gamma_dot_app', gamma))
         eta_app = np.array(data.get('eta_app', eta))
-        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma_app, eta_app, eta_err, n_prime=n_prime if n_prime != 1.0 else None)
+        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma_app, eta_app, eta_err, n_prime=n_prime if n_prime != 1.0 else None, dados_referencia=ref_data)
         fig2.savefig(os.path.join(folder, f'{timestamp}_viscosidade.png'), dpi=150, bbox_inches='tight')
         plt.close(fig2)
         
@@ -1028,10 +1118,10 @@ class AnaliseFrame(ctk.CTkFrame):
             except Exception:
                 pass
                 
-        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, mods)
+        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, mods, dados_referencia=ref_data)
         fig3.savefig(os.path.join(folder, f'{timestamp}_modelos_fluxo.png'), dpi=150, bbox_inches='tight')
         plt.close(fig3)
         
-        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit, mods)
+        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit, mods, dados_referencia=ref_data)
         fig4.savefig(os.path.join(folder, f'{timestamp}_modelos_visc.png'), dpi=150, bbox_inches='tight')
         plt.close(fig4)

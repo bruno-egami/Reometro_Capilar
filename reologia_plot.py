@@ -501,7 +501,7 @@ import reologia_plot_style as rps
 def plotar_curva_fluxo(gd_brutos, tau_brutos,
                         gd_medios, tau_medios, tau_desvio,
                         gd_fit, tau_modelo, nome_modelo, r2,
-                        params_texto, titulo='Curva de Fluxo'):
+                        params_texto, titulo='Curva de Fluxo', dados_referencia=None):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
     # 1. Dados brutos (cinza, pequenos, semi-transparentes — ficam atrás)
@@ -523,6 +523,12 @@ def plotar_curva_fluxo(gd_brutos, tau_brutos,
             label=f'{nome_modelo}  R²={r2:.4f}  ★',
             **rps.LN_BEST)
 
+    # 4b. Dados de Referência
+    if dados_referencia is not None:
+        ax.scatter(dados_referencia['gd'], dados_referencia['tau'], 
+                   label=f"Ref: {dados_referencia['nome']}", 
+                   **rps.SC_REF)
+
     # 5. Escala log-log com minor ticks
     rps.log_axes(ax)
 
@@ -540,7 +546,7 @@ def plotar_curva_fluxo(gd_brutos, tau_brutos,
 
 def plotar_viscosidade(gd_brutos, eta_brutos,
                         gd_medios, eta_medios, eta_desvio,
-                        n_prime=None, titulo='Viscosidade Aparente'):
+                        n_prime=None, titulo='Viscosidade Aparente', dados_referencia=None):
     '''
     eta = tau / gd  (Pa.s)
     eta_desvio = tau_desvio / gd_medios
@@ -573,6 +579,12 @@ def plotar_viscosidade(gd_brutos, eta_brutos,
                    label=f"Viscosidade Real (n'={n_prime:.2f})",
                    **sc_real)
 
+    # Dados de Referência
+    if dados_referencia is not None:
+        ax.scatter(dados_referencia['gd'], dados_referencia['eta'], 
+                   label=f"Ref: {dados_referencia['nome']}", 
+                   **rps.SC_REF)
+
     rps.log_axes(ax)
     ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
     ax.set_ylabel('Viscosidade η (Pa·s)', **rps.YLABEL_KW)
@@ -583,7 +595,7 @@ def plotar_viscosidade(gd_brutos, eta_brutos,
 
 def plotar_ajuste_modelos(gd_brutos, tau_brutos,
                            gd_medios, tau_medios, tau_desvio,
-                           gd_fit, modelos_dict, titulo='Ajuste de Modelos'):
+                           gd_fit, modelos_dict, titulo='Ajuste de Modelos', dados_referencia=None):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
     # ── Dados brutos e médios ──────────────────────────────────────────
@@ -594,6 +606,11 @@ def plotar_ajuste_modelos(gd_brutos, tau_brutos,
                 color=rps.PALETTE['data'], **rps.EB_KW)
     ax.scatter(gd_medios, tau_medios, label='Dados Experimentais',
                **rps.SC_DATA)
+
+    if dados_referencia is not None:
+        ax.scatter(dados_referencia['gd'], dados_referencia['tau'], 
+                   label=f"Ref: {dados_referencia['nome']}", 
+                   **rps.SC_REF)
 
     # ── Estilos de linha por posição no ranking ───────────────────────
     cores   = [rps.PALETTE['fit'], rps.PALETTE['alt1'],
@@ -631,7 +648,7 @@ def plotar_ajuste_modelos(gd_brutos, tau_brutos,
 
 def plotar_ajuste_viscosidade(gd_brutos, eta_brutos,
                                gd_medios, eta_medios, eta_desvio,
-                               gd_fit, modelos_dict, titulo='Viscosidade — Ajuste'):
+                               gd_fit, modelos_dict, titulo='Viscosidade — Ajuste', dados_referencia=None):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
     ax.scatter(gd_brutos, eta_brutos, label='Dados Brutos', **rps.SC_RAW)
@@ -641,6 +658,11 @@ def plotar_ajuste_viscosidade(gd_brutos, eta_brutos,
                 color=rps.PALETTE['data'], **rps.EB_KW)
     ax.scatter(gd_medios, eta_medios,
                label='Viscosidade Experimental', **rps.SC_DATA)
+
+    if dados_referencia is not None:
+        ax.scatter(dados_referencia['gd'], dados_referencia['eta'], 
+                   label=f"Ref: {dados_referencia['nome']}", 
+                   **rps.SC_REF)
 
     cores   = [rps.PALETTE['fit'], rps.PALETTE['alt1'],
                rps.PALETTE['alt2'], rps.PALETTE['alt3'], rps.PALETTE['alt4']]
