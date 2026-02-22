@@ -496,9 +496,9 @@ class AnaliseFrame(ctk.CTkFrame):
                     cv_tau = np.where(tau_mean > 0, (tau_std / tau_mean) * 100.0, 0.0)
                     cv_eta = np.where(eta_mean > 0, (eta_std / eta_mean) * 100.0, 0.0)
                     
-                    # Gamma CV (using True Shear Rate std)
-                    gd_std = grouped['gamma_dot'].std().fillna(0).values
-                    cv_gamma = np.where(gd_mean > 0, (gd_std / gd_mean) * 100.0, 0.0)
+                    # Gamma CV (using Apparent Shear Rate std)
+                    gd_std = grouped['gamma_dot_app'].std().fillna(0).values
+                    cv_gamma = np.where(gd_app_mean > 0, (gd_std / gd_app_mean) * 100.0, 0.0)
 
                 # Weighted Global Metrics (Weighted by Shear Stress)
                 total_stress = np.sum(tau_mean)
@@ -562,8 +562,11 @@ class AnaliseFrame(ctk.CTkFrame):
                     'parecer': parecer_texto
                 }
 
-                # Use MEANS for model fitting
-                fit_gd = gd_mean
+                # Use APPARENT MEANS for model fitting (pre-W-R)
+                # A W-R corrige a taxa de cisalhamento para fins de reporte, mas distorce
+                # o ajuste quando n' local é heterogêneo (derivada ruidosa).
+                # O fitting no domínio aparente mantém R² consistente com a versão original.
+                fit_gd = gd_app_mean
                 fit_tau = tau_mean
                 
             except Exception as e:
@@ -609,11 +612,7 @@ class AnaliseFrame(ctk.CTkFrame):
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:
                     p0 = g_func(fit_gd, fit_tau)
-                    # Fit to means (WLS if sigma is available)
-                    if sigma_wls is not None:
-                        popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, sigma=sigma_wls, absolute_sigma=False, maxfev=10000)
-                    else:
-                        popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
+                    popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
                     
                     tau_pred = m_func(fit_gd, *popt)
                     r2 = r2_score(fit_tau, tau_pred)

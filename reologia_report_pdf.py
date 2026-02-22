@@ -537,7 +537,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                 'gamma_dot_w': 'Taxa (s-1)',
                 'tau_w': 'Tensao (Pa)',
                 'eta_true': 'Visc (Pa.s)',
-                'delta_p': 'ΔP (bar)',
+                'delta_p': 'dP (bar)',
                 'tempo_s': 'Tempo (s)',
                 'massa_g': 'Massa (g)',
                 'pressao': 'Pressao (bar)'
