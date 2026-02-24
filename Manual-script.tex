@@ -199,9 +199,19 @@ Para uma análise rigorosa de fluidos não-Newtonianos, o uso de valores aparent
 \textbf{Weissenberg-Rabinowitsch:} A mais importante delas para este estudo é a correção de Weissenberg-Rabinowitsch, que converte a taxa de cisalhamento aparente ($\dot{\gamma}_{aw}$) na taxa de cisalhamento verdadeira na parede ($\dot{\gamma}_w$). Esta correção é necessária porque, em fluidos pseudoplásticos, o perfil de velocidade do escoamento é mais achatado do que o perfil parabólico Newtoniano. A equação é dada por \cite{barnes1989}:
 
 \begin{equation}
-    \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right)
+    \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right) = \dot{\gamma}_{aw} \left( \frac{3n' + 1}{4n'} \right)
 \end{equation}
 
+Na versão 4.1, o software substituiu a aproximação de um índice pseudoplástico global ($n'$) pelo cálculo do perfil de derivadas locais ($\approx \Delta \ln \tau_w / \Delta \ln \dot{\gamma}_{aw}$) ponto a ponto, aplicando o fator adequado a cada faixa de cisalhamento para modelar com rigor fluidos que transitam entre comportamentos Newtonianos e viscoplásticos em diferentes gradientes.
+
+\vspace{1em}
+\textbf{Propagação de Incertezas:} Para dar suporte metrológico ao tratamento de dados, o algoritmo agora utiliza a equação de propagação de incertezas padrão, fundindo as variações instrumentais de dimensões de equipamento ($\pm \SI{0.05}{mm}$ para capilares imprensos em matriz FDM ou de precisão submétrica em paquímetros), massa e tempo combinados a um desvio estatístico. O peso das incertezas se propaga quadrativamente nos vetores de $\tau_w$ e $\dot{\gamma}_{aw}$, sendo expresso no novo painel gráfico.
+
+\vspace{1em}
+\textbf{Seleção de Modelo Numérico por Mínimos Quadrados Ponderados (WLS) e AIC:} 
+Historicamente utilizando a regressão de Mínimos Quadrados Ordinários (OLS) e escolhendo modelos com maior $R^2$, o sistema agora adota Mínimos Quadrados Ponderados (WLS, do inglês \textit{Weighted Least Squares}), utilizando como inverso do peso a matriz de variância agrupada, o que confere às faixas com menor dispersão estatística maior influência na convergência final da curva de ajuste. A seleção do modelo ideal (Newtoniano, Lei da Potência, Bingham, Herschel-Bulkley ou Casson) migrou da métrica de $R^2$ para o Critério de Informação de Akaike (AIC), cujo objetivo foca unicamente em ranquear a qualidade predativa de cada ajuste, simultaneamente punindo acréscimos arbitrários de dependências (prevenindo o \textit{overfitting} crônico associado a equações com três parâmetros, como Herschel-Bulkley). O erro padrão gerado na covariância converge para formar Intervalos de Confiança explícitos para $\tau_0$, $\eta$ e o coeficiente $K$.
+
+\vspace{1em}
 \textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \cite{barnes1989}. A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$):
 \begin{equation}
 P = 2 \tau_w \left( \frac{L}{R} \right) + P_e
@@ -263,7 +273,7 @@ A versão atual do sistema opera através de uma interface moderna desenvolvida 
 
 \begin{itemize}
   \item \textbf{Módulo Central:} O arquivo \texttt{gui\_main.py} atua como lançador, inicializando a aplicação definida em \texttt{gui/app.py}.
-  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções), facilitando a expansão do sistema.
+  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções), facilitando a expansão do sistema. A versão 4.1+ inclui um gerenciador avançado de \textbf{Limpeza de Dados/Outliers} interativo, \textbf{Geração de Relatório de PDF Automático} e a capacidade de conduzir \textbf{Processamento em Lote} sobre múltiplas amostras. O sistema também suporta a importação externa de CSV originais de ensaios rotacionais (como dados provenientes do \textit{Anton Paar MCR102}) de forma a sobrepô-los nas análises visuais do reômetro. 
   \item \textbf{Abstração de Hardware:} A comunicação com o Arduino é gerenciada pela classe \texttt{ReometerController} (\texttt{reometer\_controller.py}), desacoplada da interface.
   \item \textbf{Persistência:} Todos os dados são armazenados localmente em um banco de dados SQLite (\texttt{reometria.db}), gerenciado por \texttt{database\_manager.py}, eliminando a dependência estrita de arquivos JSON para operação diária.
 \end{itemize}
