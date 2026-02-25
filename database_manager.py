@@ -206,6 +206,27 @@ class DatabaseManager:
         self.close()
         return dict(row) if row else None
 
+    def update_amostra(self, amostra_id: int, nome: str, descricao: str) -> bool:
+        """Updates the name and description of an existing sample."""
+        self.connect()
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('''
+                UPDATE amostras
+                SET nome = ?, descricao = ?
+                WHERE id = ?
+            ''', (nome, descricao, amostra_id))
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.IntegrityError:
+            print(f"Erro: Amostra com nome '{nome}' já existe.")
+            return False
+        except Exception as e:
+            print(f"Erro ao atualizar amostra: {e}")
+            return False
+        finally:
+            self.close()
+
     def list_amostras(self) -> List[Dict[str, Any]]:
         """Returns a list of all samples."""
         self.connect()
@@ -409,6 +430,88 @@ class DatabaseManager:
             results.append((os.path.basename(json_file), success, msg))
         
         return results
+
+    def import_csv_rotacional(self, csv_path: str) -> Tuple[bool, str, Optional[int]]:
+        """
+        Importa um CSV de dados do reômetro rotacional (Taxa;Tensão;Viscosidade) 
+        usando a lógica do utils_reologia e gera falsos ensaios capilares.
+        Isso permite processar os dados rotacionais no software capilar.
+        """
+        import utils_reologia
+        import math
+        
+        try:
+            data = utils_reologia.read_reference_csv(csv_path)
+            if data is None:
+                return False, "CSV inválido ou sem as colunas esperadas (Taxa;Tensão;Viscosidade).", None
+                
+            rates = data['gd']
+            stresses = data['tau']
+            
+            # Extract sample metadata
+            nome = os.path.basename(csv_path).replace('.csv', '')
+            descricao = f"Importado do Rotacional (CSV): {os.path.basename(csv_path)}"
+            d_capilar = 1.0  # mm
+            l_capilar = 40.0 # mm
+            densidade = 1.0  # g/cm3
+            
+            # Check if sample exists
+            self.connect()
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT id FROM amostras WHERE nome = ?', (nome,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                self.close()
+                return False, f"Amostra '{nome}' já existe no banco", None
+                
+            # Create sample
+            cursor.execute('''
+                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nome, descricao, d_capilar, l_capilar, densidade))
+            amostra_id = cursor.lastrowid
+            
+            # Generate fake measurements
+            R = (d_capilar / 2.0) / 1000.0  # m
+            L = l_capilar / 1000.0  # m
+            tempo_s = 60.0 # fixed 60s per test point
+            imported_count = 0
+            
+            for i in range(len(rates)):
+                gd_app = rates[i]
+                tau_w = stresses[i]
+                if gd_app <= 0 or tau_w <= 0 or math.isnan(gd_app) or math.isnan(tau_w): continue
+                
+                # Inverse formulas from analise.py:
+                # tau_w = (p_pa * R) / (2 * L) => p_pa = tau_w * 2 * L / R
+                p_pa = tau_w * 2.0 * L / R
+                p_pasta_bar = p_pa / 1e5
+                p_linha_bar = p_pasta_bar # assume 0 delta P
+                
+                # gd_app = (4 * Q_m3s) / (np.pi * R**3) => Q_m3s = gd_app * math.pi * R**3 / 4.0
+                Q_m3s = (gd_app * math.pi * R**3) / 4.0
+                Q_cm3s = Q_m3s * 1e6
+                # Q_cm3s = massa_g / (Rho * tempo_s) => massa_g = Q_cm3s * Rho * tempo_s
+                massa_g = Q_cm3s * densidade * tempo_s
+                
+                try:
+                    cursor.execute('''
+                        INSERT INTO ensaios (amostra_id, ponto_n, pressao_linha_bar, pressao_pasta_bar,
+                                            massa_g, duracao_s, tensao_linha_v, tensao_pasta_v)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (amostra_id, i+1, p_linha_bar, p_pasta_bar, massa_g, tempo_s, 0.0, 0.0))
+                    imported_count += 1
+                except Exception as e:
+                    print(f"Erro ao importar rotação ponto {i+1}: {e}")
+            
+            self.conn.commit()
+            return True, f"Importado: {nome} ({imported_count} pontos rotacionais)", amostra_id
+            
+        except Exception as e:
+            return False, f"Erro ao importar CSV rotacional: {e}", None
+        finally:
+            self.close()
 
 if __name__ == "__main__":
     # Simple test

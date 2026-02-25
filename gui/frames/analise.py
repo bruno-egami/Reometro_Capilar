@@ -391,6 +391,11 @@ class AnaliseFrame(ctk.CTkFrame):
                 
                 delta_p = p_linha_bar - p_pasta_bar
                 delta_p_list.append(delta_p)
+                # NOTA: delta_p é salvo apenas para diagnóstico.
+                # τ_w é calculado com p_pasta (pressão na câmara), que é a pressão
+                # de entrada no capilar — grandeza fisicamente correta para a equação
+                # de Hagen-Poiseuille. A pressão de linha reflete perdas na tubulação
+                # pneumática e não é usada no cálculo reológico.
                 massas.append(massa_g)
                 tempos.append(tempo_s)
                 pressoes.append(p_pasta_bar)
@@ -423,11 +428,12 @@ class AnaliseFrame(ctk.CTkFrame):
             u_tau_arr = tau_arr * np.sqrt(
                 u_P_rel**2 + (u_R / R)**2 + (u_L / L)**2
             )
-            # u(gd) / gd = sqrt( (u_m/m)^2 + (u_t/t)^2 + (3*u_R/R)^2 )
+            # u(gd) / gd = sqrt( (u_m/m)^2 + (u_rho/rho)^2 + (u_t/t)^2 + (3*u_R/R)^2 )
             massas_kg = np.array(massas) / 1000.0
             tempos_arr = np.array(tempos)
+            u_rho_rel = 0.005  # 0.5% - estimativa para densidade medida
             u_gd_arr = gd_app_arr * np.sqrt(
-                (u_m_kg / massas_kg)**2 + (u_t / tempos_arr)**2 + (3 * u_R / R)**2
+                (u_m_kg / massas_kg)**2 + u_rho_rel**2 + (u_t / tempos_arr)**2 + (3 * u_R / R)**2
             )
             
             # --- M3/M4/M14: Weissenberg-Rabinowitsch e Agrupamento ---
@@ -485,6 +491,8 @@ class AnaliseFrame(ctk.CTkFrame):
                         
                         # E aplique uma correção aproximada usando n_prime_global aos dados brutos
                         # (A GUI / PDF depende do vetor bruto estar corrigido também)
+                        # ATENÇÃO: gd_true_arr usa n'_global (aproximação para exibição).
+                        # O ajuste dos modelos usa gd_mean (corrigido com n' local, mais preciso).
                         gd_true_arr = gd_app_arr * ((3 * n_prime_global + 1) / (4 * n_prime_global))
                     except Exception as e:
                         print(f"Erro no Weissenberg-Rabinowitsch das médias: {e}")
@@ -857,7 +865,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
             except: pass
             
-        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}', dados_referencia=ref_data)
+        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med_app, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}', dados_referencia=ref_data)
         path3 = f"{folder}/{timestamp}_{amostra_nome}_modelos.png"
         fig3.savefig(path3, dpi=300, bbox_inches='tight')
         plt.close(fig3)
@@ -1112,16 +1120,21 @@ class AnaliseFrame(ctk.CTkFrame):
         mods = []
         for k, v in fits_sorted:
             try:
+                # Evaluating models using gd_fit which we now define as spanning Apparent Shear Rate
                 t_fit = models.MODELS[k][0](gd_fit, *v['params'])
                 p_str = ' | '.join([f'{nm}={val:.3g}' for nm, val in zip(v['param_names'], v['params'])])
                 mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
             except Exception:
                 pass
                 
-        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, mods, dados_referencia=ref_data)
+        # Use apparent points for model plots since models are trained in apparent domain
+        gd_app_fit = np.array(data.get('gamma_dot_app', gamma))
+        eta_app_fit = np.array(data.get('eta_app', eta))
+                
+        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gd_app_fit, tau, tau_err, gd_fit, mods, dados_referencia=ref_data)
         fig3.savefig(os.path.join(folder, f'{timestamp}_modelos_fluxo.png'), dpi=150, bbox_inches='tight')
         plt.close(fig3)
         
-        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit, mods, dados_referencia=ref_data)
+        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gd_app_fit, eta_app_fit, eta_err, gd_fit, mods, dados_referencia=ref_data)
         fig4.savefig(os.path.join(folder, f'{timestamp}_modelos_visc.png'), dpi=150, bbox_inches='tight')
         plt.close(fig4)

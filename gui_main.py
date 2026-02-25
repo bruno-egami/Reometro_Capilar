@@ -8,8 +8,14 @@ if script_dir not in sys.path:
     sys.path.append(script_dir)
 
 import reologia_plot_style as rps
+import traceback
+
+def exception_handler(exc_type, exc_value, exc_traceback):
+    from logger_config import logger
+    logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
 
 if __name__ == "__main__":
+    sys.excepthook = exception_handler
     rps.apply_dark_style()
     app = App()
     app.protocol("WM_DELETE_WINDOW", app.on_close)

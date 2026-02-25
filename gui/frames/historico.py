@@ -42,8 +42,8 @@ class HistoricoFrame(ctk.CTkFrame):
         self.btn_refresh = ctk.CTkButton(btn_frame, text="Atualizar", command=self.refresh_list)
         self.btn_refresh.pack(side="left", padx=5)
         
-        self.btn_import_file = ctk.CTkButton(btn_frame, text="Importar JSON", 
-                                              command=self.import_single_json, fg_color="green")
+        self.btn_import_file = ctk.CTkButton(btn_frame, text="Importar JSON / CSV", 
+                                              command=self.import_single_file, fg_color="green")
         self.btn_import_file.pack(side="left", padx=5)
         
         self.btn_import_folder = ctk.CTkButton(btn_frame, text="Importar Pasta", 
@@ -53,19 +53,29 @@ class HistoricoFrame(ctk.CTkFrame):
         self.btn_delete = ctk.CTkButton(btn_frame, text="Excluir Amostra", 
                                          command=self.delete_sample, fg_color="red")
         self.btn_delete.pack(side="left", padx=5)
+
+        self.btn_edit = ctk.CTkButton(btn_frame, text="Editar Amostra", 
+                                         command=self.edit_sample, fg_color="#3b8ed0")
+        self.btn_edit.pack(side="left", padx=5)
         
+        self.tree.bind("<Double-1>", lambda e: self.edit_sample())
+
         self.refresh_list()
     
-    def import_single_json(self):
-        """Import a single JSON file."""
+    def import_single_file(self):
+        """Import a single JSON or CSV file."""
         filepath = filedialog.askopenfilename(
-            title="Selecionar JSON",
-            initialdir="resultados_testes_reometro",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            title="Selecionar Arquivo",
+            initialdir="resultados_processados_interativo",
+            filetypes=[("Arquivos", "*.json *.csv"), ("JSON files", "*.json"), ("CSV files", "*.csv")]
         )
         
         if filepath:
-            success, msg, _ = self.db.import_json_legado(filepath)
+            if filepath.lower().endswith('.csv'):
+                success, msg, _ = self.db.import_csv_rotacional(filepath)
+            else:
+                success, msg, _ = self.db.import_json_legado(filepath)
+                
             if success:
                 messagebox.showinfo("Sucesso", msg)
                 self.refresh_list()
@@ -126,6 +136,57 @@ class HistoricoFrame(ctk.CTkFrame):
             else:
                 messagebox.showerror("Erro", "Não foi possível excluir a amostra.")
     
+    def edit_sample(self):
+        """Opens a dialog to edit the selected sample's name and description."""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Aviso", "Selecione uma amostra para editar.")
+            return
+            
+        amostra_id = int(selected[0])
+        item_vals = self.tree.item(selected[0], "values")
+        current_nome = item_vals[1]
+        current_desc = item_vals[2]
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Editar Amostra")
+        dialog.geometry("400x300")
+        dialog.grab_set()
+        
+        # Centraliza a janela em relação ao aplicativo principal
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() // 2) - 200
+        y = self.winfo_rooty() + (self.winfo_height() // 2) - 150
+        dialog.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(dialog, text="Nome da Amostra:").pack(pady=(20, 5), padx=20, anchor="w")
+        entry_nome = ctk.CTkEntry(dialog, width=360)
+        entry_nome.pack(pady=5, padx=20)
+        entry_nome.insert(0, current_nome)
+
+        ctk.CTkLabel(dialog, text="Descrição:").pack(pady=(10, 5), padx=20, anchor="w")
+        entry_desc = ctk.CTkTextbox(dialog, width=360, height=80)
+        entry_desc.pack(pady=5, padx=20)
+        entry_desc.insert("1.0", current_desc)
+
+        def save_changes():
+            new_nome = entry_nome.get().strip()
+            new_desc = entry_desc.get("1.0", "end-1c").strip()
+            
+            if not new_nome:
+                messagebox.showerror("Erro", "O nome da amostra não pode ser vazio.", parent=dialog)
+                return
+                
+            if self.db.update_amostra(amostra_id, new_nome, new_desc):
+                messagebox.showinfo("Sucesso", "Amostra atualizada com sucesso.", parent=dialog)
+                dialog.destroy()
+                self.refresh_list()
+            else:
+                messagebox.showerror("Erro", "Falha ao atualizar a amostra. Verifique se o nome já existe e é válido.", parent=dialog)
+
+        btn_save = ctk.CTkButton(dialog, text="Salvar", command=save_changes)
+        btn_save.pack(pady=20)
+
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
         self.refresh_list() # Auto refresh when shown

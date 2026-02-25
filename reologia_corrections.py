@@ -9,10 +9,10 @@ Usa capilares de mesmo diâmetro D e diferentes comprimentos L.
 
 Método:
     Para cada γ̇, plota P vs L/D
-    τ_w_corrigido = slope / 2
+    τ_w_corrigido = slope / 4
 
 Fórmula:
-    P = 2τ_w × (L/D) + ΔP_entrada
+    P = 4τ_w × (L/D) + ΔP_entrada
     onde ΔP_entrada é a perda de pressão na entrada
 
 Correção de Mooney:
@@ -46,7 +46,7 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
         P_total = P_capilar + ΔP_entrada
         
         Plotando P vs L/D para γ̇ constante:
-        - Slope = 2×τ_w (tensão na parede)
+        - Slope = 4×τ_w (tensão na parede)
         - Intercept = ΔP_entrada (extrapolação para L/D=0)
     
     Parâmetros:
@@ -115,7 +115,7 @@ def perform_bagley_correction(lista_cap_data_bagley, common_D_mm_bagley, rho_si,
         if len(P_target_list) >= 2:
             slope, intercept, r_value, _, _ = linregress(L_D_target_list, P_target_list)
             if slope > 0:
-                tau_w_corr = slope / 2.0 # Definição de Bagley: Slope = 2 * tau_w
+                tau_w_corr = slope / 4.0 # Definição de Bagley: Slope = 4 * tau_w
                 tau_w_corr_list.append(tau_w_corr)
                 gamma_aw_targets_ok_list.append(target_gamma_k_val)
                 # Plota um exemplo de ajuste de Bagley (opcional, para não gerar muitos gráficos)

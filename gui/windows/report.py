@@ -225,7 +225,9 @@ class RelatorioWindow(ctk.CTkToplevel):
         d = self.analysis_data
         gd_brutos = np.array(d.get('raw_gamma', []))
         tau_brutos = np.array(d.get('raw_tau', []))
-        gd_med = np.array(d['gamma_dot'])
+        
+        # Models are fitted on Apparent Shear Rate, so we must plot them against it
+        gd_med = np.array(d.get('gamma_dot_app', d['gamma_dot']))
         tau_med = np.array(d['tau_w'])
         tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
 
@@ -243,9 +245,11 @@ class RelatorioWindow(ctk.CTkToplevel):
         import reologia_plot as rp
         d = self.analysis_data
         gd_brutos = np.array(d.get('raw_gamma', []))
-        eta_brutos = np.array(d.get('raw_eta', []))
-        gd_med = np.array(d['gamma_dot'])
-        eta_med = np.array(d['eta'])
+        eta_brutos = np.array(d.get('raw_eta', [])) # This contains apparent eta for raw points
+        
+        # Models are fitted on Apparent data, plot them against Apparent data
+        gd_med = np.array(d.get('gamma_dot_app', d['gamma_dot']))
+        eta_med = np.array(d.get('eta_app', d['eta']))
         eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
 
         if len(gd_med) > 0:
