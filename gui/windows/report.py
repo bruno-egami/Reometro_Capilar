@@ -136,9 +136,9 @@ class RelatorioWindow(ctk.CTkToplevel):
         t3 = self.graph_tabs.add("Modelos (Tensão)")
         t4 = self.graph_tabs.add("Modelos (Viscosidade)")
 
-        desc_fluxo = "Explicação: Relaciona a Tensão (τ) vs Taxa (γ̇). O formato da curva define se o fluido é Newtoniano, Pseudoplástico ou Viscoplástico."
-        desc_visc = "Explicação: Mostra a Viscosidade (Real ou Aparente) vs Taxa. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
-        desc_modelos = f"Explicação: Comparação dos dados experimentais com os modelos. O melhor ajuste foi {self.analysis_data.get('best_model')}."
+        desc_fluxo = "Explicação: Relaciona a Tensão Verdadeira (τ_w) vs Taxa Verdadeira (γ̇_w). O formato da curva define se o fluido é Newtoniano, Pseudoplástico ou Viscoplástico."
+        desc_visc = "Explicação: Mostra a Viscosidade Real (η_w) vs Taxa Verdadeira. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
+        desc_modelos = f"Explicação: Comparação dos dados reais (após correção W-R) com os modelos matemáticos. O melhor ajuste foi {self.analysis_data.get('best_model')}."
         desc_mod_visc = "Explicação: Comparação das curvas de viscosidade dos modelos ajustados em relação aos dados experimentais."
 
         self._plot_figure(t1, self._create_flow_curve(), desc_fluxo)
@@ -194,14 +194,15 @@ class RelatorioWindow(ctk.CTkToplevel):
         d = self.analysis_data
         gd_brutos = np.array(d.get('raw_gamma', []))
         eta_brutos = np.array(d.get('raw_eta', []))
-        # Use apparent viscosity as the main series (blue circles)
-        gd_med = np.array(d.get('gamma_dot_app', d['gamma_dot']))
-        eta_med = np.array(d.get('eta_app', d['eta']))
+        
+        # Use True Viscosity as the main series (blue circles)
+        gd_med = np.array(d['gamma_dot'])
+        eta_med = np.array(d['eta'])
         eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
-        n_p = d.get('n_prime', 1.0)
 
         ref_data = d.get('dados_referencia', None)
-        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=n_p if n_p != 1.0 else None, dados_referencia=ref_data)
+        # Disable secondary squares by passing n_prime=None since main is already True data
+        fig, ax = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=None, dados_referencia=ref_data)
         return fig
 
     def _get_models_list(self, d, gd_fit):
@@ -226,8 +227,8 @@ class RelatorioWindow(ctk.CTkToplevel):
         gd_brutos = np.array(d.get('raw_gamma', []))
         tau_brutos = np.array(d.get('raw_tau', []))
         
-        # Models are fitted on Apparent Shear Rate, so we must plot them against it
-        gd_med = np.array(d.get('gamma_dot_app', d['gamma_dot']))
+        # Plot against True data since model is now fitted on True data
+        gd_med = np.array(d['gamma_dot'])
         tau_med = np.array(d['tau_w'])
         tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
 
@@ -245,11 +246,11 @@ class RelatorioWindow(ctk.CTkToplevel):
         import reologia_plot as rp
         d = self.analysis_data
         gd_brutos = np.array(d.get('raw_gamma', []))
-        eta_brutos = np.array(d.get('raw_eta', [])) # This contains apparent eta for raw points
+        eta_brutos = np.array(d.get('raw_eta', []))
         
-        # Models are fitted on Apparent data, plot them against Apparent data
-        gd_med = np.array(d.get('gamma_dot_app', d['gamma_dot']))
-        eta_med = np.array(d.get('eta_app', d['eta']))
+        # Plot against True data since model is now fitted on True data
+        gd_med = np.array(d['gamma_dot'])
+        eta_med = np.array(d['eta'])
         eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
 
         if len(gd_med) > 0:

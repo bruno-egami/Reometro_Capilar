@@ -11,8 +11,12 @@ import reologia_plot_style as rps
 import traceback
 
 def exception_handler(exc_type, exc_value, exc_traceback):
-    from logger_config import logger
-    logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+    try:
+        from logger_config import logger
+        logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+    except Exception:
+        import traceback
+        traceback.print_exception(exc_type, exc_value, exc_traceback)
 
 if __name__ == "__main__":
     sys.excepthook = exception_handler

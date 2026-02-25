@@ -577,11 +577,10 @@ class AnaliseFrame(ctk.CTkFrame):
                     'parecer': parecer_texto
                 }
 
-                # Use APPARENT MEANS for model fitting (pre-W-R)
-                # A W-R corrige a taxa de cisalhamento para fins de reporte, mas distorce
-                # o ajuste quando n' local é heterogêneo (derivada ruidosa).
-                # O fitting no domínio aparente mantém R² consistente com a versão original.
-                fit_gd = gd_app_mean
+                # Use TRUE MEANS for model fitting (post-W-R)
+                # This ensures the model parameters (K, n, tau_0) reflect actual material properties
+                # instead of capillary-dependent apparent properties.
+                fit_gd = gd_mean
                 fit_tau = tau_mean
                 
             except Exception as e:
@@ -620,20 +619,28 @@ class AnaliseFrame(ctk.CTkFrame):
                 # logo usa a incerteza metrológica (pior caso instrumental) propagada M5: ~5.4% de tau
                 unc_teorica = fit_tau * 0.054 # aprox 5.4% propagada instrumental
                 
-                sigma_wls = np.where(tau_std > 0, tau_std, unc_teorica)
+                raw_sigma = np.where(tau_std > 0, tau_std, unc_teorica)
                 # Safeguard double-zero
-                sigma_wls = np.maximum(sigma_wls, 1e-6)
+                raw_sigma = np.maximum(raw_sigma, 1e-6)
+                # Normaliza para manter o R² coerente com a função de custo
+                sigma_wls = raw_sigma / np.mean(raw_sigma)
             
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:
                     p0 = g_func(fit_gd, fit_tau)
-                    popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
+                    if sigma_wls is not None:
+                        popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, sigma=sigma_wls, absolute_sigma=False, maxfev=10000)
+                    else:
+                        popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
                     
                     tau_pred = m_func(fit_gd, *popt)
                     r2 = r2_score(fit_tau, tau_pred)
                     
                     # M6: Calculo de AIC/BIC
-                    rss = np.sum((fit_tau - tau_pred)**2)
+                    if sigma_wls is not None:
+                        rss = np.sum(((fit_tau - tau_pred) / sigma_wls)**2)
+                    else:
+                        rss = np.sum((fit_tau - tau_pred)**2)
                     k = len(popt)
                     rss_safe = rss if rss > 1e-10 else 1e-10
                     aic_val = 2*k + n_pts * np.log(rss_safe/n_pts)
@@ -705,7 +712,8 @@ class AnaliseFrame(ctk.CTkFrame):
                 'gamma_dot_app': gd_app_mean, 'eta_app': eta_app_mean, # Apparent (pre-W-R)
                 'gamma_dot_std': np.zeros_like(gd_mean), # Assume negligible x-error for now or calc it
                 'tau_w_std': tau_std, 'eta_std': eta_std, # Standard Deviations
-                'raw_gamma': gd_true_arr, 'raw_tau': tau_arr, 'raw_eta': eta_arr, # Raw Data
+                'raw_gamma': gd_true_arr, 'raw_tau': tau_arr, 'raw_eta': eta_arr, # Raw Data (True)
+                'raw_gamma_app': gd_app_arr, 'raw_eta_app': tau_arr / np.where(gd_app_arr > 0, gd_app_arr, 1e-6), # Raw Data (Apparent)
                 'raw_mass': np.array(massas), 'raw_time': np.array(tempos), 'raw_pressure': np.array(pressoes),
                 'u_tau': u_tau_arr, 'u_gd': u_gd_arr, # M5: Incertezas metrológicas
                 'model_fits': model_fits, 'best_model': best_model, 'best_r2': best_r2,
@@ -842,10 +850,7 @@ class AnaliseFrame(ctk.CTkFrame):
         
         # 2. Viscosity Curve
         n_p = d.get('n_prime', 1.0)
-        # Use apparent viscosity as main series (blue), function adds real (pink)
-        gd_med_app = np.array(d.get('gamma_dot_app', gd_med))
-        eta_med_app = np.array(d.get('eta_app', eta_med))
-        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med_app, eta_med_app, eta_err, n_prime=n_p if n_p != 1.0 else None, titulo=f'Viscosidade - {amostra_nome}', dados_referencia=ref_data)
+        fig2, _ = rp.plotar_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, n_prime=None, titulo=f'Viscosidade - {amostra_nome}', dados_referencia=ref_data)
         path2 = f"{folder}/{timestamp}_{amostra_nome}_viscosidade.png"
         fig2.savefig(path2, dpi=300, bbox_inches='tight')
         plt.close(fig2)
@@ -863,9 +868,9 @@ class AnaliseFrame(ctk.CTkFrame):
                 p_v = v['params']
                 p_str = " | ".join([f"{n}={val:.3g}" for n, val in zip(p_n, p_v)])
                 mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
-            except: pass
-            
-        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med_app, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}', dados_referencia=ref_data)
+            except Exception:
+                pass
+        fig3, _ = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit, mods, titulo=f'Comparação de Modelos - {amostra_nome}', dados_referencia=ref_data)
         path3 = f"{folder}/{timestamp}_{amostra_nome}_modelos.png"
         fig3.savefig(path3, dpi=300, bbox_inches='tight')
         plt.close(fig3)
@@ -1108,9 +1113,7 @@ class AnaliseFrame(ctk.CTkFrame):
         plt.close(fig1)
         
         # 2. Viscosidade
-        gamma_app = np.array(data.get('gamma_dot_app', gamma))
-        eta_app = np.array(data.get('eta_app', eta))
-        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma_app, eta_app, eta_err, n_prime=n_prime if n_prime != 1.0 else None, dados_referencia=ref_data)
+        fig2, _ = rp.plotar_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, n_prime=None, dados_referencia=ref_data)
         fig2.savefig(os.path.join(folder, f'{timestamp}_viscosidade.png'), dpi=150, bbox_inches='tight')
         plt.close(fig2)
         
@@ -1127,14 +1130,10 @@ class AnaliseFrame(ctk.CTkFrame):
             except Exception:
                 pass
                 
-        # Use apparent points for model plots since models are trained in apparent domain
-        gd_app_fit = np.array(data.get('gamma_dot_app', gamma))
-        eta_app_fit = np.array(data.get('eta_app', eta))
-                
-        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gd_app_fit, tau, tau_err, gd_fit, mods, dados_referencia=ref_data)
+        fig3, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit, mods, dados_referencia=ref_data)
         fig3.savefig(os.path.join(folder, f'{timestamp}_modelos_fluxo.png'), dpi=150, bbox_inches='tight')
         plt.close(fig3)
         
-        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gd_app_fit, eta_app_fit, eta_err, gd_fit, mods, dados_referencia=ref_data)
+        fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit, mods, dados_referencia=ref_data)
         fig4.savefig(os.path.join(folder, f'{timestamp}_modelos_visc.png'), dpi=150, bbox_inches='tight')
         plt.close(fig4)

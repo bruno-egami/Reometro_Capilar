@@ -42,7 +42,10 @@ def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
         valid_std = std_fit[std_fit > 0]
         if len(valid_std) > 0:
             min_std = np.min(valid_std)
-            sigma_wls = np.where(std_fit == 0, min_std * 0.1, std_fit)
+            raw_sigma = np.where(std_fit == 0, min_std * 0.1, std_fit)
+            # Normalizar sigma para atuarem apenas como pesos relativos (WLS)
+            # Evita que absolute_sigma=False falhe no scale ou distorça R²
+            sigma_wls = raw_sigma / np.mean(raw_sigma)
     
     n_pts = len(gd_fit)
     if n_pts < 3:

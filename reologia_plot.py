@@ -564,7 +564,7 @@ def plotar_viscosidade(gd_brutos, eta_brutos,
                 color=rps.PALETTE['data'], **rps.EB_KW)
 
     # Viscosidade aparente — pontos
-    lbl = 'Viscosidade Aparente η = τ/γ̇'
+    lbl = 'Viscosidade Real η_w = τ_w/γ̇_w'
     ax.scatter(gd_medios, eta_medios, label=lbl, **rps.SC_DATA)
 
     # Viscosidade real (correção W-R) — pontos quadrados, cor secundária
@@ -604,7 +604,7 @@ def plotar_ajuste_modelos(gd_brutos, tau_brutos,
     ax.errorbar(gd_medios[mask_err], tau_medios[mask_err],
                 yerr=tau_desvio[mask_err],
                 color=rps.PALETTE['data'], **rps.EB_KW)
-    ax.scatter(gd_medios, tau_medios, label='Dados Experimentais',
+    ax.scatter(gd_medios, tau_medios, label='Dados Reais',
                **rps.SC_DATA)
 
     if dados_referencia is not None:
