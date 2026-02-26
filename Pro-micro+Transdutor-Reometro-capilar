@@ -1,6 +1,7 @@
 /**
  * @file Pro-micro-Transdutor-Reometro-capilar.ino
- * @brief Firmware para reômetro capilar com DOIS transdutores de pressão analógicos (0-5V).
+ * @brief Firmware para reômetro capilar com DOIS transdutores de pressão
+ * analógicos (0-5V).
  * @version 3.0
  * @author Bruno Egami (Modificado por Gemini)
  * @date 22/11/2025
@@ -27,19 +28,21 @@
 #define EMA_ALPHA 0.3
 
 // --- Variáveis Globais ---
-float ema_voltage_1 = 0.0;       
-float ema_voltage_2 = 0.0;       
-bool ema_initialized = false;  
+float ema_voltage_1 = 0.0;
+float ema_voltage_2 = 0.0;
+bool ema_initialized = false;
 
 /**
  * @brief Função de configuração inicial.
  */
 void setup() {
   Serial.begin(115200);
+  Serial.setTimeout(100); // A-04: limita bloqueio do readStringUntil a 100 ms
   pinMode(SENSOR_PIN_1, INPUT);
   pinMode(SENSOR_PIN_2, INPUT);
 
-  Serial.println(F("Arduino: Inicializado com 2 transdutores de pressao 0-5V."));
+  Serial.println(
+      F("Arduino: Inicializado com 2 transdutores de pressao 0-5V."));
   Serial.println(F("Arduino: Pronto."));
 }
 
@@ -49,11 +52,11 @@ void setup() {
 void updateReadings() {
   // Leitura Sensor 1
   int raw1 = analogRead(SENSOR_PIN_1);
-  float v1 = raw1 * (5.0 / 1023.0);
-  
+  float v1 = raw1 * (5.0 / 1024.0);
+
   // Leitura Sensor 2
   int raw2 = analogRead(SENSOR_PIN_2);
-  float v2 = raw2 * (5.0 / 1023.0);
+  float v2 = raw2 * (5.0 / 1024.0);
 
   if (!ema_initialized) {
     ema_voltage_1 = v1;
@@ -74,7 +77,7 @@ void loop() {
 
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
-    command.trim(); 
+    command.trim();
 
     // --- Processamento de Comandos ---
 
@@ -83,11 +86,14 @@ void loop() {
       Serial.print(ema_voltage_1, 4);
       Serial.print(";");
       Serial.println(ema_voltage_2, 4);
-    }
-    else if (command == "PING") {
+    } else if (command == "PING") {
       Serial.println(F("ACK_PING_OK"));
     }
-    else {
+    // A-02: Reinicializa o filtro EMA para novo ensaio
+    else if (command == "RESET_EMA") {
+      ema_initialized = false;
+      Serial.println(F("ACK_RESET_EMA"));
+    } else {
       Serial.print(F("Arduino: Comando desconhecido - "));
       Serial.println(command);
     }

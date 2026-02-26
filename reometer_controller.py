@@ -151,6 +151,30 @@ class ReometerController:
         self.is_connected = False
         self.ser = None
 
+    def reset_ema(self) -> bool:
+        """A-02: Reinicializa o filtro EMA do Arduino para novo ensaio.
+        
+        Envia RESET_EMA ao firmware, que seta ema_initialized=false.
+        A próxima leitura inicializa o EMA com o valor atual dos sensores,
+        eliminando o transiente do ensaio anterior.
+        """
+        if self.ser and self.ser.is_open:
+            try:
+                self.ser.write(b"RESET_EMA\n")
+                self.ser.flush()
+                resp = self.ser.readline().decode('utf-8', 'ignore').strip()
+                if resp == "ACK_RESET_EMA":
+                    self.log_message("EMA filter reset successfully.")
+                    return True
+                else:
+                    self.log_message(f"Unexpected RESET_EMA response: '{resp}'", level=logging.WARNING)
+                    return False
+            except Exception as e:
+                self.log_message(f"Error resetting EMA: {e}", level=logging.ERROR)
+                return False
+        self.log_message("Cannot reset EMA: not connected.", level=logging.WARNING)
+        return False
+
     def start_reading(self) -> bool:
         """
         Starts the background reading thread.
@@ -254,8 +278,12 @@ class ReometerController:
 
 # Mock Controller for Testing without Hardware
 class MockSerial:
+    port = "MockPort"
     def isOpen(self) -> bool: return True
+    @property
+    def is_open(self) -> bool: return True
     def close(self) -> None: pass
+    def flush(self) -> None: pass
     def flushInput(self) -> None: pass
     def flushOutput(self) -> None: pass
     def write(self, b: bytes) -> None: pass

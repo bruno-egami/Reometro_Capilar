@@ -190,6 +190,13 @@ class ColetaFrame(ctk.CTkFrame):
             self.p2_data = []
             self.v1_data = []
             self.v2_data = []
+            
+            # A-02: Reset EMA filter before new collection
+            # Stop reading briefly to avoid serial bus contention
+            self.controller.stop_reading()
+            self.controller.reset_ema()
+            self.controller.start_reading()
+            
             self.start_time = time.time()
             
             # Clear graph

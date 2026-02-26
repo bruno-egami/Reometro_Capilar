@@ -128,6 +128,15 @@ Reometro_Capilar/
 ### **Gráficos não aparecem ou travam**
 O sistema usa `matplotlib` integrado ao `tkinter`. Se houver problemas de renderização, verifique se a biblioteca `Pillow` está instalada corretamente.
 
+### **⚠️ Calibração e Referência de Tensão (A-01)**
+
+O Arduino Pro Micro usa a tensão USB (AVCC) como referência do ADC. A especificação USB 2.0 permite variação de **4,75 V a 5,25 V** dependendo da fonte (computador, hub, cabo). Isso pode introduzir erro de até **±6,7%** na pressão calculada se a calibração e a medição forem feitas em condições USB diferentes.
+
+**Recomendações:**
+- **Sempre calibre os sensores na mesma sessão de medição** (mesmo computador, mesma porta USB, mesmo cabo).
+- Não mude de porta USB ou computador entre a calibração e os ensaios.
+- Para máxima precisão (ex.: publicação científica), considere instalar uma referência de tensão externa de precisão (LM4040-5.0, ~R$5) no pino AREF do Pro Micro.
+
 ---
 
 ## 📝 **Licença e Contato**

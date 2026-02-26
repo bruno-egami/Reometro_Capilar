@@ -38,7 +38,8 @@ class DatabaseManager:
                     data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
                     d_capilar_mm REAL,
                     l_capilar_mm REAL,
-                    densidade_g_cm3 REAL
+                    densidade_g_cm3 REAL,
+                    origem TEXT DEFAULT 'capilar'
                 )
             ''')
 
@@ -111,6 +112,17 @@ class DatabaseManager:
                     self.conn.commit()
                 except Exception as e:
                     print(f"Erro na migração: {e}")
+            
+            # Check if 'origem' exists in 'amostras' (N-01 fix)
+            cursor.execute("PRAGMA table_info(amostras)")
+            cols_amostras = [row[1] for row in cursor.fetchall()]
+            if 'origem' not in cols_amostras:
+                print("Migrando banco de dados: Adicionando coluna 'origem' na tabela 'amostras'...")
+                try:
+                    cursor.execute("ALTER TABLE amostras ADD COLUMN origem TEXT DEFAULT 'capilar'")
+                    self.conn.commit()
+                except Exception as e:
+                    print(f"Erro na migração 'origem': {e}")
         finally:
             self.close()
 
@@ -465,11 +477,11 @@ class DatabaseManager:
                 self.close()
                 return False, f"Amostra '{nome}' já existe no banco", None
                 
-            # Create sample
+            # Create sample (marked as 'rotacional' origin — N-01 fix)
             cursor.execute('''
-                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (nome, descricao, d_capilar, l_capilar, densidade))
+                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3, origem)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (nome, descricao, d_capilar, l_capilar, densidade, 'rotacional'))
             amostra_id = cursor.lastrowid
             
             # Generate fake measurements

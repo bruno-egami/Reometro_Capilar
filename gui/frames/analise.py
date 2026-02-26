@@ -39,7 +39,7 @@ class AnaliseFrame(ctk.CTkFrame):
         self.tree_frame = ctk.CTkFrame(self.sel_frame, height=150)
         self.tree_frame.pack(fill="x", padx=10, pady=5)
         
-        cols = ("ID", "Nome", "Descrição", "D(mm)", "L(mm)", "Data", "Ensaios", "Status")
+        cols = ("ID", "Nome", "Descrição", "D(mm)", "L(mm)", "Origem", "Data", "Ensaios", "Status")
         self.tree = ttk.Treeview(self.tree_frame, columns=cols, show="headings", height=8, selectmode="extended")
         
         self.tree.heading("ID", text="ID")
@@ -52,6 +52,8 @@ class AnaliseFrame(ctk.CTkFrame):
         self.tree.column("D(mm)", width=60, anchor="center")
         self.tree.heading("L(mm)", text="L (mm)")
         self.tree.column("L(mm)", width=60, anchor="center")
+        self.tree.heading("Origem", text="Origem")
+        self.tree.column("Origem", width=80, anchor="center")
         self.tree.heading("Data", text="Data")
         self.tree.column("Data", width=120, anchor="center")
         self.tree.heading("Ensaios", text="Ensaios")
@@ -147,6 +149,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 a['descricao'],
                 f"{a['d_capilar_mm']:.2f}", 
                 f"{a['l_capilar_mm']:.2f}",
+                a.get('origem', 'capilar').capitalize(),
                 a['data_criacao'],
                 num_testes,
                 status
@@ -293,8 +296,8 @@ class AnaliseFrame(ctk.CTkFrame):
                 item_iid = str(self.selected_amostra_id)
                 if self.tree.exists(item_iid):
                     vals = list(self.tree.item(item_iid, "values"))
-                    if len(vals) >= 8:
-                        vals[7] = "Analisado"
+                    if len(vals) >= 9:
+                        vals[8] = "Analisado"
                         self.tree.item(item_iid, values=vals)
         else:
             if not auto: tk.messagebox.showerror("Erro na Análise", result['error'])
@@ -334,8 +337,8 @@ class AnaliseFrame(ctk.CTkFrame):
                 item_iid = str(amostra_id)
                 if self.tree.exists(item_iid):
                     vals = list(self.tree.item(item_iid, "values"))
-                    if len(vals) >= 8:
-                        vals[7] = "Pendente"
+                    if len(vals) >= 9:
+                        vals[8] = "Pendente"
                         self.tree.item(item_iid, values=vals)
                 
                 self._set_result("Análise removida. A amostra continua disponível para novo processamento.")
@@ -361,6 +364,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 return {'success': False, 'error': "Amostra não encontrada.", 'id': amostra_id}
 
             nome = amostra['nome']
+            origem = amostra.get('origem', 'capilar')  # N-01 fix: track data origin
             # Fetch ONLY active points
             df = self.db.get_ensaios_by_amostra(amostra['id'], apenas_ativos=True)
             
@@ -467,7 +471,7 @@ class AnaliseFrame(ctk.CTkFrame):
                 # --- M14: Aplicando Weissenberg sobre as Médias (Curva Suave) ---
                 gd_mean = gd_app_mean.copy()
                 
-                if aplicar_weissenberg and len(gd_app_mean) >= 3:
+                if aplicar_weissenberg and origem != 'rotacional' and len(gd_app_mean) >= 3:
                     try:
                         # Ordena para garantir que a derivada não oscile em loops (embora o groupby já costume ordenar a chave log_gd)
                         idx_sort = np.argsort(gd_app_mean)
@@ -682,7 +686,10 @@ class AnaliseFrame(ctk.CTkFrame):
             results_txt += f"Capilar: D={D_mm} mm, L={L_mm} mm\n"
             results_txt += f"Densidade: {Rho} g/cm³\n"
             results_txt += f"Pontos Agrupados: {len(fit_gd)} níveis de taxa\n"
-            results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime_global) if aplicar_weissenberg else 'Não'}\n\n"
+            if origem == 'rotacional':
+                results_txt += f"Origem: Reômetro Rotacional (W-R não aplicada — taxa já é real)\n\n"
+            else:
+                results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime_global) if aplicar_weissenberg else 'Não'}\n\n"
             
             results_txt += "───────────────────────────────────────────\n"
             results_txt += "  AJUSTE DOS MODELOS (MÉDIAS)\n"

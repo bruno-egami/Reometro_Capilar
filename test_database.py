@@ -49,5 +49,20 @@ class TestDatabaseManager(unittest.TestCase):
         latest = self.db.get_latest_calibracao()
         self.assertEqual(latest["id"], calib_id)
 
+    def test_origem_default_capilar(self):
+        """N-01: Samples created via add_amostra default to origem='capilar'."""
+        amostra_id = self.db.add_amostra("Sample_Origem", "Test origem", 1.0, 40.0, 1.2)
+        self.assertIsNotNone(amostra_id)
+        
+        amostra = self.db.get_amostra_by_name("Sample_Origem")
+        self.assertEqual(amostra['origem'], 'capilar')
+
+    def test_origem_in_list_amostras(self):
+        """N-01: list_amostras returns the 'origem' field."""
+        self.db.add_amostra("Sample_List", "Test list", 1.0, 40.0, 1.2)
+        amostras = self.db.list_amostras()
+        self.assertTrue(len(amostras) > 0)
+        self.assertIn('origem', amostras[0])
+
 if __name__ == '__main__':
     unittest.main()
