@@ -266,7 +266,7 @@ def carregar_modelo_associado(caminho_csv):
                     data = json.load(f)
                 if "Melhor Modelo" in data and "Parametros" in data:
                     return data
-            except: pass
+            except Exception: pass
     return None
 
 def carregar_dados_estatisticos(filepath):

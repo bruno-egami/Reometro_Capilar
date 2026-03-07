@@ -274,7 +274,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                     if valid_cv.any():
                         cvs = (df_res.loc[valid_cv, 'Desvio Padrao Viscosidade (Pa.s)'] / df_res.loc[valid_cv, 'Viscosidade Real (Pa.s)']) * 100
                         cv_visc_medio = cvs.mean()
-                except: pass
+                except Exception: pass
 
             stat_text = (
                 "METODOLOGIA:\n"
@@ -431,7 +431,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
                     for p in parts:
                         if 'n=' in p:
                             n_val = float(p.split('=')[1])
-                except: pass
+                except Exception: pass
 
         analise_texto = gerar_analise_qualiquantitativa(best_model_nome, comportamento, df_sum_modelo, n_val)
         pdf.chapter_body(analise_texto)

@@ -4,9 +4,10 @@ from tkinter import messagebox
 import sys
 import os
 
-# Add project root to path
-if os.getcwd() not in sys.path:
-    sys.path.append(os.getcwd())
+# Add project root to path (gui/app.py → gui/ → project root)
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from database_manager import DatabaseManager
 from reometer_controller import ReometerController

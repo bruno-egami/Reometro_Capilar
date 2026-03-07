@@ -329,7 +329,7 @@ def plotar_curva_fluxo_estatistica(gamma_dot_mean, tau_w_mean, tau_w_std, model_
         # plt.show() # Não mostrar para não bloquear execução em loop
         plt.close(fig)
         return f_name
-    except: 
+    except Exception: 
         plt.close(fig)
         return None
 

@@ -125,7 +125,7 @@ class RelatorioWindow(ctk.CTkToplevel):
                     y_pred = func(x_smooth, *fit['params'])
                     ax.plot(x_smooth, y_pred, linestyle='--', label=f"{name} (R²={fit['r2']:.2f})", color=colors[color_idx % len(colors)])
                     color_idx += 1
-                except:
+                except Exception:
                     pass
                     
         ax.set_title("Ajuste de Modelos")

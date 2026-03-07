@@ -281,7 +281,7 @@ class ComparativeAnalysisWindow(ctk.CTkToplevel):
                 
                 mape = calcular_mape(y_ref, y_compared)
                 text += f"{name:<30} | {mape:>8.2f}%\n"
-            except:
+            except Exception:
                 text += f"{name:<30} | Erro no cálculo\n"
                 
         self._set_mape(text)
@@ -352,7 +352,7 @@ class ComparativeAnalysisWindow(ctk.CTkToplevel):
                         f_interp = interp1d(df['γ̇w (s⁻¹)'].values, df['η (Pa·s)'].values, bounds_error=False, fill_value="extrapolate")
                         mape = calcular_mape(y_ref, f_interp(x_ref))
                         mape_rows.append({'Amostra': name, 'Referência': ref_name, 'MAPE (%)': mape})
-                    except: pass
+                    except Exception: pass
             
             df_mape = pd.DataFrame(mape_rows)
             

@@ -127,7 +127,7 @@ def guess_power_law(gd, tau):
     try:
         slope, intercept, _, _, _ = linregress(np.log(gd), np.log(tau))
         return [np.exp(intercept), slope]
-    except:
+    except Exception:
         return [1.0, 1.0]
 
 def guess_bingham(gd, tau):
@@ -135,7 +135,7 @@ def guess_bingham(gd, tau):
     try:
         slope, intercept, _, _, _ = linregress(gd, tau)
         return [max(0, intercept), max(0, slope)]
-    except:
+    except Exception:
         return [0.0, 1.0]
 
 def guess_hb(gd, tau):
@@ -150,7 +150,7 @@ def guess_hb(gd, tau):
         K_guess = np.exp(intercept)
         n_guess = slope
         return [max(0, tau0_guess), max(1e-9, K_guess), max(0, min(5.0, n_guess))]
-    except:
+    except Exception:
         return [max(0, tau0_guess), 1.0, 0.8]
 
 def guess_casson(gd, tau):
@@ -158,7 +158,7 @@ def guess_casson(gd, tau):
     try:
         slope, intercept, _, _, _ = linregress(np.sqrt(gd), np.sqrt(tau))
         return [max(0, intercept**2), max(0, slope**2)]
-    except:
+    except Exception:
         return [0.0, 1.0]
 
 # Dicionário contendo as funções, nomes dos parâmetros, função de estimativa inicial e limites (bounds)
