@@ -33,9 +33,6 @@ class ColetaFrame(ctk.CTkFrame):
         self.entry_d = create_entry(self.input_frame, "D (mm):", 1)
         self.entry_l = create_entry(self.input_frame, "L (mm):", 2)
         self.entry_rho = create_entry(self.input_frame, "Densidade (g/cm³):", 3)
-        
-        self.btn_connect = ctk.CTkButton(self.input_frame, text="Conectar", command=self.connect_arduino, fg_color="green")
-        self.btn_connect.grid(row=0, column=8, padx=20, pady=5)
 
         # --- Middle Section: Graph ---
         self.graph_frame = ctk.CTkFrame(self)
@@ -67,7 +64,7 @@ class ColetaFrame(ctk.CTkFrame):
         self.lbl_p_pasta = ctk.CTkLabel(self.control_frame, text="P. Pasta: 0.00 bar", font=("Consolas", 20))
         self.lbl_p_pasta.pack(side="left", padx=20)
         
-        self.btn_start = ctk.CTkButton(self.control_frame, text="INICIAR COLETA", command=self.toggle_collection, state="disabled")
+        self.btn_start = ctk.CTkButton(self.control_frame, text="INICIAR COLETA", command=self.toggle_collection)
         self.btn_start.pack(side="right", padx=20, pady=10)
 
         # Data storage for plotting
@@ -118,30 +115,18 @@ class ColetaFrame(ctk.CTkFrame):
                 f"Conexão com Arduino perdida.\n\nErro: {error_msg}")
         
         # Reset connection UI
-        self.btn_connect.configure(text="Reconectar", state="normal", fg_color="orange")
-        self.btn_start.configure(state="disabled")
-
-    def connect_arduino(self):
-        success, msg = self.controller.find_and_connect()
-        if success:
-            self.connection_lost = False
-            self.btn_connect.configure(text="Conectado", state="disabled", fg_color="green")
-            self.btn_start.configure(state="normal")
-            # Start background reading
-            self.controller.start_reading()
-            # C11: Aviso de calibração pendente
-            if not self.controller.linha_calibrada:
-                if not hasattr(self, '_calib_banner'):
-                    self._calib_banner = ctk.CTkLabel(
-                        self, text="⚠  Sensor Linha sem calibração! Vá à aba Calibração antes de coletar.",
-                        font=ctk.CTkFont(size=13, weight="bold"),
-                        text_color="#1e1e2e", fg_color="#f9e2af",
-                        corner_radius=6, height=32)
-                    self._calib_banner.pack(fill="x", padx=20, pady=(0, 5), before=self.graph_frame)
-        else:
-            tk.messagebox.showerror("Erro", f"Falha ao conectar: {msg}")
+        self.btn_start.configure(state="normal", text="INICIAR COLETA", fg_color="#1f6aa5")
 
     def toggle_collection(self):
+        if not self.controller.is_connected:
+            # Auto-connect attempt
+            success, msg = self.controller.find_and_connect()
+            if success:
+                self.controller.start_reading()
+            else:
+                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha ao reconectar: {msg}")
+                return
+
         if not self.collecting:
             # Validate Inputs with comprehensive checks
             errors = []
@@ -334,3 +319,12 @@ class ColetaFrame(ctk.CTkFrame):
         # Restore callback when frame is shown
         if self.controller.is_connected:
             self.controller.on_pressure_reading = self.update_plot_callback
+            
+        if self.controller.is_connected and not self.controller.linha_calibrada:
+            if not hasattr(self, '_calib_banner'):
+                self._calib_banner = ctk.CTkLabel(
+                    self, text="⚠  Sensor Linha sem calibração! Vá à aba Calibração antes de coletar.",
+                    font=ctk.CTkFont(size=13, weight="bold"),
+                    text_color="#1e1e2e", fg_color="#f9e2af",
+                    corner_radius=6, height=32)
+                self._calib_banner.pack(fill="x", padx=20, pady=(0, 5), before=self.graph_frame)

@@ -3,6 +3,9 @@ import tkinter as tk
 from tkinter import messagebox
 import time
 import numpy as np
+from collections import deque
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 class CalibracaoFrame(ctk.CTkFrame):
     """Calibration wizard using Pasta sensor (factory calibrated) as reference for Linha."""
@@ -41,7 +44,7 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.instruction_label.pack(pady=5)
         
         self.info_frame = ctk.CTkFrame(self.tab_linha)
-        self.info_frame.pack(pady=20)
+        self.info_frame.pack(pady=10)
         
         self.lbl_v1 = ctk.CTkLabel(self.info_frame, text="V_Linha: ---")
         self.lbl_v1.pack(side="left", padx=20)
@@ -49,7 +52,29 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.lbl_p_pasta.pack(side="left", padx=20)
         
         self.btn_action = ctk.CTkButton(self.tab_linha, text="Ler Ponto Baixo", command=self.step_1_low)
-        self.btn_action.pack(pady=20)
+        self.btn_action.pack(pady=10)
+        
+        # --- Real-time Graph ---
+        self.graph_frame = ctk.CTkFrame(self.tab_linha)
+        self.graph_frame.pack(fill="both", expand=True, pady=10)
+        
+        self.fig = Figure(figsize=(5, 2.5), dpi=100)
+        self.ax = self.fig.add_subplot(111)
+        self.ax.set_title("Pressão Instantânea (bar)", fontsize=10)
+        self.ax.set_xlabel("Tempo (s)", fontsize=8)
+        self.line_l, = self.ax.plot([], [], label='Linha') 
+        self.line_p, = self.ax.plot([], [], label='Pasta') 
+        self.ax.legend(fontsize=8)
+        
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_frame)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
+        # Data storage for plot (limit to last 200 points for performance)
+        self.plot_times = deque(maxlen=200)
+        self.plot_p_linha = deque(maxlen=200)
+        self.plot_p_pasta = deque(maxlen=200)
+        self.plot_start_time = None
         
         self.v_linha_low = 0
         self.p_pasta_low = 0
@@ -97,8 +122,12 @@ class CalibracaoFrame(ctk.CTkFrame):
     def run_newtonian_validation(self):
         """Lê pressão atual e compara com o fluido Newtoniano de referência."""
         if not self.controller.is_connected:
-            tk.messagebox.showerror("Erro", "Conecte o Arduino primeiro.")
-            return
+            success, msg = self.controller.find_and_connect()
+            if success:
+                self.controller.start_reading()
+            else:
+                tk.messagebox.showerror("Erro", f"Conecte o Arduino primeiro. Falha: {msg}")
+                return
 
         dialog = ctk.CTkInputDialog(text="Extrusão em andamento?\nDigite a Vazão Mássica média estimada (g/s):", title="Vazão")
         vazao_str = dialog.get_input()
@@ -186,12 +215,32 @@ class CalibracaoFrame(ctk.CTkFrame):
     def _update_labels_live(self, p_linha, p_pasta, v1):
         self.lbl_v1.configure(text=f"V_Linha: {v1:.4f} V")
         self.lbl_p_pasta.configure(text=f"P_Pasta (ref): {p_pasta:.2f} bar")
+        
+        # Update Real-time Graph
+        if self.plot_start_time is None:
+            self.plot_start_time = time.time()
+            
+        t = time.time() - self.plot_start_time
+        self.plot_times.append(t)
+        self.plot_p_linha.append(p_linha)
+        self.plot_p_pasta.append(p_pasta)
+        
+        if len(self.plot_times) % 2 == 0:
+            self.line_l.set_data(self.plot_times, self.plot_p_linha)
+            self.line_p.set_data(self.plot_times, self.plot_p_pasta)
+            self.ax.relim()
+            self.ax.autoscale_view()
+            self.canvas.draw_idle()
 
     def step_1_low(self):
         """Read low pressure point (ideally 0 bar)."""
         if not self.controller.is_connected:
-            tk.messagebox.showerror("Erro", "Arduino não conectado.")
-            return
+            success, msg = self.controller.find_and_connect()
+            if success:
+                self.controller.start_reading()
+            else:
+                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
+                return
             
         if not self.controller.is_reading:
             self.controller.start_reading()
@@ -231,6 +280,14 @@ class CalibracaoFrame(ctk.CTkFrame):
         
     def step_2_mid(self):
         """Read mid pressure point."""
+        if not self.controller.is_connected:
+            success, msg = self.controller.find_and_connect()
+            if success:
+                self.controller.start_reading()
+            else:
+                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
+                return
+                
         self.btn_action.configure(state="disabled", text="Lendo... Aguarde")
         self.temp_samples = []
         self.original_cb = self.controller.on_pressure_reading
@@ -264,6 +321,14 @@ class CalibracaoFrame(ctk.CTkFrame):
         
     def step_3_high(self):
         """Read high pressure point (>6 bar recommended)."""
+        if not self.controller.is_connected:
+            success, msg = self.controller.find_and_connect()
+            if success:
+                self.controller.start_reading()
+            else:
+                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
+                return
+                
         self.btn_action.configure(state="disabled", text="Lendo... Aguarde")
         self.temp_samples = []
         self.original_cb = self.controller.on_pressure_reading

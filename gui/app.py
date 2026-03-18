@@ -65,6 +65,9 @@ class App(ctk.CTk):
         self.btn_correcoes = ctk.CTkButton(self.sidebar_frame, text="Correções", command=self.show_correcoes)
         self.btn_correcoes.grid(row=5, column=0, padx=20, pady=10)
         
+        self.btn_conexao = ctk.CTkButton(self.sidebar_frame, text="Conectar Arduino", command=self.toggle_connection, fg_color="#1f6aa5")
+        self.btn_conexao.grid(row=6, column=0, padx=20, pady=10)
+        
         # Bottom Status
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Status: Inicializando...", text_color="gray")
         self.status_label.grid(row=7, column=0, padx=20, pady=20)
@@ -87,6 +90,24 @@ class App(ctk.CTk):
         
         # Start connection status check loop
         self.check_connection()
+        
+        # Auto-connect on startup
+        self.after(500, self.auto_connect)
+
+    def auto_connect(self):
+        success, msg = self.controller.find_and_connect()
+        if success:
+            self.controller.start_reading()
+            
+    def toggle_connection(self):
+        if self.controller.is_connected:
+            self.controller.disconnect()
+        else:
+            success, msg = self.controller.find_and_connect()
+            if success:
+                self.controller.start_reading()
+            else:
+                tk.messagebox.showerror("Erro de Conexão", f"Não foi possível conectar: {msg}")
 
     def show_frame(self, name):
         frame = self.frames[name]
@@ -103,8 +124,10 @@ class App(ctk.CTk):
         # 1. Check Arduino Connection
         if self.controller.is_connected:
             self.status_label.configure(text="Arduino: Conectado", text_color="green")
+            self.btn_conexao.configure(text="Desconectar Arduino", fg_color="red")
         else:
             self.status_label.configure(text="Arduino: Desconectado", text_color="red")
+            self.btn_conexao.configure(text="Conectar Arduino", fg_color="#1f6aa5")
             
         # 2. Check Calibration Status (C11 Alert)
         from datetime import datetime, timedelta
