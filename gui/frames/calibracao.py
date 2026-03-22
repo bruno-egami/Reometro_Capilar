@@ -243,7 +243,7 @@ class CalibracaoFrame(ctk.CTkFrame):
             try:
                 dt = datetime.strptime(data_str, "%Y-%m-%d %H:%M:%S")
                 data_str = dt.strftime("%d/%m/%Y %H:%M:%S")
-            except:
+            except (ValueError, KeyError):
                 pass
                 
             header_text = f"Calibração #{cal['id']} - Realizada em: {data_str}"

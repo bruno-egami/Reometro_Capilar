@@ -1,6 +1,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
+from datetime import datetime, timedelta
 import sys
 import os
 
@@ -138,7 +139,6 @@ class App(ctk.CTk):
             self.btn_conexao.configure(text="Conectar Arduino", fg_color="#1f6aa5")
             
         # 2. Check Calibration Status (C11 Alert)
-        from datetime import datetime, timedelta
         cal = self.db.get_latest_calibracao()
         needs_cal = False
         msg = "⚠️ Sensor Não Calibrado"
@@ -147,20 +147,11 @@ class App(ctk.CTk):
             needs_cal = True
         else:
             try:
-                # Load values into controller so it knows it's calibrated
-                if not self.controller.calibration_loaded:
-                    self.controller.load_calibration_linha(
-                        slope_l=cal.get('slope_linha', 1.0),
-                        intercept_l=cal.get('intercept_linha', 0.0)
-                    )
-                
-                # Assuming data is ISO format or compatible string
                 cal_date = datetime.strptime(cal['data'], "%Y-%m-%d %H:%M:%S")
                 if datetime.now() - cal_date > timedelta(days=30):
                     needs_cal = True
                     msg = "⚠️ Calibração Antiga (>30 dias)"
-            except Exception:
-                # If parsing fails or missing data column, fallback to warn
+            except (ValueError, KeyError):
                 pass
 
         if needs_cal:
