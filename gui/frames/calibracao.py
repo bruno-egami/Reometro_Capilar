@@ -6,6 +6,7 @@ import numpy as np
 from collections import deque
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from datetime import datetime
 
 class CalibracaoFrame(ctk.CTkFrame):
     """Calibration wizard using Pasta sensor (factory calibrated) as reference for Linha."""
@@ -24,9 +25,11 @@ class CalibracaoFrame(ctk.CTkFrame):
         
         self.tab_linha = self.tabview.add("Calibração P_Linha")
         self.tab_newtoniano = self.tabview.add("Validação Newtoniana (M9)")
+        self.tab_historico = self.tabview.add("Histórico")
         
         self._init_tab_linha()
         self._init_tab_newtoniano()
+        self._init_tab_historico()
 
     def _init_tab_linha(self):
         # Info about factory calibration
@@ -36,11 +39,16 @@ class CalibracaoFrame(ctk.CTkFrame):
             text_color="gray", justify="left")
         self.info_label.pack(pady=10, padx=20, anchor="w")
         
-        self.step_label = ctk.CTkLabel(self.tab_linha, text="Passo 1: Ponto Baixo (0 bar)", font=ctk.CTkFont(size=18))
+        self.step_label = ctk.CTkLabel(self.tab_linha, text="Calibração Contínua (Ramp-up)", font=ctk.CTkFont(size=18))
         self.step_label.pack(pady=10)
         
-        self.instruction_label = ctk.CTkLabel(self.tab_linha, 
-            text="Despressurize o sistema e clique em 'Ler Ponto Baixo'.", text_color="gray")
+        instructions = (
+            "1. Despressurize o sistema a 0 bar.\n"
+            "2. Clique em 'Iniciar Gravação'.\n"
+            "3. Aumente a pressão lenta e progressivamente (ex: até 8 bar).\n"
+            "4. Clique em 'Parar e Calcular' ANTES de soltar a pressão."
+        )
+        self.instruction_label = ctk.CTkLabel(self.tab_linha, text=instructions, text_color="gray", justify="left")
         self.instruction_label.pack(pady=5)
         
         self.info_frame = ctk.CTkFrame(self.tab_linha)
@@ -51,7 +59,7 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.lbl_p_pasta = ctk.CTkLabel(self.info_frame, text="P_Pasta (ref): ---")
         self.lbl_p_pasta.pack(side="left", padx=20)
         
-        self.btn_action = ctk.CTkButton(self.tab_linha, text="Ler Ponto Baixo", command=self.step_1_low)
+        self.btn_action = ctk.CTkButton(self.tab_linha, text="Iniciar Gravação da Calibração", command=self.toggle_calibration, fg_color="#1f6aa5")
         self.btn_action.pack(pady=10)
         
         # --- Real-time Graph ---
@@ -76,12 +84,10 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.plot_p_pasta = deque(maxlen=200)
         self.plot_start_time = None
         
-        self.v_linha_low = 0
-        self.p_pasta_low = 0
-        self.v_linha_mid = 0
-        self.p_pasta_mid = 0
-        self.v_linha_high = 0
-        self.p_pasta_high = 0
+        # State variables for continuous calibration
+        self.is_recording_calibration = False
+        self.calib_v_linha = []
+        self.calib_p_pasta = []
         
     def _init_tab_newtoniano(self):
         lbl = ctk.CTkLabel(self.tab_newtoniano, text="Rotina de Verificação de Precisão", font=ctk.CTkFont(size=18, weight="bold"))
@@ -197,6 +203,77 @@ class CalibracaoFrame(ctk.CTkFrame):
         
         self.lbl_val_res.configure(text=res_text, text_color=status_color)
 
+    def _init_tab_historico(self):
+        frm_top = ctk.CTkFrame(self.tab_historico, fg_color="transparent")
+        frm_top.pack(fill="x", padx=10, pady=10)
+        
+        lbl_title = ctk.CTkLabel(frm_top, text="Histórico de Calibrações", font=ctk.CTkFont(size=18, weight="bold"))
+        lbl_title.pack(side="left")
+        
+        btn_refresh = ctk.CTkButton(frm_top, text="Atualizar", width=100, command=self.refresh_historico)
+        btn_refresh.pack(side="right")
+        
+        self.scroll_hist = ctk.CTkScrollableFrame(self.tab_historico)
+        self.scroll_hist.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.refresh_historico()
+        
+    def refresh_historico(self):
+        # Clear current
+        for widget in self.scroll_hist.winfo_children():
+            widget.destroy()
+            
+        calibs = self.db.get_all_calibracoes()
+        if not calibs:
+            lbl = ctk.CTkLabel(self.scroll_hist, text="Nenhuma calibração registrada ainda.", text_color="gray")
+            lbl.pack(pady=20)
+            return
+            
+        for i, cal in enumerate(calibs):
+            bg_color = ("gray85", "gray25") if i % 2 == 0 else ("gray90", "gray20")
+            is_active = (i == 0) # Assuming the most recent is active
+            
+            if is_active:
+                bg_color = ("#d4edda", "#1d4d29") # light green highlight for active
+            
+            card = ctk.CTkFrame(self.scroll_hist, fg_color=bg_color, corner_radius=5)
+            card.pack(fill="x", pady=2, padx=2)
+            
+            data_str = cal.get('data', '')
+            try:
+                dt = datetime.strptime(data_str, "%Y-%m-%d %H:%M:%S")
+                data_str = dt.strftime("%d/%m/%Y %H:%M:%S")
+            except:
+                pass
+                
+            header_text = f"Calibração #{cal['id']} - Realizada em: {data_str}"
+            if is_active:
+                header_text += " [ATIVA]"
+                
+            lbl_header = ctk.CTkLabel(card, text=header_text, font=ctk.CTkFont(weight="bold"))
+            lbl_header.pack(anchor="w", padx=10, pady=(5, 0))
+            
+            # Equation Line
+            eq_linha = f"P_Linha = {cal['slope_linha']:.4f} × V + ({cal['intercept_linha']:.4f})"
+            lbl_eq = ctk.CTkLabel(card, text=eq_linha, font=ctk.CTkFont(family="monospace", size=12))
+            lbl_eq.pack(anchor="w", padx=20, pady=(0, 2))
+            
+            # Quality Metrics Line
+            r2 = cal.get('r2')
+            pontos = cal.get('pontos')
+            p_min = cal.get('p_min')
+            p_max = cal.get('p_max')
+            
+            metrics = []
+            if r2 is not None: metrics.append(f"R²: {r2:.4f}")
+            if pontos is not None: metrics.append(f"Pontos lidos: {pontos}")
+            if p_min is not None and p_max is not None: metrics.append(f"Faixa: {p_min:.1f} a {p_max:.1f} bar")
+            
+            if metrics:
+                metrics_text = " | ".join(metrics)
+                lbl_met = ctk.CTkLabel(card, text=metrics_text, font=ctk.CTkFont(size=11), text_color="gray")
+                lbl_met.pack(anchor="w", padx=20, pady=(0, 5))
+
     def tkraise(self, aboveThis=None):
         super().tkraise(aboveThis)
         # Start monitoring if connected
@@ -232,147 +309,53 @@ class CalibracaoFrame(ctk.CTkFrame):
             self.ax.autoscale_view()
             self.canvas.draw_idle()
 
-    def step_1_low(self):
-        """Read low pressure point (ideally 0 bar)."""
-        if not self.controller.is_connected:
-            success, msg = self.controller.find_and_connect()
-            if success:
-                self.controller.start_reading()
-            else:
-                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
-                return
-            
-        if not self.controller.is_reading:
-            self.controller.start_reading()
-            time.sleep(1)
-            
-        self.btn_action.configure(state="disabled", text="Lendo... Aguarde")
-        
-        self.temp_samples = []
-        self.original_cb = self.controller.on_pressure_reading
-        
-        def collector(p_linha, p_pasta, v1, v2):
-            self.temp_samples.append((v1, p_pasta))  # v_linha, p_pasta (factory ref)
-            
-        self.controller.on_pressure_reading = collector
-        
-        # Schedule finalization after 3 seconds
-        self.after(3000, self._finalize_step_1)
-        
-    def _finalize_step_1(self):
-        self.controller.on_pressure_reading = self.original_cb
-        
-        if len(self.temp_samples) < 5:
-            self.btn_action.configure(state="normal", text="Ler Ponto Baixo")
-            tk.messagebox.showerror("Erro", "Dados insuficientes do Arduino.")
-            return
+        # If recording calibration, append to lists
+        if hasattr(self, 'is_recording_calibration') and self.is_recording_calibration:
+            self.calib_v_linha.append(v1)
+            self.calib_p_pasta.append(p_pasta)
 
-        self.v_linha_low = np.mean([s[0] for s in self.temp_samples])
-        self.p_pasta_low = np.mean([s[1] for s in self.temp_samples])
-        
-        self.lbl_v1.configure(text=f"V_Linha: {self.v_linha_low:.4f} V")
-        self.lbl_p_pasta.configure(text=f"P_Pasta: {self.p_pasta_low:.2f} bar")
-        
-        # Move to Step 2
-        self.step_label.configure(text="Passo 2: Ponto Médio (~2 a 4 bar)")
-        self.instruction_label.configure(text="Aplique pressão (~2 a 4 bar) e clique em 'Ler Ponto Médio'.")
-        self.btn_action.configure(state="normal", text="Ler Ponto Médio", command=self.step_2_mid)
-        
-    def step_2_mid(self):
-        """Read mid pressure point."""
-        if not self.controller.is_connected:
-            success, msg = self.controller.find_and_connect()
-            if success:
-                self.controller.start_reading()
-            else:
-                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
-                return
-                
-        self.btn_action.configure(state="disabled", text="Lendo... Aguarde")
-        self.temp_samples = []
-        self.original_cb = self.controller.on_pressure_reading
-        
-        def collector(p_linha, p_pasta, v1, v2):
-            self.temp_samples.append((v1, p_pasta))
+    def toggle_calibration(self):
+        if hasattr(self, 'is_recording_calibration') and self.is_recording_calibration:
+            # STOP recording and calculate
+            self.is_recording_calibration = False
+            self.btn_action.configure(text="Iniciar Gravação da Calibração", fg_color="#1f6aa5")
+            self.calculate_continuous()
+        else:
+            # START recording
+            if not self.controller.is_connected:
+                success, msg = self.controller.find_and_connect()
+                if success:
+                    self.controller.start_reading()
+                else:
+                    tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
+                    return
             
-        self.controller.on_pressure_reading = collector
-        
-        # Schedule finalization after 3 seconds
-        self.after(3000, self._finalize_step_2)
-        
-    def _finalize_step_2(self):
-        self.controller.on_pressure_reading = self.original_cb
-        
-        if len(self.temp_samples) < 5:
-            self.btn_action.configure(state="normal", text="Ler Ponto Médio")
-            tk.messagebox.showerror("Erro", "Dados insuficientes.")
-            return
-
-        self.v_linha_mid = np.mean([s[0] for s in self.temp_samples])
-        self.p_pasta_mid = np.mean([s[1] for s in self.temp_samples])
-        
-        self.lbl_v1.configure(text=f"V_Linha: {self.v_linha_mid:.4f} V")
-        self.lbl_p_pasta.configure(text=f"P_Pasta: {self.p_pasta_mid:.2f} bar")
-        
-        # Move to Step 3
-        self.step_label.configure(text="Passo 3: Ponto Alto (>6 bar)")
-        self.instruction_label.configure(text="Aplique pressão (>6 bar) e clique em 'Ler Ponto Alto'.")
-        self.btn_action.configure(state="normal", text="Ler Ponto Alto", command=self.step_3_high)
-        
-    def step_3_high(self):
-        """Read high pressure point (>6 bar recommended)."""
-        if not self.controller.is_connected:
-            success, msg = self.controller.find_and_connect()
-            if success:
-                self.controller.start_reading()
-            else:
-                tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
-                return
-                
-        self.btn_action.configure(state="disabled", text="Lendo... Aguarde")
-        self.temp_samples = []
-        self.original_cb = self.controller.on_pressure_reading
-        
-        def collector(p_linha, p_pasta, v1, v2):
-            self.temp_samples.append((v1, p_pasta))
+            # Start fresh lists
+            self.calib_v_linha = []
+            self.calib_p_pasta = []
+            self.is_recording_calibration = True
             
-        self.controller.on_pressure_reading = collector
-        
-        # Schedule finalization after 3 seconds
-        self.after(3000, self._finalize_step_3)
-        
-    def _finalize_step_3(self):
-        self.controller.on_pressure_reading = self.original_cb
-        self.btn_action.configure(state="normal", text="Ler Ponto Alto")
-        
-        if len(self.temp_samples) < 5:
-            tk.messagebox.showerror("Erro", "Dados insuficientes.")
+            self.btn_action.configure(text="Parar e Calcular", fg_color="red")
+            
+    def calculate_continuous(self):
+        if len(self.calib_v_linha) < 10:
+            tk.messagebox.showerror("Erro", "Poucos pontos coletados. Faça uma varredura mais longa.")
             return
-
-        self.v_linha_high = np.mean([s[0] for s in self.temp_samples])
-        self.p_pasta_high = np.mean([s[1] for s in self.temp_samples])
-        
-        self.lbl_v1.configure(text=f"V_Linha: {self.v_linha_low:.4f} → {self.v_linha_mid:.4f} → {self.v_linha_high:.4f} V")
-        self.lbl_p_pasta.configure(text=f"P_Pasta: {self.p_pasta_low:.2f} → {self.p_pasta_mid:.2f} → {self.p_pasta_high:.2f} bar")
-        
-        self.step_4_calculate()
-        
-    def step_4_calculate(self):
-        """Calculate linha calibration using pasta as reference (Linear Regression on 3 points)."""
+            
         from scipy.stats import linregress
         
-        v_values = [self.v_linha_low, self.v_linha_mid, self.v_linha_high]
-        p_values = [self.p_pasta_low, self.p_pasta_mid, self.p_pasta_high]
+        v_values = np.array(self.calib_v_linha)
+        p_values = np.array(self.calib_p_pasta)
         
-        delta_v = max(v_values) - min(v_values)
-        delta_p = max(p_values) - min(p_values)
+        delta_v = np.max(v_values) - np.min(v_values)
+        delta_p = np.max(p_values) - np.min(p_values)
         
-        if delta_v < 0.01:  # Nearly no voltage change
-            tk.messagebox.showerror("Erro", "Variação de tensão insuficiente.\nAumente a diferença de pressão entre os pontos.")
+        if delta_v < 0.05:  
+            tk.messagebox.showerror("Erro", "Variação de tensão muito baixa.\nAumente a pressão durante a gravação.")
             return
             
-        if delta_p < 2.0:  # Less than 2 bar difference overall
-            tk.messagebox.showerror("Erro", "Variação de pressão insuficiente.\nAplique maior diferença entre os pontos baixo e alto.")
+        if delta_p < 2.0:  
+            tk.messagebox.showerror("Erro", "Variação de pressão insuficiente (mínimo de ~2 bar sugerido).\nAplique mais pressão.")
             return
         
         # Linear fit: P_linha = slope * V_linha + intercept
@@ -380,30 +363,31 @@ class CalibracaoFrame(ctk.CTkFrame):
         slope_linha = res.slope
         intercept_linha = res.intercept
         r2 = res.rvalue**2
+        num_points = len(v_values)
+        p_min = np.min(p_values)
+        p_max = np.max(p_values)
         
         # Save to database (only linha values, pasta is fixed)
-        self.db.add_calibracao(slope_linha, intercept_linha, 2.5, -1.25)  # Pasta fixed
+        self.db.add_calibracao(
+            slope_l=slope_linha, intercept_l=intercept_linha, 
+            slope_p=2.5, intercept_p=-1.25, 
+            r2=r2, pontos=num_points, p_min=p_min, p_max=p_max
+        )
         self.controller.load_calibration_linha(slope_linha, intercept_linha)
         
         msg_title = "Sucesso" if r2 >= 0.99 else "Aviso de Qualidade"
-        quality_msg = "Calibração excelente." if r2 >= 0.99 else "Qualidade marginal. Recomenda-se refazer."
+        quality_msg = "Calibração excelente." if r2 >= 0.99 else "Qualidade marginal. Considere refazer mantendo a pressão subindo de forma mais suave."
         if r2 < 0.95:
-            quality_msg = "BAIXA QUALIDADE! Por favor, repita o procedimento."
+            quality_msg = "BAIXA QUALIDADE! Por favor, repita o procedimento verificando ruídos ou subidas muito bruscas."
             msg_title = "Aviso Crítico"
             
         tk.messagebox.showinfo(msg_title, 
-            f"Calibração do Sensor Linha Salva!\n\n"
+            f"Calibração Contínua do Sensor Linha Concluída!\n\n"
             f"P_linha = {slope_linha:.4f} × V + ({intercept_linha:.4f})\n"
             f"R² = {r2:.4f} ({quality_msg})\n\n"
             f"Referência: Sensor Pasta (fábrica)\n"
-            f"Pontos lidos:\n"
-            f"  P1: {v_values[0]:.3f}V → {p_values[0]:.2f}bar\n"
-            f"  P2: {v_values[1]:.3f}V → {p_values[1]:.2f}bar\n"
-            f"  P3: {v_values[2]:.3f}V → {p_values[2]:.2f}bar")
-        
-        # Reset UI
-        self.step_label.configure(text="Passo 1: Ponto Baixo (0 bar)")
-        self.instruction_label.configure(text="Despressurize o sistema e clique em 'Ler Ponto Baixo'.")
-        self.btn_action.configure(text="Ler Ponto Baixo", command=self.step_1_low)
-        self.lbl_v1.configure(text="V_Linha: ---")
-        self.lbl_p_pasta.configure(text="P_Pasta (ref): ---")
+            f"Pontos coletados: {num_points}\n"
+            f"Variação de Pressão: {p_min:.1f} bar → {p_max:.1f} bar")
+            
+        # Refresh history
+        self.refresh_historico()

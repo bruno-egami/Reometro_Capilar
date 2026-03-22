@@ -38,6 +38,14 @@ class App(ctk.CTk):
         self.db = DatabaseManager()
         self.controller = ReometerController() 
         
+        # Load latest calibration from DB into controller immediately
+        cal = self.db.get_latest_calibracao()
+        if cal:
+            self.controller.load_calibration_linha(
+                slope_l=cal.get('slope_linha', 1.0),
+                intercept_l=cal.get('intercept_linha', 0.0)
+            )
+        
         # Grid Layout (1x2)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
@@ -139,8 +147,15 @@ class App(ctk.CTk):
             needs_cal = True
         else:
             try:
+                # Load values into controller so it knows it's calibrated
+                if not self.controller.calibration_loaded:
+                    self.controller.load_calibration_linha(
+                        slope_l=cal.get('slope_linha', 1.0),
+                        intercept_l=cal.get('intercept_linha', 0.0)
+                    )
+                
                 # Assuming data is ISO format or compatible string
-                cal_date = datetime.fromisoformat(cal['data'])
+                cal_date = datetime.strptime(cal['data'], "%Y-%m-%d %H:%M:%S")
                 if datetime.now() - cal_date > timedelta(days=30):
                     needs_cal = True
                     msg = "⚠️ Calibração Antiga (>30 dias)"

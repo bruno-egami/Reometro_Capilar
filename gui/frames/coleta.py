@@ -328,3 +328,7 @@ class ColetaFrame(ctk.CTkFrame):
                     text_color="#1e1e2e", fg_color="#f9e2af",
                     corner_radius=6, height=32)
                 self._calib_banner.pack(fill="x", padx=20, pady=(0, 5), before=self.graph_frame)
+        else:
+            if hasattr(self, '_calib_banner'):
+                self._calib_banner.destroy()
+                delattr(self, '_calib_banner')

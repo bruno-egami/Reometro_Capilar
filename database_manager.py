@@ -52,6 +52,10 @@ class DatabaseManager:
                     intercept_linha REAL NOT NULL,
                     slope_pasta REAL NOT NULL,
                     intercept_pasta REAL NOT NULL,
+                    r2 REAL,
+                    pontos INTEGER,
+                    p_min REAL,
+                    p_max REAL,
                     ativa INTEGER DEFAULT 1
                 )
             ''')
@@ -123,6 +127,20 @@ class DatabaseManager:
                     self.conn.commit()
                 except Exception as e:
                     print(f"Erro na migração 'origem': {e}")
+                    
+            # Check for new calibration columns
+            cursor.execute("PRAGMA table_info(calibracoes)")
+            cols_calibs = [row[1] for row in cursor.fetchall()]
+            if 'r2' not in cols_calibs:
+                print("Migrando banco: Adicionando colunas de qualidade na tabela 'calibracoes'...")
+                try:
+                    cursor.execute("ALTER TABLE calibracoes ADD COLUMN r2 REAL")
+                    cursor.execute("ALTER TABLE calibracoes ADD COLUMN pontos INTEGER")
+                    cursor.execute("ALTER TABLE calibracoes ADD COLUMN p_min REAL")
+                    cursor.execute("ALTER TABLE calibracoes ADD COLUMN p_max REAL")
+                    self.conn.commit()
+                except Exception as e:
+                    print(f"Erro na migração de calibrações: {e}")
         finally:
             self.close()
 
@@ -271,17 +289,16 @@ class DatabaseManager:
 
     # --- Calibracoes ---
 
-    def add_calibracao(self, slope_l: float, intercept_l: float, slope_p: float, intercept_p: float) -> int:
-        """Adds a new calibration and sets it as active (logic to handle 'active' can be refined)."""
+    def add_calibracao(self, slope_l: float, intercept_l: float, slope_p: float, intercept_p: float,
+                       r2: float = None, pontos: int = None, p_min: float = None, p_max: float = None) -> int:
+        """Adds a new calibration with quality metrics."""
         self.connect()
         cursor = self.conn.cursor()
         
-        # Optional: Set previous calibrations to inactive if we want to track 'current' in DB
-        # For now, we just insert. The most recent one can be considered active.
         cursor.execute('''
-            INSERT INTO calibracoes (slope_linha, intercept_linha, slope_pasta, intercept_pasta)
-            VALUES (?, ?, ?, ?)
-        ''', (slope_l, intercept_l, slope_p, intercept_p))
+            INSERT INTO calibracoes (slope_linha, intercept_linha, slope_pasta, intercept_pasta, r2, pontos, p_min, p_max)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (slope_l, intercept_l, slope_p, intercept_p, r2, pontos, p_min, p_max))
         
         calib_id = cursor.lastrowid
         self.conn.commit()
@@ -296,6 +313,15 @@ class DatabaseManager:
         row = cursor.fetchone()
         self.close()
         return dict(row) if row else None
+
+    def get_all_calibracoes(self) -> List[Dict[str, Any]]:
+        """Returns all calibrations from history, ordered by date descending."""
+        self.connect()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM calibracoes ORDER BY data DESC")
+        rows = cursor.fetchall()
+        self.close()
+        return [dict(row) for row in rows]
 
     # --- Ensaios ---
 
