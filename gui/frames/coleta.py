@@ -7,9 +7,9 @@ from matplotlib.figure import Figure
 import time
 import numpy as np
 
-# Pressure trigger thresholds (bar)
-PRESSURE_THRESHOLD_START = 0.10  # P.Linha acima deste valor inicia gravação
-PRESSURE_THRESHOLD_STOP  = 0.10  # P.Linha abaixo deste valor para gravação
+# Pressure trigger thresholds (bar) — baseado em P_pasta (sensor na entrada do capilar)
+PRESSURE_THRESHOLD_START = 0.15  # P.Pasta acima deste valor inicia gravação
+PRESSURE_THRESHOLD_STOP  = 0.10  # P.Pasta abaixo deste valor para gravação
 MIN_RECORDING_TIME       = 2.0   # Tempo mínimo (s) antes de permitir auto-parada
 
 class ColetaFrame(ctk.CTkFrame):
@@ -264,8 +264,17 @@ class ColetaFrame(ctk.CTkFrame):
         if self.trigger_state != 'idle':
             self.trigger_state = 'asking_mass'
             
-            if len(self.times) > 0:
+            valid_point = False
+            if len(self.p2_data) > 0:
+                avg_p = sum(self.p2_data) / len(self.p2_data)
+                # Se a pressão média for muito baixa, foi apenas um esbarrão mecânico ou ruído que disparou o sensor
+                if avg_p > (PRESSURE_THRESHOLD_START / 2.0):
+                    valid_point = True
+            
+            if valid_point:
                 self._ask_mass_and_save()
+            else:
+                self.lbl_status.configure(text="Ponto ignorado (ruído ou esbarrão detectado).")
                 
             self.trigger_state = 'waiting'
             self._prepare_for_next_point()
@@ -302,8 +311,8 @@ class ColetaFrame(ctk.CTkFrame):
         self.lbl_p_pasta.configure(text=f"P. Pasta: {p2:.2f} bar")
         
         if self.trigger_state == 'waiting':
-            # Waiting for pressure to rise above threshold
-            if p1 > PRESSURE_THRESHOLD_START:
+            # Waiting for P_pasta to rise above threshold (sensor na entrada do capilar)
+            if p2 > PRESSURE_THRESHOLD_START:
                 # Transition: waiting → recording
                 self.trigger_state = 'recording'
                 self.start_time = ts
@@ -334,8 +343,8 @@ class ColetaFrame(ctk.CTkFrame):
                 self.ax.autoscale_view()
                 self.canvas.draw_idle()
             
-            # Auto-stop: pressure dropped below threshold after minimum time
-            if p1 < PRESSURE_THRESHOLD_STOP and t > MIN_RECORDING_TIME:
+            # Auto-stop: P_pasta dropped below threshold after minimum time
+            if p2 < PRESSURE_THRESHOLD_STOP and t > MIN_RECORDING_TIME:
                 self._auto_stop()
 
     def save_point(self, massa):
@@ -358,16 +367,20 @@ class ColetaFrame(ctk.CTkFrame):
                 tk.messagebox.showerror("Erro", "Falha ao criar/obter amostra.")
                 return
 
-            # 2. Calculate Averages
+            # 2. Calcular Médias Integrais (sincronizadas com massa total e tempo total)
+            # A pressão salva é a média de TODO o ensaio, garantindo que:
+            #   τ_w = P̄_integral × R / (2L)  esteja sincronizado com
+            #   Q = m_total / (ρ × t_total)
+            p1_avg = np.mean(self.p1_data) if self.p1_data else 0
+            p2_avg = np.mean(self.p2_data) if self.p2_data else 0
+            v1_avg = np.mean(self.v1_data) if self.v1_data else 0
+            v2_avg = np.mean(self.v2_data) if self.v2_data else 0
             
-            # --- M2: Detecção Automática de Regime Estacionário ---
-            # Encontrar a janela com menor desvio padrão (mais estável)
-            window_size = min(30, len(self.p2_data)) # Janela de até 30 pontos (3 segundos)
+            # --- Feedback Visual: Detecção de Regime Estacionário (apenas para o gráfico) ---
+            window_size = min(30, len(self.p2_data))
             if window_size >= 10:
                 best_start_idx = 0
                 min_std = float('inf')
-                
-                # Desliza a janela pela segunda metade dos dados (geralmente onde estabiliza)
                 start_search = max(0, len(self.p2_data) // 2 - window_size)
                 
                 for i in range(start_search, len(self.p2_data) - window_size + 1):
@@ -378,18 +391,13 @@ class ColetaFrame(ctk.CTkFrame):
                         best_start_idx = i
                         
                 end_idx = best_start_idx + window_size
-                p1_avg = np.mean(self.p1_data[best_start_idx:end_idx])
-                p2_avg = np.mean(self.p2_data[best_start_idx:end_idx])
-                v1_avg = np.mean(self.v1_data[best_start_idx:end_idx])
-                v2_avg = np.mean(self.v2_data[best_start_idx:end_idx])
-                
-                # Calcular CV para feedback ao usuário
                 p2_mean_window = np.mean(self.p2_data[best_start_idx:end_idx])
                 cv_percent = (min_std / p2_mean_window * 100) if p2_mean_window > 0 else 0
                 
                 print(f"Regime estacionário detectado: pontos {best_start_idx} a {end_idx}. CV: {cv_percent:.2f}%")
+                print(f"Pressão integral salva: P_linha={p1_avg:.3f} bar, P_pasta={p2_avg:.3f} bar")
                 
-                # M2: Destaque visual da janela no gráfico
+                # Destaque visual da janela no gráfico (feedback, não usado para salvar)
                 if self.times and len(self.times) > end_idx:
                     t_start = self.times[best_start_idx]
                     t_end = self.times[end_idx - 1]
@@ -397,12 +405,6 @@ class ColetaFrame(ctk.CTkFrame):
                                    label=f'Regime Estável (CV={cv_percent:.1f}%)')
                     self.ax.legend(fontsize=8)
                     self.canvas.draw_idle()
-            else:
-                # Fallback para média simples se poucos pontos
-                p1_avg = np.mean(self.p1_data) if self.p1_data else 0
-                p2_avg = np.mean(self.p2_data) if self.p2_data else 0
-                v1_avg = np.mean(self.v1_data) if self.v1_data else 0
-                v2_avg = np.mean(self.v2_data) if self.v2_data else 0
                 
             duracao = self.times[-1] if self.times else 0
             
@@ -410,7 +412,7 @@ class ColetaFrame(ctk.CTkFrame):
             existing_tests = self.db.get_ensaios_by_amostra(amostra_id)
             ponto_n = len(existing_tests) + 1
             
-            # 3. Save Test
+            # 3. Save Test (pressões são médias integrais)
             self.db.add_ensaio(amostra_id, ponto_n, p1_avg, p2_avg, massa, duracao, v1_avg, v2_avg)
             
             # Non-intrusive success message instead of messagebox

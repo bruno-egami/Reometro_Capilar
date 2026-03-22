@@ -152,9 +152,9 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO analises (amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json))
+                INSERT INTO analises (amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json, data_analise)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (amostra_id, modelo_melhor, r2_melhor, n_prime, comportamento, parametros_json, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.conn.commit()
             return cursor.lastrowid
         except Exception as e:
@@ -217,9 +217,9 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (nome, descricao, d_capilar, l_capilar, densidade))
+                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3, data_criacao)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (nome, descricao, d_capilar, l_capilar, densidade, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.conn.commit()
             return cursor.lastrowid
         except sqlite3.IntegrityError:
@@ -296,9 +296,9 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         
         cursor.execute('''
-            INSERT INTO calibracoes (slope_linha, intercept_linha, slope_pasta, intercept_pasta, r2, pontos, p_min, p_max)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (slope_l, intercept_l, slope_p, intercept_p, r2, pontos, p_min, p_max))
+            INSERT INTO calibracoes (slope_linha, intercept_linha, slope_pasta, intercept_pasta, r2, pontos, p_min, p_max, data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (slope_l, intercept_l, slope_p, intercept_p, r2, pontos, p_min, p_max, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         
         calib_id = cursor.lastrowid
         self.conn.commit()
@@ -332,9 +332,9 @@ class DatabaseManager:
         try:
             cursor.execute('''
                 INSERT INTO ensaios (amostra_id, ponto_n, pressao_linha_bar, pressao_pasta_bar, 
-                                     massa_g, duracao_s, tensao_linha_v, tensao_pasta_v)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (amostra_id, ponto_n, p_linha, p_pasta, massa, duracao, v_linha, v_pasta))
+                                     massa_g, duracao_s, tensao_linha_v, tensao_pasta_v, data_coleta)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (amostra_id, ponto_n, p_linha, p_pasta, massa, duracao, v_linha, v_pasta, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.conn.commit()
             return cursor.lastrowid
         finally:

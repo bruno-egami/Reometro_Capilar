@@ -381,6 +381,7 @@ class AnaliseFrame(ctk.CTkFrame):
             gamma_dots_app = []
             taus = []
             delta_p_list = []
+            eff_list = []
             massas = []
             tempos = []
             pressoes = []
@@ -395,11 +396,11 @@ class AnaliseFrame(ctk.CTkFrame):
                 
                 delta_p = p_linha_bar - p_pasta_bar
                 delta_p_list.append(delta_p)
-                # NOTA: delta_p é salvo apenas para diagnóstico.
-                # τ_w é calculado com p_pasta (pressão na câmara), que é a pressão
-                # de entrada no capilar — grandeza fisicamente correta para a equação
-                # de Hagen-Poiseuille. A pressão de linha reflete perdas na tubulação
-                # pneumática e não é usada no cálculo reológico.
+                
+                # Eficiência de Transmissão: P_pasta / P_linha × 100
+                eff = (p_pasta_bar / p_linha_bar * 100) if p_linha_bar > 0 else 100
+                eff_list.append(eff)
+                
                 massas.append(massa_g)
                 tempos.append(tempo_s)
                 pressoes.append(p_pasta_bar)
@@ -689,7 +690,16 @@ class AnaliseFrame(ctk.CTkFrame):
             if origem == 'rotacional':
                 results_txt += f"Origem: Reômetro Rotacional (W-R não aplicada — taxa já é real)\n\n"
             else:
-                results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime_global) if aplicar_weissenberg else 'Não'}\n\n"
+                results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime_global) if aplicar_weissenberg else 'Não'}\n"
+            
+            # Eficiência de Transmissão
+            if len(eff_list) > 0:
+                eff_mean = np.mean(eff_list)
+                results_txt += f"Eficiência de Transmissão: {eff_mean:.1f}%\n"
+                if eff_mean < 80:
+                    results_txt += f"⚠️ AVISO: Eficiência < 80%. Verificar atrito do pistão ou compactação da pasta.\n"
+            
+            results_txt += "\n"
             
             results_txt += "───────────────────────────────────────────\n"
             results_txt += "  AJUSTE DOS MODELOS (MÉDIAS)\n"
