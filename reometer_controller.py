@@ -13,7 +13,8 @@ from typing import Optional, Callable, Tuple, Any
 BAUD_RATE = 115200
 TIMEOUT_SERIAL = 2
 
-# Factory Calibration for Pasta Sensor (0 bar = 0.5V, 5 bar = 2.5V, 10 bar = 4.5V)
+# Factory Calibration for Pasta Sensor (0 bar = 0.5V, 5 bar = 2.5V, ~9 bar = 4.096V)
+# Com Vref = 4.096V (LM4040), leitura máxima é ~8.99 bar (saturação do ADC)
 # Linear: P (bar) = 2.5 * V - 1.25
 FACTORY_PASTA_SLOPE = 2.5  # bar/V
 FACTORY_PASTA_INTERCEPT = -1.25  # bar

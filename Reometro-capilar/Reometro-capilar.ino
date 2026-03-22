@@ -1,21 +1,26 @@
 /**
  * @file Pro-micro-Transdutor-Reometro-capilar.ino
  * @brief Firmware para reômetro capilar com DOIS transdutores de pressão
- * analógicos (0-5V).
- * @version 3.0
+ * analógicos (0-5V) e referência externa LM4040 (4.096V).
+ * @version 3.1
  * @author Bruno Egami (Modificado por Gemini)
- * @date 22/11/2025
+ * @date 21/03/2026
  *
  * @details
  * Este código lê sinais de tensão de dois transdutores de pressão:
  * 1. Transdutor do Barril (Principal) -> Pino A0
  * 2. Transdutor da Entrada do Capilar (Membrana Aflorante) -> Pino A1
  *
+ * Referência de tensão: LM4040 4.096V no pino AREF.
+ * Resolução ADC: 4.096 / 1024 = 0.004 V/bit.
+ * Nota: Com Vref = 4.096V, a leitura máxima é ~8.99 bar (saturação do ADC).
+ *
  * O firmware aguarda comandos via porta serial e responde com as tensões.
  *
  * Conexão do Hardware:
  * - Sensor 1 (Barril): Sinal -> A0, VCC -> 5V, GND -> GND
  * - Sensor 2 (Capilar): Sinal -> A1, VCC -> 5V, GND -> GND
+ * - LM4040 4.096V: Vout -> AREF
  */
 
 // --- CONFIGURAÇÕES ---
@@ -36,6 +41,7 @@ bool ema_initialized = false;
  * @brief Função de configuração inicial.
  */
 void setup() {
+  analogReference(EXTERNAL); // LM4040 4.096V como referência estável
   Serial.begin(115200);
   Serial.setTimeout(100); // A-04: limita bloqueio do readStringUntil a 100 ms
   pinMode(SENSOR_PIN_1, INPUT);
@@ -52,11 +58,11 @@ void setup() {
 void updateReadings() {
   // Leitura Sensor 1
   int raw1 = analogRead(SENSOR_PIN_1);
-  float v1 = raw1 * (5.0 / 1024.0);
+  float v1 = raw1 * (4.096 / 1024.0); // 0.004 V/bit (LM4040)
 
   // Leitura Sensor 2
   int raw2 = analogRead(SENSOR_PIN_2);
-  float v2 = raw2 * (5.0 / 1024.0);
+  float v2 = raw2 * (4.096 / 1024.0);
 
   if (!ema_initialized) {
     ema_voltage_1 = v1;
