@@ -7,6 +7,11 @@ from matplotlib.figure import Figure
 import time
 import numpy as np
 
+# Pressure trigger thresholds (bar)
+PRESSURE_THRESHOLD_START = 0.10  # P.Linha acima deste valor inicia gravação
+PRESSURE_THRESHOLD_STOP  = 0.10  # P.Linha abaixo deste valor para gravação
+MIN_RECORDING_TIME       = 2.0   # Tempo mínimo (s) antes de permitir auto-parada
+
 class ColetaFrame(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -58,14 +63,30 @@ class ColetaFrame(ctk.CTkFrame):
         self.control_frame = ctk.CTkFrame(self, height=100)
         self.control_frame.pack(fill="x", padx=20, pady=20)
         
+        self.control_frame.grid_columnconfigure(0, weight=1)
+        self.control_frame.grid_columnconfigure(1, weight=1)
+        self.control_frame.grid_columnconfigure(2, weight=1)
+        
         self.lbl_p_linha = ctk.CTkLabel(self.control_frame, text="P. Linha: 0.00 bar", font=("Consolas", 20))
-        self.lbl_p_linha.pack(side="left", padx=20)
+        self.lbl_p_linha.grid(row=0, column=0, padx=20, pady=10, sticky="w")
         
         self.lbl_p_pasta = ctk.CTkLabel(self.control_frame, text="P. Pasta: 0.00 bar", font=("Consolas", 20))
-        self.lbl_p_pasta.pack(side="left", padx=20)
+        self.lbl_p_pasta.grid(row=0, column=1, padx=20, pady=10, sticky="w")
         
-        self.btn_start = ctk.CTkButton(self.control_frame, text="INICIAR COLETA", command=self.toggle_collection)
-        self.btn_start.pack(side="right", padx=20, pady=10)
+        # New: Status label for discrete messages (no popup)
+        self.lbl_status = ctk.CTkLabel(self.control_frame, text="", font=ctk.CTkFont(size=14, slant="italic"), text_color="#a6e3a1")
+        self.lbl_status.grid(row=1, column=0, columnspan=2, padx=20, pady=(0,5), sticky="w")
+        
+        button_container = ctk.CTkFrame(self.control_frame, fg_color="transparent")
+        button_container.grid(row=0, column=2, rowspan=2, padx=20, pady=10, sticky="e")
+        
+        self.btn_end_session = ctk.CTkButton(button_container, text="FINALIZAR ENSAIO", command=self._end_session, 
+                                             fg_color="#f38ba8", hover_color="#eba0ac", text_color="#11111b")
+        self.btn_end_session.pack(side="left", padx=(0, 10))
+        self.btn_end_session.pack_forget() # Hidden initially
+        
+        self.btn_start = ctk.CTkButton(button_container, text="INICIAR SESSÃO", command=self.toggle_collection)
+        self.btn_start.pack(side="right")
 
         # Data storage for plotting
         self.times = []
@@ -74,6 +95,9 @@ class ColetaFrame(ctk.CTkFrame):
         self.start_time = None
         self.collecting = False
         self.connection_lost = False
+        
+        # Pressure trigger state: 'idle' | 'waiting' | 'recording'
+        self.trigger_state = 'idle'
 
         # Setup callbacks
         self.controller.on_pressure_reading = self.update_plot_callback
@@ -127,7 +151,8 @@ class ColetaFrame(ctk.CTkFrame):
                 tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha ao reconectar: {msg}")
                 return
 
-        if not self.collecting:
+        if self.trigger_state == 'idle':
+            # --- Transition: idle → waiting ---
             # Validate Inputs with comprehensive checks
             errors = []
             
@@ -167,72 +192,151 @@ class ColetaFrame(ctk.CTkFrame):
                     "Corrija os seguintes erros:\n\n" + "\n".join(errors))
                 return
 
-            # Start Collection
+            # Start Session: Enter waiting state
+            self.trigger_state = 'waiting'
             self.collecting = True
-            self.btn_start.configure(text="PARAR & SALVAR", fg_color="red")
-            self.times = []
-            self.p1_data = []
-            self.p2_data = []
-            self.v1_data = []
-            self.v2_data = []
+            self.lbl_status.configure(text="Sessão iniciada. Pontos serão gravados sequencialmente.")
             
-            # A-02: Reset EMA filter before new collection
-            # Stop reading briefly to avoid serial bus contention
-            self.controller.stop_reading()
-            self.controller.reset_ema()
-            self.controller.start_reading()
+            # Show End Session button
+            self.btn_end_session.pack(side="left", padx=(0, 10))
             
-            self.start_time = time.time()
-            
-            # Clear graph
-            self.line_l.set_data([], [])
-            self.line_p.set_data([], [])
-            self.canvas.draw()
+            self._prepare_for_next_point()
             
         else:
-            # Stop Collection
-            self.collecting = False
-            self.btn_start.configure(text="INICIAR COLETA", fg_color="#1f6aa5")
+            # --- Manual override: stop from waiting or recording state ---
+            self._manual_stop()
             
-            # 1. Ask for Mass
-            dialog = CTkInputDialog(text="Digite a massa extrudada (g):", title="Massa")
-            massa_str = dialog.get_input()
+    def _prepare_for_next_point(self):
+        """Prepares UI and variables for the next point in the session."""
+        self.btn_start.configure(
+            text=f"AGUARDANDO (> {PRESSURE_THRESHOLD_START:.2f} bar)",
+            fg_color="#e6a817"  # yellow/amber
+        )
+        self.times = []
+        self.p1_data = []
+        self.p2_data = []
+        self.v1_data = []
+        self.v2_data = []
+        
+        self.controller.stop_reading()
+        self.controller.reset_ema()
+        self.controller.start_reading()
+        
+        self.line_l.set_data([], [])
+        self.line_p.set_data([], [])
+        for patch in self.ax.patches[:]:
+            patch.remove()
+        self.ax.legend(['Linha', 'Pasta'])
+        self.canvas.draw()
+    
+    def _end_session(self):
+        """Ends the entire multi-point session and returns to idle."""
+        was_recording = self.trigger_state == 'recording'
+        self.trigger_state = 'asking_mass'
+        self.collecting = False
+        
+        # Hide End Session button
+        self.btn_end_session.pack_forget()
+        
+        self.btn_start.configure(text="INICIAR SESSÃO", fg_color="#1f6aa5")
+        
+        if was_recording and len(self.times) > 0:
+            self._ask_mass_and_save()
             
-            if massa_str:
-                try:
-                    massa = float(massa_str.replace(',', '.'))
-                    if massa <= 0:
-                        tk.messagebox.showerror("Erro", "Massa deve ser positiva.")
-                        return
-                    if massa > 50:
-                        tk.messagebox.showwarning("Aviso", f"Massa elevada ({massa}g). Verifique o valor.")
-                    self.save_point(massa)
-                except ValueError:
-                    tk.messagebox.showerror("Erro", "Massa inválida. Digite um número.")
+        self.trigger_state = 'idle'
+        self.lbl_status.configure(text="Sessão finalizada. Arquivo fechado.")
+
+    def _manual_stop(self):
+        """Manual override: stop recording and save current point, then wait for next point."""
+        if self.trigger_state == 'recording' and len(self.times) > 0:
+            self.trigger_state = 'asking_mass'
+            self._ask_mass_and_save()
+        elif self.trigger_state == 'recording':
+            self.lbl_status.configure(text="Ponto cancelado (sem dados suficientes).")
+            
+        if self.trigger_state != 'idle':
+            self.trigger_state = 'waiting'
+            self._prepare_for_next_point()
+    
+    def _auto_stop(self):
+        """Automatic stop triggered by pressure dropping below threshold."""
+        # MUST change state BEFORE showing dialog to prevent re-entrant calls
+        if self.trigger_state != 'idle':
+            self.trigger_state = 'asking_mass'
+            
+            if len(self.times) > 0:
+                self._ask_mass_and_save()
+                
+            self.trigger_state = 'waiting'
+            self._prepare_for_next_point()
+    
+    def _ask_mass_and_save(self):
+        """Show mass dialog and save the collected point."""
+        dialog = CTkInputDialog(text="Digite a massa extrudada (g):", title="Massa")
+        massa_str = dialog.get_input()
+        
+        if massa_str:
+            try:
+                massa = float(massa_str.replace(',', '.'))
+                if massa <= 0:
+                    tk.messagebox.showerror("Erro", "Massa deve ser positiva.")
+                    return
+                if massa > 50:
+                    tk.messagebox.showwarning("Aviso", f"Massa elevada ({massa}g). Verifique o valor.")
+                self.save_point(massa)
+            except ValueError:
+                tk.messagebox.showerror("Erro", "Massa inválida. Digite um número.")
 
     def update_plot_callback(self, p1, p2, v1, v2):
+        # Capture exact physical time from the background thread to prevent GUI lag from stretching the graph
+        ts = time.time()
         # Called from thread, update via after
-        self.after(0, self._update_gui, p1, p2, v1, v2)
+        self.after(0, self._update_gui, p1, p2, v1, v2, ts)
 
-    def _update_gui(self, p1, p2, v1, v2):
+    def _update_gui(self, p1, p2, v1, v2, ts=None):
+        if ts is None:
+            ts = time.time()
+            
+        # Always update pressure labels
         self.lbl_p_linha.configure(text=f"P. Linha: {p1:.2f} bar")
         self.lbl_p_pasta.configure(text=f"P. Pasta: {p2:.2f} bar")
         
-        if self.collecting:
-            t = time.time() - self.start_time
+        if self.trigger_state == 'waiting':
+            # Waiting for pressure to rise above threshold
+            if p1 > PRESSURE_THRESHOLD_START:
+                # Transition: waiting → recording
+                self.trigger_state = 'recording'
+                self.start_time = ts
+                self.times = []
+                self.p1_data = []
+                self.p2_data = []
+                self.v1_data = []
+                self.v2_data = []
+                self.btn_start.configure(text="GRAVANDO... (Clique para parar)", fg_color="red")
+        
+        elif self.trigger_state == 'recording':
+            # Recording data
+            if self.start_time is None:
+                self.start_time = ts
+                
+            t = ts - self.start_time
             self.times.append(t)
             self.p1_data.append(p1)
             self.p2_data.append(p2)
             self.v1_data.append(v1)
             self.v2_data.append(v2)
             
-            # Efficient update (redraw every 5th point to save CPU if fast)
+            # Update graph (every 2nd point for efficiency)
             if len(self.times) % 2 == 0:
                 self.line_l.set_data(self.times, self.p1_data)
                 self.line_p.set_data(self.times, self.p2_data)
                 self.ax.relim()
                 self.ax.autoscale_view()
                 self.canvas.draw_idle()
+            
+            # Auto-stop: pressure dropped below threshold after minimum time
+            if p1 < PRESSURE_THRESHOLD_STOP and t > MIN_RECORDING_TIME:
+                self._auto_stop()
 
     def save_point(self, massa):
         try:
@@ -309,7 +413,8 @@ class ColetaFrame(ctk.CTkFrame):
             # 3. Save Test
             self.db.add_ensaio(amostra_id, ponto_n, p1_avg, p2_avg, massa, duracao, v1_avg, v2_avg)
             
-            tk.messagebox.showinfo("Sucesso", f"Ponto {ponto_n} salvo para amostra '{nome}'!")
+            # Non-intrusive success message instead of messagebox
+            self.lbl_status.configure(text=f"✓ Ponto {ponto_n} salvo para '{nome}' com sucesso.")
             
         except Exception as e:
             tk.messagebox.showerror("Erro", f"Erro ao salvar: {e}")

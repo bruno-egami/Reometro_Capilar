@@ -241,6 +241,12 @@ class ReometerController:
                         v1 = float(parts[0])
                         v2 = float(parts[1])
                         
+                        # Hardware limit validation (ADC max is 4.096V or 5.0V)
+                        # Prevents serial corruption (e.g., dropped decimal point) from causing spikes
+                        if not (-0.5 <= v1 <= 5.5) or not (-0.5 <= v2 <= 5.5):
+                            self.log_message(f"Spike filter caught corrupt data: v1={v1:.2f}, v2={v2:.2f}", level=logging.WARNING)
+                            continue
+                        
                         # Apply calibration
                         p_linha = self._convert_voltage_to_pressure(v1, 'linha')
                         p_pasta = self._convert_voltage_to_pressure(v2, 'pasta')

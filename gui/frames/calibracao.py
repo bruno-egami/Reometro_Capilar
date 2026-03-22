@@ -286,18 +286,22 @@ class CalibracaoFrame(ctk.CTkFrame):
                  self.controller.start_reading()
 
     def monitor_callback(self, p_linha, p_pasta, v1, v2):
-        # Update labels (thread safe)
-        self.after(0, self._update_labels_live, p_linha, p_pasta, v1)
+        # Update labels (thread safe) and capture exact time to prevent GUI lag stretching
+        ts = time.time()
+        self.after(0, self._update_labels_live, p_linha, p_pasta, v1, ts)
 
-    def _update_labels_live(self, p_linha, p_pasta, v1):
+    def _update_labels_live(self, p_linha, p_pasta, v1, ts=None):
+        if ts is None:
+            ts = time.time()
+            
         self.lbl_v1.configure(text=f"V_Linha: {v1:.4f} V")
         self.lbl_p_pasta.configure(text=f"P_Pasta (ref): {p_pasta:.2f} bar")
         
         # Update Real-time Graph
         if self.plot_start_time is None:
-            self.plot_start_time = time.time()
+            self.plot_start_time = ts
             
-        t = time.time() - self.plot_start_time
+        t = ts - self.plot_start_time
         self.plot_times.append(t)
         self.plot_p_linha.append(p_linha)
         self.plot_p_pasta.append(p_pasta)
