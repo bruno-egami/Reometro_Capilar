@@ -723,6 +723,48 @@ class AnaliseFrame(ctk.CTkFrame):
                         results_txt += f"    {pn}: {fit_data['params'][i]:.4g}{marg_str}\n"
                 results_txt += "\n"
             
+            # --- Comparativo Tensão de Escoamento: Empírica vs Modelos ---
+            p_yield_bar = amostra.get('p_escoamento_bar', None)
+            tau_yield_empirico = None
+            
+            if p_yield_bar is not None and p_yield_bar > 0:
+                # Converter P (bar) → τ_w (Pa) usando equação do capilar:
+                # τ_w = (P × R) / (2L)
+                tau_yield_empirico = (p_yield_bar * 1e5 * R) / (2 * L)
+                
+                results_txt += "───────────────────────────────────────────\n"
+                results_txt += "  TENSÃO DE ESCOAMENTO: EMPÍRICA vs MODELOS\n"
+                results_txt += "───────────────────────────────────────────\n\n"
+                results_txt += f"  P. Escoamento (operador): {p_yield_bar:.2f} bar\n"
+                results_txt += f"  τ_w empírico (calculado): {tau_yield_empirico:.1f} Pa\n\n"
+                
+                # Comparar com τ₀ de cada modelo que possua tensão de escoamento
+                models_with_yield = ['Bingham', 'Herschel-Bulkley', 'Casson']
+                has_comparison = False
+                
+                for m_name in models_with_yield:
+                    fit = model_fits.get(m_name, {})
+                    params = fit.get('params')
+                    if params is not None and len(params) > 0:
+                        tau0_model = params[0]  # tau0 is always the first param for these models
+                        desvio = abs(tau0_model - tau_yield_empirico) / tau_yield_empirico * 100 if tau_yield_empirico > 0 else 0
+                        
+                        if desvio < 20:
+                            status = "✅ Boa concordância"
+                        elif desvio < 50:
+                            status = "⚠️ Desvio moderado"
+                        else:
+                            status = "❌ Desvio significativo"
+                        
+                        results_txt += f"  {m_name}: τ₀={tau0_model:.1f} Pa  (desvio: {desvio:.0f}%) {status}\n"
+                        has_comparison = True
+                
+                if has_comparison:
+                    results_txt += f"\n  Nota: τ_w empírico reflete a tensão de escoamento estática\n"
+                    results_txt += f"  (material em repouso). τ₀ dos modelos reflete a tensão\n"
+                    results_txt += f"  dinâmica (extrapolação γ̇→0). É esperado τ_w ≥ τ₀.\n"
+                results_txt += "\n"
+            
             comportamento = reologia_fitting.inferir_comportamento_fluido(best_model, 
                 {best_model: {'params': model_fits[best_model]['params'], 'R2': best_r2}} if best_model else {})
             
@@ -745,7 +787,9 @@ class AnaliseFrame(ctk.CTkFrame):
                 'comportamento': comportamento, 'n_prime': n_prime_global if aplicar_weissenberg else 1.0,
                 'delta_p': np.array(delta_p_list),
                 'pressao_mean': pressao_mean if stats_details else np.array(delta_p_list), # Fallback if no stats
-                'stats_details': stats_details
+                'stats_details': stats_details,
+                'tau_yield_empirico': tau_yield_empirico,  # τ_w empírico (Pa) ou None
+                'p_escoamento_bar': p_yield_bar  # P. Escoamento do operador (bar) ou None
             }
 
             if save:

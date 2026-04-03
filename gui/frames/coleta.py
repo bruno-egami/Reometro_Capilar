@@ -494,12 +494,18 @@ class ColetaFrame(ctk.CTkFrame):
             l_mm = float(self.entry_l.get().replace(',', '.'))
             rho = float(self.entry_rho.get().replace(',', '.'))
             
+            # Get the session's empirical yield pressure
+            p_yield_bar = getattr(self, 'session_pyield', None)
+            
             # Check if sample exists, if not create
             amostra = self.db.get_amostra_by_name(nome)
             if amostra:
                 amostra_id = amostra['id']
+                # Always update p_escoamento with the latest operator observation
+                if p_yield_bar is not None:
+                    self.db.update_amostra_pyield(amostra_id, p_yield_bar)
             else:
-                amostra_id = self.db.add_amostra(nome, desc, d_mm, l_mm, rho)
+                amostra_id = self.db.add_amostra(nome, desc, d_mm, l_mm, rho, p_escoamento_bar=p_yield_bar)
             
             if not amostra_id:
                 tk.messagebox.showerror("Erro", "Falha ao criar/obter amostra.")

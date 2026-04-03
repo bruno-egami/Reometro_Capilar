@@ -39,7 +39,8 @@ class DatabaseManager:
                     d_capilar_mm REAL,
                     l_capilar_mm REAL,
                     densidade_g_cm3 REAL,
-                    origem TEXT DEFAULT 'capilar'
+                    origem TEXT DEFAULT 'capilar',
+                    p_escoamento_bar REAL
                 )
             ''')
 
@@ -164,6 +165,17 @@ class DatabaseManager:
                         except Exception as e:
                             print(f"Erro na migração '{col_name}': {e}")
                 self.conn.commit()
+
+            # Check if 'p_escoamento_bar' exists in 'amostras'
+            cursor.execute("PRAGMA table_info(amostras)")
+            cols_amostras2 = [row[1] for row in cursor.fetchall()]
+            if 'p_escoamento_bar' not in cols_amostras2:
+                print("Migrando banco de dados: Adicionando coluna 'p_escoamento_bar' na tabela 'amostras'...")
+                try:
+                    cursor.execute("ALTER TABLE amostras ADD COLUMN p_escoamento_bar REAL")
+                    self.conn.commit()
+                except Exception as e:
+                    print(f"Erro na migração 'p_escoamento_bar': {e}")
         finally:
             self.close()
 
@@ -234,20 +246,35 @@ class DatabaseManager:
 
     # --- Amostras ---
 
-    def add_amostra(self, nome: str, descricao: str, d_capilar: float, l_capilar: float, densidade: float) -> Optional[int]:
+    def add_amostra(self, nome: str, descricao: str, d_capilar: float, l_capilar: float, densidade: float, p_escoamento_bar: float = None) -> Optional[int]:
         """Adds a new sample to the database."""
         self.connect()
         cursor = self.conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3, data_criacao)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (nome, descricao, d_capilar, l_capilar, densidade, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                INSERT INTO amostras (nome, descricao, d_capilar_mm, l_capilar_mm, densidade_g_cm3, p_escoamento_bar, data_criacao)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (nome, descricao, d_capilar, l_capilar, densidade, p_escoamento_bar, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.conn.commit()
             return cursor.lastrowid
         except sqlite3.IntegrityError:
             print(f"Erro: Amostra com nome '{nome}' já existe.")
             return None
+        finally:
+            self.close()
+
+    def update_amostra_pyield(self, amostra_id: int, p_escoamento_bar: float) -> bool:
+        """Updates the empirical yield pressure for an existing sample."""
+        self.connect()
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('UPDATE amostras SET p_escoamento_bar = ? WHERE id = ?',
+                           (p_escoamento_bar, amostra_id))
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Erro ao atualizar p_escoamento: {e}")
+            return False
         finally:
             self.close()
 
