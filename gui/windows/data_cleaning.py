@@ -34,12 +34,12 @@ class DataCleaningWindow(ctk.CTkToplevel):
         self.tree_frame = ctk.CTkFrame(self)
         self.tree_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
         
-        cols = ("ID", "Ponto", "P_Pasta (bar)", "P_Linha (bar)", "Massa (g)", "Duração (s)", "Status")
+        cols = ("ID", "Ponto", "P_Pasta (bar)", "P_Linha (bar)", "Massa (g)", "Duração (s)", "Correção", "Status")
         self.tree = ttk.Treeview(self.tree_frame, columns=cols, show="headings")
         
         for col in cols:
             self.tree.heading(col, text=col)
-            width = 120 if col not in ["ID", "Ponto", "Status"] else 60
+            width = 120 if col not in ["ID", "Ponto", "Status", "Correção"] else 65
             self.tree.column(col, width=width, anchor="center")
             
         self.tree.pack(side="left", fill="both", expand=True)
@@ -84,12 +84,30 @@ class DataCleaningWindow(ctk.CTkToplevel):
             status = "Ativo" if p.get('ativo', 1) == 1 else "Excluído"
             tags = ("inactive",) if status == "Excluído" else ()
             
+            # Show regime values when available, with correction indicator
+            ratio = p.get('ratio_integral')
+            has_regime = ratio is not None and not (isinstance(ratio, float) and ratio != ratio)  # NaN check
+            
+            if has_regime:
+                correcao_str = f"{ratio*100:.0f}%"
+                p_pasta_show = p.get('pressao_pasta_regime_bar') or p['pressao_pasta_bar']
+                p_linha_show = p.get('pressao_linha_regime_bar') or p['pressao_linha_bar']
+                massa_show = p.get('massa_regime_g') or p['massa_g']
+                duracao_show = p.get('duracao_regime_s') or p['duracao_s']
+            else:
+                correcao_str = "—"
+                p_pasta_show = p['pressao_pasta_bar']
+                p_linha_show = p['pressao_linha_bar']
+                massa_show = p['massa_g']
+                duracao_show = p['duracao_s']
+            
             self.tree.insert("", "end", iid=str(p['id']), values=(
                 p['id'], p['ponto_n'], 
-                f"{p['pressao_pasta_bar']:.3f}", 
-                f"{p['pressao_linha_bar']:.3f}", 
-                f"{p['massa_g']:.3f}", 
-                f"{p['duracao_s']:.1f}",
+                f"{p_pasta_show:.3f}", 
+                f"{p_linha_show:.3f}", 
+                f"{massa_show:.3f}", 
+                f"{duracao_show:.1f}",
+                correcao_str,
                 status
             ), tags=tags)
             
@@ -145,9 +163,18 @@ class DataCleaningWindow(ctk.CTkToplevel):
             processed_data = []
             
             for i, p in enumerate(self.points_data):
-                massa = p['massa_g']
-                tempo = p['duracao_s']
-                p_bar = p['pressao_pasta_bar']
+                # Use regime values for consistency with analysis
+                ratio = p.get('ratio_integral')
+                has_regime = ratio is not None and not (isinstance(ratio, float) and ratio != ratio)
+                
+                if has_regime:
+                    massa = p.get('massa_regime_g') or p['massa_g']
+                    tempo = p.get('duracao_regime_s') or p['duracao_s']
+                    p_bar = p.get('pressao_pasta_regime_bar') or p['pressao_pasta_bar']
+                else:
+                    massa = p['massa_g']
+                    tempo = p['duracao_s']
+                    p_bar = p['pressao_pasta_bar']
                 
                 # Skip invalid physics
                 if tempo <= 0 or massa <= 0 or p_bar <= 0: 

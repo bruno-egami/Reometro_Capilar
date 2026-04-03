@@ -56,13 +56,15 @@ void setup() {
  * @brief Lê a tensão de um pino e aplica o filtro EMA específico.
  */
 void updateReadings() {
-  // Leitura Sensor 1
-  int raw1 = analogRead(SENSOR_PIN_1);
-  float v1 = raw1 * (4.096 / 1024.0); // 0.004 V/bit (LM4040)
-
-  // Leitura Sensor 2
-  int raw2 = analogRead(SENSOR_PIN_2);
-  float v2 = raw2 * (4.096 / 1024.0);
+  // Oversampling 4x para +1 bit de resolução efetiva (~1ms adicional)
+  long sum1 = 0, sum2 = 0;
+  for (int i = 0; i < 4; i++) {
+    sum1 += analogRead(SENSOR_PIN_1);
+    sum2 += analogRead(SENSOR_PIN_2);
+    delayMicroseconds(250);
+  }
+  float v1 = (sum1 / 4.0) * (4.096 / 1024.0);
+  float v2 = (sum2 / 4.0) * (4.096 / 1024.0);
 
   if (!ema_initialized) {
     ema_voltage_1 = v1;

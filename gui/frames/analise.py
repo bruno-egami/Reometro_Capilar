@@ -387,17 +387,25 @@ class AnaliseFrame(ctk.CTkFrame):
             pressoes = []
             
             for index, row in df.iterrows():
-                massa_g = row['massa_g']
-                tempo_s = row['duracao_s']
-                p_pasta_bar = row['pressao_pasta_bar']
-                p_linha_bar = row['pressao_linha_bar']
+                # Preferir dados de regime estacionário quando disponíveis
+                def _prefer(regime_col, fallback_col):
+                    try:
+                        val = row[regime_col]
+                        return val if pd.notna(val) else row[fallback_col]
+                    except (KeyError, AttributeError):
+                        return row[fallback_col]
+                
+                massa_g = _prefer('massa_regime_g', 'massa_g')
+                tempo_s = _prefer('duracao_regime_s', 'duracao_s')
+                p_pasta_bar = _prefer('pressao_pasta_regime_bar', 'pressao_pasta_bar')
+                p_linha_bar = _prefer('pressao_linha_regime_bar', 'pressao_linha_bar')
                 
                 if tempo_s <= 0 or massa_g <= 0 or p_pasta_bar <= 0: continue
                 
+                # Eficiência de Transmissão (usando dados de regime)
                 delta_p = p_linha_bar - p_pasta_bar
                 delta_p_list.append(delta_p)
                 
-                # Eficiência de Transmissão: P_pasta / P_linha × 100
                 eff = (p_pasta_bar / p_linha_bar * 100) if p_linha_bar > 0 else 100
                 eff_list.append(eff)
                 
@@ -692,12 +700,12 @@ class AnaliseFrame(ctk.CTkFrame):
             else:
                 results_txt += f"Correção Weissenberg: {'Sim (n\'={:.3f})'.format(n_prime_global) if aplicar_weissenberg else 'Não'}\n"
             
-            # Eficiência de Transmissão
+            # Eficiência de Transmissão (usando dados de regime)
             if len(eff_list) > 0:
                 eff_mean = np.mean(eff_list)
                 results_txt += f"Eficiência de Transmissão: {eff_mean:.1f}%\n"
-                if eff_mean < 80:
-                    results_txt += f"⚠️ AVISO: Eficiência < 80%. Verificar atrito do pistão ou compactação da pasta.\n"
+                if eff_mean < 85:
+                    results_txt += f"⚠️ AVISO: Eficiência < 85%. Verificar restrição na válvula, vazamentos ou compactação.\n"
             
             results_txt += "\n"
             

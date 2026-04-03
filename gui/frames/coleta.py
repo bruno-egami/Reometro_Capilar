@@ -8,10 +8,11 @@ from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 import time
 import numpy as np
 
-# Pressure trigger thresholds (bar) — baseado em P_pasta (sensor na entrada do capilar)
-PRESSURE_THRESHOLD_START = 0.15  # P.Pasta acima deste valor inicia gravação
-PRESSURE_THRESHOLD_STOP  = 0.10  # P.Pasta abaixo deste valor para gravação
+# Pressure trigger thresholds (bar)
+PRESSURE_THRESHOLD_START = 0.15  # P_Pasta acima deste valor inicia gravação
+PRESSURE_THRESHOLD_STOP  = 0.10  # P_Pasta abaixo deste valor para gravação
 MIN_RECORDING_TIME       = 2.0   # Tempo mínimo (s) antes de permitir auto-parada
+MIN_STEADY_STATE_TIME    = 5.0   # Tempo mínimo (s) em regime antes de auto-parada
 
 class ColetaFrame(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -39,6 +40,8 @@ class ColetaFrame(ctk.CTkFrame):
         self.entry_d = create_entry(self.input_frame, "D (mm):", 1)
         self.entry_l = create_entry(self.input_frame, "L (mm):", 2)
         self.entry_rho = create_entry(self.input_frame, "Densidade (g/cm³):", 3)
+        self.entry_pyield = create_entry(self.input_frame, "P. Escoam. (bar):", 4)
+        self.entry_pyield.insert(0, "0.15")  # Default safe threshold
 
         # --- Middle Section: Graph ---
         self.graph_frame = ctk.CTkFrame(self)
@@ -95,12 +98,20 @@ class ColetaFrame(ctk.CTkFrame):
         self.times = []
         self.p1_data = []
         self.p2_data = []
+        self.v1_data = []
+        self.v2_data = []
         self.start_time = None
         self.collecting = False
         self.connection_lost = False
         
         # Pressure trigger state: 'idle' | 'waiting' | 'recording'
         self.trigger_state = 'idle'
+
+        # Regime detection state
+        self.regime_detected = False
+        self.idx_regime_start = None
+        self.steady_state_start = None
+        self._K_calibration = None  # Mass cross-validation constant
 
         # Setup callbacks
         self.controller.on_pressure_reading = self.update_plot_callback
@@ -165,13 +176,13 @@ class ColetaFrame(ctk.CTkFrame):
                 errors.append("• ID da Amostra é obrigatório")
             
             # Validate numeric fields with ranges
-            def validate_numeric(entry, name, min_val, max_val):
+            def validate_numeric(entry, name, min_val, max_val, allow_zero=False):
                 val_str = entry.get().strip().replace(',', '.')
                 if not val_str:
                     return None, f"• {name} é obrigatório"
                 try:
                     val = float(val_str)
-                    if val <= 0:
+                    if val < 0 or (val == 0 and not allow_zero):
                         return None, f"• {name} deve ser positivo (atual: {val})"
                     if val < min_val:
                         return None, f"• {name} muito pequeno (mín: {min_val}, atual: {val})"
@@ -190,10 +201,16 @@ class ColetaFrame(ctk.CTkFrame):
             rho_val, rho_err = validate_numeric(self.entry_rho, "Densidade (ρ)", 0.5, 5.0)
             if rho_err: errors.append(rho_err)
             
+            pyield_val, pyield_err = validate_numeric(self.entry_pyield, "P. Escoamento", 0.0, 10.0, allow_zero=True)
+            if pyield_err: errors.append(pyield_err)
+            
             if errors:
                 tk.messagebox.showerror("Erro de Validação", 
                     "Corrija os seguintes erros:\n\n" + "\n".join(errors))
                 return
+
+            # Store the validated custom pyield for this session's mass partition
+            self.session_pyield = pyield_val
 
             # Start Session: Enter waiting state
             self.trigger_state = 'waiting'
@@ -215,11 +232,19 @@ class ColetaFrame(ctk.CTkFrame):
             text=f"AGUARDANDO (> {PRESSURE_THRESHOLD_START:.2f} bar)",
             fg_color="#e6a817"  # yellow/amber
         )
+        # Reset variables for the next trial, but do not clear self.times/data immediately
+        # so that the oscilloscope smoothly starts fresh from t=0.
+        self.start_time = None
         self.times = []
         self.p1_data = []
         self.p2_data = []
         self.v1_data = []
         self.v2_data = []
+        
+        # Reset regime detection
+        self.regime_detected = False
+        self.idx_regime_start = None
+        self.steady_state_start = None
         
         self.controller.stop_reading()
         self.controller.reset_ema()
@@ -229,7 +254,11 @@ class ColetaFrame(ctk.CTkFrame):
         self.line_p.set_data([], [])
         for patch in self.ax.patches[:]:
             patch.remove()
+        # Remove extra lines (regime markers) beyond base Linha/Pasta
+        while len(self.ax.lines) > 2:
+            self.ax.lines[-1].remove()
         self.ax.legend(['Linha', 'Pasta'])
+        self.ax.set_xlim(0, 10)  # Reset X axis to initial rolling buffer width
         self.canvas.draw()
     
     def _end_session(self):
@@ -313,18 +342,62 @@ class ColetaFrame(ctk.CTkFrame):
         self.lbl_p_linha.configure(text=f"P. Linha: {p1:.2f} bar")
         self.lbl_p_pasta.configure(text=f"P. Pasta: {p2:.2f} bar")
         
-        if self.trigger_state == 'waiting':
-            # Waiting for P_pasta to rise above threshold (sensor na entrada do capilar)
-            if p2 > PRESSURE_THRESHOLD_START:
-                # Transition: waiting → recording
-                self.trigger_state = 'recording'
+        if self.trigger_state in ['idle', 'waiting']:
+            # Modo Osciloscópio Constante: manter gráfico rolando antes de disparar
+            if self.start_time is None:
                 self.start_time = ts
-                self.times = []
-                self.p1_data = []
-                self.p2_data = []
-                self.v1_data = []
-                self.v2_data = []
-                self.btn_start.configure(text="GRAVANDO... (Clique para parar)", fg_color="red")
+                
+            t = ts - self.start_time
+            self.times.append(t)
+            self.p1_data.append(p1)
+            self.p2_data.append(p2)
+            self.v1_data.append(v1)
+            self.v2_data.append(v2)
+            
+            # Manter buffer contínuo (ex: últimos 10 segundos)
+            LIMIT_SEC = 10.0
+            while len(self.times) > 0 and (self.times[-1] - self.times[0]) > LIMIT_SEC:
+                self.times.pop(0)
+                self.p1_data.pop(0)
+                self.p2_data.pop(0)
+                self.v1_data.pop(0)
+                self.v2_data.pop(0)
+                
+            if len(self.times) % 2 == 0:
+                self.line_l.set_data(self.times, self.p1_data)
+                self.line_p.set_data(self.times, self.p2_data)
+                self.ax.relim()
+                self.ax.autoscale_view()
+                # Travar eixo X para criar efeito de rolagem de tela se estourou os 10s
+                curr_t = self.times[-1]
+                x_min = curr_t - LIMIT_SEC if curr_t > LIMIT_SEC else 0
+                x_max = curr_t if curr_t > LIMIT_SEC else LIMIT_SEC
+                self.ax.set_xlim(x_min, x_max)
+                self.canvas.draw_idle()
+            
+            if self.trigger_state == 'waiting':
+                # Trigger real na P_Pasta
+                if p2 > PRESSURE_THRESHOLD_START:
+                    self.trigger_state = 'recording'
+                    self.regime_detected = False
+                    self.idx_regime_start = None
+                    # Shift dos tempos: O trigger atuou em 0.15 bar, mas a válvula mecanicamente abriu um instante antes.
+                    # Vamos olhar para trás no buffer para achar o "joelho" exato da curva (cruzamento do ruído ~0.02 bar)
+                    # para que o T=0 fique perfeitamente alinhado visualmente com a queda de pressão.
+                    if self.times:
+                        idx_true_start = len(self.p2_data) - 1
+                        for i in range(len(self.p2_data) - 1, -1, -1):
+                            if self.p2_data[i] < 0.02:
+                                idx_true_start = i
+                                break
+                                
+                        true_start_t = self.times[idx_true_start]
+                        self.times = [tx - true_start_t for tx in self.times]
+                        self.start_time += true_start_t
+                        
+                    # Libera o limite X para a gravação poder crescer
+                    self.ax.set_xlim(auto=True)
+                    self.btn_start.configure(text="GRAVANDO... (Clique para parar)", fg_color="red")
         
         elif self.trigger_state == 'recording':
             # Recording data
@@ -346,9 +419,71 @@ class ColetaFrame(ctk.CTkFrame):
                 self.ax.autoscale_view()
                 self.canvas.draw_idle()
             
-            # Auto-stop: P_pasta dropped below threshold after minimum time
+            # --- Regime detection using Moving Window CV ---
+            # Para lidar com casos onde P_Linha e P_Pasta sobem juntos (rampa gradual)
+            WINDOW_SIZE = 30  # Janela de ~3 segundos (a 10Hz)
+            
+            if len(self.p2_data) >= WINDOW_SIZE:
+                recent_window = self.p2_data[-WINDOW_SIZE:]
+                mean_w = np.mean(recent_window)
+                cv_w = (np.std(recent_window) / mean_w * 100) if mean_w > 0.05 else 100.0
+                
+                # 1. Detectar o início se estiver bem estável nesta janela
+                if not self.regime_detected and mean_w > 0.05 and cv_w <= 2.5:
+                    self.regime_detected = True
+                    self.idx_regime_start = len(self.p2_data) - WINDOW_SIZE
+                    self.steady_state_start = self.times[self.idx_regime_start]
+                    print(f"Regime detectado via Janela (CV={cv_w:.2f}%) no tempo {self.steady_state_start:.1f}s")
+                
+                # 2. Monitorar e corrigir durante o regime
+                if self.regime_detected and self.idx_regime_start is not None:
+                    # Feedback em tempo real
+                    regime_data = self.p2_data[self.idx_regime_start:]
+                    t_in_regime = t - self.steady_state_start
+                    
+                    overall_mean = np.mean(regime_data)
+                    overall_cv = (np.std(regime_data) / overall_mean * 100) if overall_mean > 0 else 0
+                    
+                    if overall_cv < 3.0 and t_in_regime >= MIN_STEADY_STATE_TIME:
+                        self.lbl_status.configure(
+                            text=f"✅ Regime estável ({t_in_regime:.0f}s, CV={overall_cv:.1f}%) — OK para parar",
+                            text_color="#a6e3a1")
+                    elif overall_cv < 6.0:
+                        self.lbl_status.configure(
+                            text=f"⏳ Estabilizando... ({t_in_regime:.0f}s, CV={overall_cv:.1f}%)",
+                            text_color="#f9e2af")
+                    else:
+                        # Se o CV geral estourou, mas a janela atual está muito boa,
+                        # significa que disparamos cedo demais na rampa ("joelho"). Avança o início!
+                        if len(regime_data) > WINDOW_SIZE * 1.5 and cv_w < 2.0:
+                            self.idx_regime_start = len(self.p2_data) - WINDOW_SIZE
+                            self.steady_state_start = self.times[self.idx_regime_start]
+                            print("Auto-correção: avançando início do regime para remover rampa residual.")
+                            self.lbl_status.configure(
+                                text=f"🔄 Reajustando início do regime...",
+                                text_color="#89dceb")
+                        else:
+                            self.lbl_status.configure(
+                                text=f"⏳ Aguardando regime (CV={overall_cv:.1f}%)",
+                                text_color="#fab387")
+                                
+                    # Drop-out: se a pressão cair drasticamente (ex: válvula fechou)
+                    if p2 < (self.p2_data[self.idx_regime_start] * 0.7) and p2 < PRESSURE_THRESHOLD_STOP:
+                       self.regime_detected = False
+            else:
+                self.lbl_status.configure(
+                    text=f"🔄 Rampa... P_Pasta={p2:.2f} / P_Linha={p1:.2f} bar",
+                    text_color="#89b4fa")
+            
+            # --- Auto-stop with minimum steady-state time (Melhoria 4) ---
             if p2 < PRESSURE_THRESHOLD_STOP and t > MIN_RECORDING_TIME:
-                self._auto_stop()
+                if self.regime_detected and self.steady_state_start is not None:
+                    t_regime = t - self.steady_state_start
+                    if t_regime >= MIN_STEADY_STATE_TIME:
+                        self._auto_stop()
+                    # If not enough regime time, ignore (likely noise)
+                else:
+                    self._auto_stop()  # Fallback: original behavior
 
     def save_point(self, massa):
         try:
@@ -370,16 +505,51 @@ class ColetaFrame(ctk.CTkFrame):
                 tk.messagebox.showerror("Erro", "Falha ao criar/obter amostra.")
                 return
 
-            # 2. Calcular Médias Integrais (sincronizadas com massa total e tempo total)
-            # A pressão salva é a média de TODO o ensaio, garantindo que:
-            #   τ_w = P̄_integral × R / (2L)  esteja sincronizado com
-            #   Q = m_total / (ρ × t_total)
+            # 2. Calcular Médias Integrais BRUTAS (todo o ensaio)
             p1_avg = np.mean(self.p1_data) if self.p1_data else 0
             p2_avg = np.mean(self.p2_data) if self.p2_data else 0
             v1_avg = np.mean(self.v1_data) if self.v1_data else 0
             v2_avg = np.mean(self.v2_data) if self.v2_data else 0
+            duracao = self.times[-1] if self.times else 0
             
-            # --- Feedback Visual: Detecção de Regime Estacionário (apenas para o gráfico) ---
+            # 3. Calcular dados de REGIME ESTACIONÁRIO (corrigidos - Melhoria 1)
+            idx_ss = self.idx_regime_start
+            p_pasta_regime = None
+            p_linha_regime = None
+            massa_regime = None
+            duracao_regime = None
+            ratio = None
+            cv_regime = None
+            
+            if idx_ss is not None and idx_ss < len(self.p2_data) and len(self.p2_data) > idx_ss + 5:
+                # Partição de massa pela Integral de Pressão Efetiva (Bingham Proxy)
+                # Como não há fluxo antes de vencer a tensão de escoamento, 
+                # a integral desconta o "piso" mínimo estipulado pelo usuário na interface.
+                # Isso impede que o tempo de pressurização morto aproprie indevidamente parte da massa.
+                p_yield = getattr(self, 'session_pyield', PRESSURE_THRESHOLD_START)
+                ef_p2_data = [max(0, p - p_yield) for p in self.p2_data]
+                
+                integral_total = sum(ef_p2_data)
+                integral_regime = sum(ef_p2_data[idx_ss:])
+                ratio = integral_regime / integral_total if integral_total > 0 else 1.0
+                
+                massa_regime = massa * ratio
+                duracao_regime = self.times[-1] - self.times[idx_ss] if self.times else 0
+                p_pasta_regime = np.mean(self.p2_data[idx_ss:])
+                p_linha_regime = np.mean(self.p1_data[idx_ss:])
+                
+                # CV em regime (indicador de qualidade)
+                cv_regime = (np.std(self.p2_data[idx_ss:]) / p_pasta_regime * 100) if p_pasta_regime > 0 else 0
+                
+                print(f"Regime detectado no ponto {idx_ss}/{len(self.p2_data)}. "
+                      f"Ratio={ratio:.2f}, Massa regime={massa_regime:.2f}g, "
+                      f"P_regime={p_pasta_regime:.3f} bar, CV={cv_regime:.1f}%")
+            else:
+                p_yield = 0
+                ef_p2_data = self.p2_data
+                print(f"Regime NÃO detectado. Usando dados brutos integrais.")
+            
+            # --- Feedback Visual: Regime Estacionário no gráfico ---
             window_size = min(30, len(self.p2_data))
             if window_size >= 10:
                 best_start_idx = 0
@@ -397,29 +567,62 @@ class ColetaFrame(ctk.CTkFrame):
                 p2_mean_window = np.mean(self.p2_data[best_start_idx:end_idx])
                 cv_percent = (min_std / p2_mean_window * 100) if p2_mean_window > 0 else 0
                 
-                print(f"Regime estacionário detectado: pontos {best_start_idx} a {end_idx}. CV: {cv_percent:.2f}%")
-                print(f"Pressão integral salva: P_linha={p1_avg:.3f} bar, P_pasta={p2_avg:.3f} bar")
-                
-                # Destaque visual da janela no gráfico (feedback, não usado para salvar)
+                # Destaque visual da janela no gráfico
                 if self.times and len(self.times) > end_idx:
                     t_start = self.times[best_start_idx]
                     t_end = self.times[end_idx - 1]
                     self.ax.axvspan(t_start, t_end, alpha=0.18, color='#a6e3a1', zorder=0,
                                    label=f'Regime Estável (CV={cv_percent:.1f}%)')
+                    
+                    # Highlight regime start point if detected
+                    if idx_ss is not None and idx_ss < len(self.times):
+                        self.ax.axvline(x=self.times[idx_ss], color='#89b4fa',
+                                        linestyle='--', alpha=0.5, label='Início Regime')
+                    
                     self.ax.legend(fontsize=8)
                     self.canvas.draw_idle()
                 
-            duracao = self.times[-1] if self.times else 0
-            
             # Determine point number (count existing + 1)
             existing_tests = self.db.get_ensaios_by_amostra(amostra_id)
             ponto_n = len(existing_tests) + 1
             
-            # 3. Save Test (pressões são médias integrais)
-            self.db.add_ensaio(amostra_id, ponto_n, p1_avg, p2_avg, massa, duracao, v1_avg, v2_avg)
+            # 4. Save Test (bruto + regime)
+            self.db.add_ensaio(
+                amostra_id, ponto_n, p1_avg, p2_avg, massa, duracao, v1_avg, v2_avg,
+                p_pasta_regime=p_pasta_regime,
+                p_linha_regime=p_linha_regime,
+                massa_regime=massa_regime,
+                duracao_regime=duracao_regime,
+                idx_inicio_regime=idx_ss,
+                ratio_integral=ratio,
+                cv_regime=cv_regime
+            )
             
-            # Non-intrusive success message instead of messagebox
-            self.lbl_status.configure(text=f"✓ Ponto {ponto_n} salvo para '{nome}' com sucesso.")
+            # 5. Validação cruzada massa vs integral efetiva (Melhoria 5)
+            integral_ef_total = sum(ef_p2_data) if ef_p2_data else 0
+            status_text = f"✓ Ponto {ponto_n} salvo para '{nome}'"
+            
+            if integral_ef_total > 0:
+                K_current = massa / integral_ef_total
+                
+                if hasattr(self, '_K_calibration') and self._K_calibration is not None:
+                    m_esperada = self._K_calibration * integral_ef_total
+                    erro_rel = abs(massa - m_esperada) / m_esperada * 100 if m_esperada > 0 else 0
+                    
+                    if erro_rel > 30:
+                        status_text += (f" ⚠️ Massa ({massa:.1f}g) difere "
+                                       f"{erro_rel:.0f}% da estimativa ({m_esperada:.1f}g)")
+                
+                # Update K with exponential moving average
+                if self._K_calibration is None:
+                    self._K_calibration = K_current
+                else:
+                    self._K_calibration = 0.7 * self._K_calibration + 0.3 * K_current
+            
+            if ratio is not None:
+                status_text += f" (regime: {ratio*100:.0f}% da massa)"
+            
+            self.lbl_status.configure(text=status_text)
             
         except Exception as e:
             tk.messagebox.showerror("Erro", f"Erro ao salvar: {e}")

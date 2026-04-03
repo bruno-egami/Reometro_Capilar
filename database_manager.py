@@ -141,6 +141,29 @@ class DatabaseManager:
                     self.conn.commit()
                 except Exception as e:
                     print(f"Erro na migração de calibrações: {e}")
+
+            # Check for regime (steady-state) columns in 'ensaios'
+            cursor.execute("PRAGMA table_info(ensaios)")
+            cols_ensaios = [row[1] for row in cursor.fetchall()]
+            regime_cols = {
+                'pressao_pasta_regime_bar': 'REAL',
+                'pressao_linha_regime_bar': 'REAL',
+                'massa_regime_g': 'REAL',
+                'duracao_regime_s': 'REAL',
+                'idx_inicio_regime': 'INTEGER',
+                'ratio_integral': 'REAL',
+                'cv_regime_percent': 'REAL'
+            }
+            missing_regime = [c for c in regime_cols if c not in cols_ensaios]
+            if missing_regime:
+                print("Migrando banco de dados: Adicionando colunas de regime estacionário na tabela 'ensaios'...")
+                for col_name, col_type in regime_cols.items():
+                    if col_name not in cols_ensaios:
+                        try:
+                            cursor.execute(f"ALTER TABLE ensaios ADD COLUMN {col_name} {col_type}")
+                        except Exception as e:
+                            print(f"Erro na migração '{col_name}': {e}")
+                self.conn.commit()
         finally:
             self.close()
 
@@ -325,16 +348,26 @@ class DatabaseManager:
 
     # --- Ensaios ---
 
-    def add_ensaio(self, amostra_id: int, ponto_n: int, p_linha: float, p_pasta: float, massa: float, duracao: float, v_linha: float, v_pasta: float) -> int:
-        """Adds a test point (ensaio) to a sample."""
+    def add_ensaio(self, amostra_id: int, ponto_n: int, p_linha: float, p_pasta: float, massa: float, duracao: float, v_linha: float, v_pasta: float,
+                   p_pasta_regime: float = None, p_linha_regime: float = None,
+                   massa_regime: float = None, duracao_regime: float = None,
+                   idx_inicio_regime: int = None, ratio_integral: float = None,
+                   cv_regime: float = None) -> int:
+        """Adds a test point (ensaio) to a sample, with optional steady-state regime data."""
         self.connect()
         cursor = self.conn.cursor()
         try:
             cursor.execute('''
                 INSERT INTO ensaios (amostra_id, ponto_n, pressao_linha_bar, pressao_pasta_bar, 
-                                     massa_g, duracao_s, tensao_linha_v, tensao_pasta_v, data_coleta)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (amostra_id, ponto_n, p_linha, p_pasta, massa, duracao, v_linha, v_pasta, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                                     massa_g, duracao_s, tensao_linha_v, tensao_pasta_v, data_coleta,
+                                     pressao_pasta_regime_bar, pressao_linha_regime_bar,
+                                     massa_regime_g, duracao_regime_s, idx_inicio_regime,
+                                     ratio_integral, cv_regime_percent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (amostra_id, ponto_n, p_linha, p_pasta, massa, duracao, v_linha, v_pasta,
+                  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                  p_pasta_regime, p_linha_regime, massa_regime, duracao_regime,
+                  idx_inicio_regime, ratio_integral, cv_regime))
             self.conn.commit()
             return cursor.lastrowid
         finally:
