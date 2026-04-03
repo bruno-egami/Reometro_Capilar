@@ -6,6 +6,7 @@ import numpy as np
 from collections import deque
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 from datetime import datetime
 
 class CalibracaoFrame(ctk.CTkFrame):
@@ -70,6 +71,8 @@ class CalibracaoFrame(ctk.CTkFrame):
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title("Pressão Instantânea (bar)", fontsize=10)
         self.ax.set_xlabel("Tempo (s)", fontsize=8)
+        self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        self.ax.yaxis.set_major_locator(MaxNLocator(nbins='auto', steps=[1, 2, 5, 10]))
         self.line_l, = self.ax.plot([], [], label='Linha') 
         self.line_p, = self.ax.plot([], [], label='Pasta') 
         self.ax.legend(fontsize=8)
@@ -310,7 +313,12 @@ class CalibracaoFrame(ctk.CTkFrame):
             self.line_l.set_data(self.plot_times, self.plot_p_linha)
             self.line_p.set_data(self.plot_times, self.plot_p_pasta)
             self.ax.relim()
-            self.ax.autoscale_view()
+            # Manually calculate limits to keep Y=0 visible and ensure robust scaling
+            # for both axes, as set_ylim(bottom=0) can lock Matplotlib's auto-scale.
+            self.ax.autoscale_view(scalex=True, scaley=False) 
+            
+            ymin, ymax = self.ax.dataLim.intervaly
+            self.ax.set_ylim(0, max(ymax * 1.1, 0.1))
             self.canvas.draw_idle()
 
         # If recording calibration, append to lists

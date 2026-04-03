@@ -4,6 +4,7 @@ from tkinter import messagebox
 from customtkinter import CTkInputDialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 import time
 import numpy as np
 
@@ -50,6 +51,8 @@ class ColetaFrame(ctk.CTkFrame):
         self.ax.set_title("Pressão Real-time")
         self.ax.set_xlabel("Tempo (s)")
         self.ax.set_ylabel("Pressão (bar)")
+        self.ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        self.ax.yaxis.set_major_locator(MaxNLocator(nbins='auto', steps=[1, 2, 5, 10]))
         
         self.line_l, = self.ax.plot([], [], label='Linha') 
         self.line_p, = self.ax.plot([], [], label='Pasta') 
