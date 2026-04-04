@@ -437,35 +437,41 @@ class ColetaFrame(ctk.CTkFrame):
                 
                 # 2. Monitorar e corrigir durante o regime
                 if self.regime_detected and self.idx_regime_start is not None:
-                    # Feedback em tempo real
                     regime_data = self.p2_data[self.idx_regime_start:]
                     t_in_regime = t - self.steady_state_start
                     
                     overall_mean = np.mean(regime_data)
                     overall_cv = (np.std(regime_data) / overall_mean * 100) if overall_mean > 0 else 0
                     
+                    # Self-healing: se a janela atual é muito mais estável que o regime global,
+                    # significa que temos resíduo de rampa no início. Avança o início imediatamente.
+                    if overall_cv > 3.0 and cv_w < 2.0 and len(regime_data) > WINDOW_SIZE:
+                        self.idx_regime_start = len(self.p2_data) - WINDOW_SIZE
+                        self.steady_state_start = self.times[self.idx_regime_start]
+                        # Recalcular com dados aparados
+                        regime_data = self.p2_data[self.idx_regime_start:]
+                        t_in_regime = t - self.steady_state_start
+                        overall_mean = np.mean(regime_data)
+                        overall_cv = (np.std(regime_data) / overall_mean * 100) if overall_mean > 0 else 0
+                        print(f"Auto-correção: avançando início do regime (CV global {overall_cv:.1f}%)")
+                    
+                    # Feedback em tempo real (usando CV já corrigido)
                     if overall_cv < 3.0 and t_in_regime >= MIN_STEADY_STATE_TIME:
                         self.lbl_status.configure(
                             text=f"✅ Regime estável ({t_in_regime:.0f}s, CV={overall_cv:.1f}%) — OK para parar",
                             text_color="#a6e3a1")
+                    elif overall_cv < 3.0:
+                        self.lbl_status.configure(
+                            text=f"⏳ Estável, aguardando tempo mínimo ({t_in_regime:.0f}/{MIN_STEADY_STATE_TIME:.0f}s)",
+                            text_color="#f9e2af")
                     elif overall_cv < 6.0:
                         self.lbl_status.configure(
                             text=f"⏳ Estabilizando... ({t_in_regime:.0f}s, CV={overall_cv:.1f}%)",
                             text_color="#f9e2af")
                     else:
-                        # Se o CV geral estourou, mas a janela atual está muito boa,
-                        # significa que disparamos cedo demais na rampa ("joelho"). Avança o início!
-                        if len(regime_data) > WINDOW_SIZE * 1.5 and cv_w < 2.0:
-                            self.idx_regime_start = len(self.p2_data) - WINDOW_SIZE
-                            self.steady_state_start = self.times[self.idx_regime_start]
-                            print("Auto-correção: avançando início do regime para remover rampa residual.")
-                            self.lbl_status.configure(
-                                text=f"🔄 Reajustando início do regime...",
-                                text_color="#89dceb")
-                        else:
-                            self.lbl_status.configure(
-                                text=f"⏳ Aguardando regime (CV={overall_cv:.1f}%)",
-                                text_color="#fab387")
+                        self.lbl_status.configure(
+                            text=f"⏳ Aguardando regime (CV={overall_cv:.1f}%)",
+                            text_color="#fab387")
                                 
                     # Drop-out: se a pressão cair drasticamente (ex: válvula fechou)
                     if p2 < (self.p2_data[self.idx_regime_start] * 0.7) and p2 < PRESSURE_THRESHOLD_STOP:

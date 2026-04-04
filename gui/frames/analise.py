@@ -115,7 +115,16 @@ class AnaliseFrame(ctk.CTkFrame):
         self.btn_ref_csv.pack(side="left", padx=(30, 10))
         
         self.lbl_ref_csv = ctk.CTkLabel(self.export_frame, text="MCR102: Nenhum", text_color="gray")
-        self.lbl_ref_csv.pack(side="left", padx=5)        
+        self.lbl_ref_csv.pack(side="left", padx=5)
+
+        # P. Escoamento field (empirical yield pressure)
+        self.lbl_pyield = ctk.CTkLabel(self.export_frame, text="P. Escoam. (bar):")
+        self.lbl_pyield.pack(side="left", padx=(30, 2))
+        self.entry_pyield = ctk.CTkEntry(self.export_frame, width=70, placeholder_text="0.15")
+        self.entry_pyield.pack(side="left", padx=2)
+        self.btn_save_pyield = ctk.CTkButton(self.export_frame, text="Salvar", width=60, fg_color="#5a5a5a",
+                                              command=self._save_pyield_to_db)
+        self.btn_save_pyield.pack(side="left", padx=2)        
         # Results (Scrollable Textbox - allows text selection)
         self.txt_result = ctk.CTkTextbox(self, height=350, font=("Consolas", 14), wrap="word")
         self.txt_result.pack(fill="both", expand=True, padx=20, pady=10)
@@ -168,6 +177,18 @@ class AnaliseFrame(ctk.CTkFrame):
         
         amostra_id = int(selected[0])
         self.selected_amostra_id = amostra_id
+        
+        # Load P. Escoam. from database
+        try:
+            amostras = self.db.list_amostras()
+            amostra = next((a for a in amostras if a['id'] == amostra_id), None)
+            if amostra:
+                p_yield = amostra.get('p_escoamento_bar', None)
+                self.entry_pyield.delete(0, 'end')
+                if p_yield is not None:
+                    self.entry_pyield.insert(0, str(p_yield))
+        except Exception:
+            pass
         
         # Try to load existing analysis
         last_analysis = self.db.get_last_analise(amostra_id)
@@ -276,10 +297,45 @@ class AnaliseFrame(ctk.CTkFrame):
             
         ComparativeAnalysisWindow(self, dataset_list)
 
+    def _save_pyield_to_db(self):
+        """Save the P. Escoam. value to the database for the selected sample."""
+        if not self.selected_amostra_id:
+            tk.messagebox.showwarning("Aviso", "Selecione uma amostra primeiro.")
+            return
+        
+        raw = self.entry_pyield.get().strip().replace(',', '.')
+        if not raw:
+            # Clear the value
+            self.db.update_amostra_pyield(self.selected_amostra_id, None)
+            tk.messagebox.showinfo("Info", "P. Escoam. removido.")
+            return
+        
+        try:
+            val = float(raw)
+            self.db.update_amostra_pyield(self.selected_amostra_id, val)
+            tk.messagebox.showinfo("Info", f"P. Escoam. = {val} bar salvo com sucesso.")
+        except ValueError:
+            tk.messagebox.showerror("Erro", "Valor inválido para P. Escoam.")
+    
+    def _auto_save_pyield(self):
+        """Silently save the P. Escoam. value from the entry to DB (no popups)."""
+        if not self.selected_amostra_id:
+            return
+        raw = self.entry_pyield.get().strip().replace(',', '.')
+        if raw:
+            try:
+                val = float(raw)
+                self.db.update_amostra_pyield(self.selected_amostra_id, val)
+            except ValueError:
+                pass
+
     def run_analysis(self, auto=False):
         """Main method for single sample analysis with full UI update."""
         if not self.selected_amostra_id:
             return
+
+        # Auto-save P. Escoam. before analysis so it's available in the DB
+        self._auto_save_pyield()
 
         # Force Weissenberg correction
         result = self._perform_statistical_analysis(self.selected_amostra_id, aplicar_weissenberg=True, auto=auto, save=not auto)
@@ -646,14 +702,17 @@ class AnaliseFrame(ctk.CTkFrame):
                     else:
                         popt, pcov = curve_fit(m_func, fit_gd, fit_tau, p0=p0, bounds=bnds, maxfev=10000)
                     
-                    tau_pred = m_func(fit_gd, *popt)
-                    r2 = r2_score(fit_tau, tau_pred)
+                    tau_pred_means = m_func(fit_gd, *popt)
+                    
+                    # Calcular R2 contra todos os dados brutos (reflete a incerteza real do experimento)
+                    tau_pred_raw = m_func(gd_true_arr, *popt)
+                    r2 = r2_score(tau_arr, tau_pred_raw)
                     
                     # M6: Calculo de AIC/BIC
                     if sigma_wls is not None:
-                        rss = np.sum(((fit_tau - tau_pred) / sigma_wls)**2)
+                        rss = np.sum(((fit_tau - tau_pred_means) / sigma_wls)**2)
                     else:
-                        rss = np.sum((fit_tau - tau_pred)**2)
+                        rss = np.sum((fit_tau - tau_pred_means)**2)
                     k = len(popt)
                     rss_safe = rss if rss > 1e-10 else 1e-10
                     aic_val = 2*k + n_pts * np.log(rss_safe/n_pts)
@@ -887,8 +946,10 @@ class AnaliseFrame(ctk.CTkFrame):
         bm = d.get('best_model')
         fit = d.get('model_fits', {}).get(bm, {}) if bm else {}
         
-        if len(gd_med) > 0:
-            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
+        if len(gd_brutos) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_brutos)*0.5)), np.log10(max(gd_brutos)*1.5), 100)
+        elif len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med)*0.5)), np.log10(max(gd_med)*1.5), 100)
         else:
             gd_fit = np.array([1, 10, 100])
         
@@ -910,8 +971,9 @@ class AnaliseFrame(ctk.CTkFrame):
             p_v = fit['params']
             texto = "\n".join([f"{n} = {v:.4g}" for n, v in zip(p_n, p_v)])
             
+        # Curva de fluxo standard (em log) não terá mais a linha empírica
         fig1, _ = rp.plotar_curva_fluxo(gd_brutos, tau_brutos, gd_med, tau_med, tau_err,
-                              gd_fit, tau_fit, bm or "Nenhum", r2, texto, titulo=f'Curva de Fluxo - {amostra_nome}', dados_referencia=ref_data)
+                              gd_fit, tau_fit, bm or 'Nenhum', r2, texto, dados_referencia=ref_data)
         path1 = f"{folder}/{timestamp}_{amostra_nome}_curva_fluxo.png"
         fig1.savefig(path1, dpi=300, bbox_inches='tight')
         plt.close(fig1)
@@ -1026,7 +1088,9 @@ class AnaliseFrame(ctk.CTkFrame):
                 lista_imgs = [os.path.join(temp_dir, f"{timestamp}_curva_fluxo.png"),
                               os.path.join(temp_dir, f"{timestamp}_viscosidade.png"),
                               os.path.join(temp_dir, f"{timestamp}_modelos_fluxo.png"),
-                              os.path.join(temp_dir, f"{timestamp}_modelos_visc.png")]
+                              os.path.join(temp_dir, f"{timestamp}_modelos_visc.png"),
+                              os.path.join(temp_dir, f"{timestamp}_escoamento_linear.png"),
+                              os.path.join(temp_dir, f"{timestamp}_visc_linear.png")]
                 
                 # Prepare Outlier Dataframe for Report - From Block 2
                 df_outliers_report = None
@@ -1118,7 +1182,8 @@ class AnaliseFrame(ctk.CTkFrame):
                     df_raw_data=df_raw_data,
                     stats_details=data_to_use.get('stats_details'),
                     df_outliers=df_outliers_report,
-                    amostra_info=data_to_use['amostra']
+                    amostra_info=data_to_use['amostra'],
+                    analysis_data=data_to_use
                 )
                 tk.messagebox.showinfo("Sucesso", f"Relatório PDF gerado em:\n{filepath}")
                 
@@ -1163,8 +1228,10 @@ class AnaliseFrame(ctk.CTkFrame):
             ref_data = utils_reologia.read_reference_csv(self.ref_csv_path)
         
         # Cria dominio suave para plot de modelos
-        if len(gamma) > 0:
-            gd_fit = np.logspace(np.log10(max(1e-3, gamma.min())), np.log10(gamma.max()), 100)
+        if len(gd_raw) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, gd_raw.min()*0.5)), np.log10(gd_raw.max()*1.5), 100)
+        elif len(gamma) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, gamma.min()*0.5)), np.log10(gamma.max()*1.5), 100)
         else:
             gd_fit = np.array([1, 10, 100])
         
@@ -1206,3 +1273,46 @@ class AnaliseFrame(ctk.CTkFrame):
         fig4, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit, mods, dados_referencia=ref_data)
         fig4.savefig(os.path.join(folder, f'{timestamp}_modelos_visc.png'), dpi=150, bbox_inches='tight')
         plt.close(fig4)
+        
+        # 5. Escoamento Linear
+        tau_ye = data.get('tau_yield_empirico', None)
+        if len(gamma) > 0:
+            gd_fit_linear = np.linspace(0, max(gamma), 200)
+        else:
+            gd_fit_linear = np.linspace(0, 100, 200)
+            
+        mods_linear = []
+        for k, v in fits_sorted:
+            try:
+                t_fit = models.MODELS[k][0](gd_fit_linear, *v['params'])
+                p_str = ' | '.join([f'{nm}={val:.3g}' for nm, val in zip(v['param_names'], v['params'])])
+                mods_linear.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
+            except Exception:
+                pass
+        fig5, _ = rp.plotar_ajuste_modelos(gd_raw, tau_raw, gamma, tau, tau_err, gd_fit_linear, mods_linear, 
+                                           titulo="Escoamento (Escala Linear)", dados_referencia=ref_data, 
+                                           escala_linear=True, tau_yield_empirico=tau_ye)
+        fig5.savefig(os.path.join(folder, f'{timestamp}_escoamento_linear.png'), dpi=150, bbox_inches='tight')
+        plt.close(fig5)
+        
+        # 6. Viscosidade Linear
+        if len(gd_raw) > 0:
+            gd_max = np.max(gd_raw)
+        elif len(gamma) > 0:
+            gd_max = np.max(gamma)
+        else:
+            gd_max = 100
+        gd_fit_vl = np.linspace(1e-3, gd_max * 1.05, 300)
+        
+        mods_vl = []
+        for k, v in fits_sorted:
+            try:
+                t_fit = models.MODELS[k][0](gd_fit_vl, *v['params'])
+                p_str = ' | '.join([f'{nm}={val:.3g}' for nm, val in zip(v['param_names'], v['params'])])
+                mods_vl.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
+            except Exception:
+                pass
+        fig6, _ = rp.plotar_ajuste_viscosidade(gd_raw, eta_raw, gamma, eta, eta_err, gd_fit_vl, mods_vl, 
+                                               titulo="Viscosidade (Escala Linear)", dados_referencia=ref_data, escala_linear=True)
+        fig6.savefig(os.path.join(folder, f'{timestamp}_visc_linear.png'), dpi=150, bbox_inches='tight')
+        plt.close(fig6)

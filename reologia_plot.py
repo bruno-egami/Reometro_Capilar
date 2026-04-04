@@ -501,7 +501,8 @@ import reologia_plot_style as rps
 def plotar_curva_fluxo(gd_brutos, tau_brutos,
                         gd_medios, tau_medios, tau_desvio,
                         gd_fit, tau_modelo, nome_modelo, r2,
-                        params_texto, titulo='Curva de Fluxo', dados_referencia=None):
+                        params_texto, titulo='Curva de Fluxo', dados_referencia=None,
+                        tau_yield_empirico=None):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
     # 1. Dados brutos (cinza, pequenos, semi-transparentes — ficam atrás)
@@ -528,6 +529,8 @@ def plotar_curva_fluxo(gd_brutos, tau_brutos,
         ax.scatter(dados_referencia['gd'], dados_referencia['tau'], 
                    label=f"Ref: {dados_referencia['nome']}", 
                    **rps.SC_REF)
+
+    # 4c. Tensão empírica foi desativada em curvas de fluxo padrão.
 
     # 5. Escala log-log com minor ticks
     rps.log_axes(ax)
@@ -595,10 +598,11 @@ def plotar_viscosidade(gd_brutos, eta_brutos,
 
 def plotar_ajuste_modelos(gd_brutos, tau_brutos,
                            gd_medios, tau_medios, tau_desvio,
-                           gd_fit, modelos_dict, titulo='Ajuste de Modelos', dados_referencia=None):
+                           gd_fit, modelos_dict, titulo='Ajuste de Modelos', dados_referencia=None,
+                           tau_yield_empirico=None, escala_linear=False):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
-    # ── Dados brutos e médios ──────────────────────────────────────────
+    # ── Dados brutos e médios ────────────────────────────────────────────────
     ax.scatter(gd_brutos, tau_brutos, label='Dados Brutos', **rps.SC_RAW)
     mask_err = tau_desvio > 0
     ax.errorbar(gd_medios[mask_err], tau_medios[mask_err],
@@ -612,7 +616,9 @@ def plotar_ajuste_modelos(gd_brutos, tau_brutos,
                    label=f"Ref: {dados_referencia['nome']}", 
                    **rps.SC_REF)
 
-    # ── Estilos de linha por posição no ranking ───────────────────────
+    # A tensão empírica só tem sentido plotar na escala linear (onde intercepta Y)
+
+    # ── Estilos de linha por posição no ranking ───────────────────────────
     cores   = [rps.PALETTE['fit'], rps.PALETTE['alt1'],
                rps.PALETTE['alt2'], rps.PALETTE['alt3'], rps.PALETTE['alt4']]
     estilos = [rps.LN_BEST, rps.LN_ALT1, rps.LN_ALT2, rps.LN_ALT3, rps.LN_ALT4]
@@ -629,8 +635,28 @@ def plotar_ajuste_modelos(gd_brutos, tau_brutos,
         valid = np.isfinite(t_fit)
         if np.any(valid):
             ax.plot(gd_fit[valid], t_fit[valid], label=f"{m['nome']}  R²={m['r2']:.4f}{estrela}", **kw)
+            
+            # Highlight theoretical tau0 intercept on linear scale
+            if escala_linear and 'tau0' in m.get('parametros_dict', {}):
+                tau0 = m['parametros_dict']['tau0']
+                ax.plot(0, tau0, marker='o', color=cores[idx], markersize=6, alpha=0.8,
+                        markeredgecolor='white', markeredgewidth=1.0, zorder=10)
 
-    rps.log_axes(ax)
+    if escala_linear:
+        ax.set_xscale('linear')
+        ax.set_yscale('linear')
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5, color='#aaaaaa')
+        if len(gd_fit) > 0:
+            ax.set_xlim(left=0, right=np.max(gd_fit) * 1.05)
+        ax.set_ylim(bottom=0)
+        # Plot empirical dot exactly on the Y-axis wrapper
+        if tau_yield_empirico is not None and tau_yield_empirico > 0:
+            ax.plot(0, tau_yield_empirico, marker='D', color='#f38ba8', markersize=8, zorder=11, 
+                    markeredgecolor='white', markeredgewidth=1.0, 
+                    label=f'τ_yield empírico = {tau_yield_empirico:.1f} Pa')
+    else:
+        rps.log_axes(ax)
+
     ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
     ax.set_ylabel('Tensão de Cisalhamento τ_w (Pa)', **rps.YLABEL_KW)
     ax.set_title(titulo, **rps.TITLE_KW)
@@ -648,7 +674,8 @@ def plotar_ajuste_modelos(gd_brutos, tau_brutos,
 
 def plotar_ajuste_viscosidade(gd_brutos, eta_brutos,
                                gd_medios, eta_medios, eta_desvio,
-                               gd_fit, modelos_dict, titulo='Viscosidade — Ajuste', dados_referencia=None):
+                               gd_fit, modelos_dict, titulo='Viscosidade — Ajuste', dados_referencia=None,
+                               escala_linear=False):
     fig, ax = rps.make_fig(figsize=(9, 6))
 
     ax.scatter(gd_brutos, eta_brutos, label='Dados Brutos', **rps.SC_RAW)
@@ -679,7 +706,22 @@ def plotar_ajuste_viscosidade(gd_brutos, eta_brutos,
         if np.any(valid):
             ax.plot(gd_fit[valid], eta_fit[valid], label=f"{m['nome']}  R²={m['r2']:.4f}{estrela}", **kw)
 
-    rps.log_axes(ax)
+    if escala_linear:
+        if len(gd_fit) > 0:
+            ax.set_xlim(left=0, right=np.max(gd_fit) * 1.05)
+            
+        y_max = None
+        if len(eta_brutos) > 0:
+            y_max = np.max(eta_brutos) * 1.5
+        elif len(eta_medios) > 0:
+            y_max = np.max(eta_medios) * 1.5
+            
+        if y_max:
+            ax.set_ylim(bottom=0, top=y_max)
+        else:
+            ax.set_ylim(bottom=0)
+    else:
+        rps.log_axes(ax)
     ax.set_xlabel('Taxa de Cisalhamento γ̇ (s⁻¹)', **rps.XLABEL_KW)
     ax.set_ylabel('Viscosidade η (Pa·s)', **rps.YLABEL_KW)
     ax.set_title(titulo, **rps.TITLE_KW)

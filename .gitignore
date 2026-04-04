@@ -42,16 +42,19 @@ ENV/
 *.log
 *.pdf
 *.png
+!docs/*.pdf
+!demo_style.png
 
 # Scratch / temporary text files
-docx_content.txt
-docx_ext2.txt
-docx_quick_content.txt
+docx_*.txt
 extracted_text.txt
 crash_log.txt
 mermaid_code.txt
+com_test.log
+trace.log
 
-# Drafts and Analysis Folders
+# Temporary Directories
+.tmp.drivedownload/
 Analise-melhorias/
 
 # Output Directories (Results)
@@ -66,7 +69,6 @@ resultados_estatisticos/
 curvas-fluxo-viscosidade/
 Relatorios-PDF/
 dados_reometro_rotacional/
-.tmp.drivedownload/
 
 # LaTeX generated files
 *.aux
@@ -77,6 +79,7 @@ dados_reometro_rotacional/
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+*.log
 
 # System
 Thumbs.db

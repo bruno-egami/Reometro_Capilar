@@ -12,31 +12,55 @@ except ImportError:
     class FPDF: pass # Dummy class to avoid NameError in definition if not available
 
 class PDFReport(FPDF):
+    # Priority list of system TTF fonts with Unicode/Greek support
+    _FONT_CANDIDATES = [
+        (r'C:\Windows\Fonts\ARIALN.TTF',   'Arial',       r'C:\Windows\Fonts\ARIALNB.TTF',  r'C:\Windows\Fonts\ARIALNI.TTF',  r'C:\Windows\Fonts\ARIALNBI.TTF'),
+        (r'C:\Windows\Fonts\arial.ttf',    'Arial',       r'C:\Windows\Fonts\arialbd.ttf',  r'C:\Windows\Fonts\ariali.ttf',   r'C:\Windows\Fonts\arialbi.ttf'),
+        (r'C:\Windows\Fonts\calibri.ttf',  'Calibri',     r'C:\Windows\Fonts\calibrib.ttf', r'C:\Windows\Fonts\calibrii.ttf', r'C:\Windows\Fonts\calibriz.ttf'),
+        (r'C:\Windows\Fonts\times.ttf',    'Times',       r'C:\Windows\Fonts\timesbd.ttf',  r'C:\Windows\Fonts\timesi.ttf',   r'C:\Windows\Fonts\timesbi.ttf'),
+    ]
+
     def __init__(self, title_str):
         super().__init__()
         self.title_str = title_str
         self.set_auto_page_break(auto=True, margin=15)
+        self.default_font = 'helvetica'  # fallback
+        self._try_load_unicode_font()
+
+    def _try_load_unicode_font(self):
+        """Attempts to register a Unicode-capable TTF font from the system."""
+        for regular, name, bold, italic, bolditalic in self._FONT_CANDIDATES:
+            if os.path.exists(regular):
+                try:
+                    self.add_font(name, '', regular)
+                    if os.path.exists(bold):        self.add_font(name, 'B', bold)
+                    if os.path.exists(italic):      self.add_font(name, 'I', italic)
+                    if os.path.exists(bolditalic):  self.add_font(name, 'BI', bolditalic)
+                    self.default_font = name
+                    return
+                except Exception:
+                    continue
 
     def header(self):
-        self.set_font('helvetica', 'B', 14)
+        self.set_font(self.default_font, 'B', 14)
         self.cell(0, 10, self.title_str, border=False, align='C', new_x="LMARGIN", new_y="NEXT")
-        self.set_font('helvetica', 'I', 8)
+        self.set_font(self.default_font, 'I', 8)
         self.cell(0, 5, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", border=False, align='C', new_x="LMARGIN", new_y="NEXT")
         self.ln(5)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('helvetica', 'I', 8)
+        self.set_font(self.default_font, 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}/{{nb}}', align='C')
 
     def section_title(self, label):
-        self.set_font('helvetica', 'B', 12)
+        self.set_font(self.default_font, 'B', 12)
         self.set_fill_color(230, 230, 230)
         self.cell(0, 8, label, border=0, fill=True, align='L', new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
 
     def chapter_body(self, text):
-        self.set_font('helvetica', '', 10)
+        self.set_font(self.default_font, '', 10)
         self.multi_cell(0, 5, text)
         self.ln()
 
@@ -44,7 +68,7 @@ class PDFReport(FPDF):
         """
         Adiciona uma tabela com suporte a quebra de linha (multiline).
         """
-        self.set_font('helvetica', 'B', 9)
+        self.set_font(self.default_font, 'B', 9)
         line_height = 5 # Altura de uma linha de texto
 
         # Determine col widths
@@ -64,8 +88,8 @@ class PDFReport(FPDF):
             max_lines = 1
             
             # Configura fonte para cálculo correto da largura
-            if is_header: self.set_font('helvetica', 'B', 9)
-            else: self.set_font('helvetica', '', 9)
+            if is_header: self.set_font(self.default_font, 'B', 9)
+            else: self.set_font(self.default_font, '', 9)
 
             for i, item in enumerate(data):
                 text = str(item)
@@ -81,7 +105,7 @@ class PDFReport(FPDF):
                 if not is_header:
                     print_row(df.columns, is_header=True)
                     # Restaura fonte normal
-                    self.set_font('helvetica', '', 9)
+                    self.set_font(self.default_font, '', 9)
 
             # 3. Imprime células
             x_start = self.get_x()
@@ -92,8 +116,8 @@ class PDFReport(FPDF):
                 w = col_widths[i]
                 
                 # Configura fonte
-                if is_header: self.set_font('helvetica', 'B', 9)
-                else: self.set_font('helvetica', '', 9)
+                if is_header: self.set_font(self.default_font, 'B', 9)
+                else: self.set_font(self.default_font, '', 9)
                 
                 # Salva posição atual
                 x_curr = self.get_x()
@@ -176,8 +200,12 @@ def get_graph_explanation(img_name):
         return "Figura 3: Ajuste de Modelos - Curva de Fluxo. Comparação entre os dados experimentais e os modelos ajustados."
     elif "modelos_visc" in name:
         return "Figura 4: Ajuste de Modelos - Viscosidade. Comparação entre a viscosidade experimental e as previsões dos modelos."
+    elif "escoamento_linear" in name:
+        return "Figura 5: Escoamento (Escala Linear). Foco na tensão de escoamento real e identificação visual do limite elástico."
+    elif "visc_linear" in name:
+        return "Figura 6: Viscosidade (Escala Linear). Visão sem acúmulo assintótico, exibindo o comportamento reológico da suspensão sob fluxo."
     elif "n_prime" in name:
-        return "Figura 5: Determinação de n'. Gráfico log-log da Tensão vs Taxa de Cisalhamento Aparente."
+        return "Figura 7: Determinação de n'. Gráfico log-log da Tensão vs Taxa de Cisalhamento Aparente."
     elif "bagley" in name:
         return "Figura Extra: Correção de Bagley. Ajuste linear para determinação da perda de carga na entrada."
     elif "comparativo" in name:
@@ -195,7 +223,7 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
               df_res, df_sum_modelo, best_model_nome, comportamento,
               lista_imgs, output_folder, fator_calibracao, 
               stats_details=None, df_raw_data=None, df_outliers=None, 
-              output_filename=None, amostra_info=None):
+              output_filename=None, amostra_info=None, analysis_data=None):
     
     if not PDF_AVAILABLE:
         print("AVISO: Biblioteca 'fpdf' não encontrada. Relatório PDF não será gerado.")
@@ -262,9 +290,48 @@ def gerar_pdf(timestamp_str, rho_g_cm3, tempo_extrusao_info,
 
         pdf.chapter_body(info_text)
 
+        # --- 1.1 Tratamento de Sinal (se disponível via analysis_data) ---
+        if analysis_data:
+            amostra_db = analysis_data.get('amostra', {})
+            p_yield_bar = amostra_db.get('p_escoamento_bar', None)
+            tau_ye = analysis_data.get('tau_yield_empirico', None)
+            
+            sinal_text = ""
+            raw_gamma = analysis_data.get('raw_gamma', [])
+            if len(raw_gamma) > 0:
+                sinal_text += "Processamento de Pontos em Regime Estacionário:\n"
+                sinal_text += f"- Pontos válidos e estavéis coletados: {len(raw_gamma)}\n"
+            
+            if tau_ye is not None and tau_ye > 0:
+                sinal_text += "\nTensão de Escoamento (Avaliação Empírica):\n"
+                sinal_text += f"- Input do Operador: {p_yield_bar:.2f} bar\n"
+                sinal_text += f"- τ_w empírico calculado: {tau_ye:.1f} Pa\n"
+                
+                sinal_text += "\nValidação Cruzada (Ajustes x Físico):\n"
+                model_fits = analysis_data.get('model_fits', {})
+                models_with_yield = ['Bingham', 'Herschel-Bulkley', 'Casson']
+                has_yield_comparison = False
+                for m_name in models_with_yield:
+                    fit = model_fits.get(m_name, {})
+                    params = fit.get('params')
+                    if params is not None and len(params) > 0:
+                        tau0_model = params[0]
+                        desvio = abs(tau0_model - tau_ye) / tau_ye * 100
+                        if desvio < 20: status = "Boa concordância"
+                        elif desvio < 50: status = "Desvio moderado"
+                        else: status = "Desvio significativo"
+                        sinal_text += f"  > {m_name}: τ0 ajustado = {tau0_model:.1f} Pa (Desvio: {desvio:.0f}%) -> {status}\n"
+                        has_yield_comparison = True
+                if has_yield_comparison:
+                    sinal_text += "\n  *Nota: τ_w empírico = ponto de ruptura estático. τ0 dos modelos = extrapolação dinâmica para γ̇ → 0.\n"
+                    
+            if sinal_text:
+                pdf.section_title("1.1. Processamento Rastreável e Variáveis de Input")
+                pdf.chapter_body(sinal_text)
+
         # --- Se for Estatístico, adiciona detalhes ---
         if metodo_entrada == "Média Estatística":
-            pdf.section_title("1.1. Detalhes do Tratamento Estatístico")
+            pdf.section_title("1.2. Detalhes do Tratamento Estatístico")
             # Cálculo do Coeficiente de Variação (CV) médio
             cv_visc_medio = 0.0
             if not df_res.empty and 'Viscosidade Real (Pa.s)' in df_res.columns and 'Desvio Padrao Viscosidade (Pa.s)' in df_res.columns:

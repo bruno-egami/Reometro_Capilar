@@ -8,7 +8,7 @@ from matplotlib.ticker import LogLocator
 BG_FIG   = "#ffffff"   # fundo da figura
 BG_AXES  = "#ffffff"   # fundo do painel de plot
 FG_TEXT  = "#1a1a1a"   # texto: rótulos, títulos, ticks
-FG_GRID  = "#cccccc"   # linhas de grade
+FG_GRID  = "#a6a6a6"   # linhas de grade (escurecido para melhor visibilidade)
 FG_SPINE = "#333333"   # bordas dos eixos (spines)
 FG_TICK  = "#333333"   # marcações dos eixos
 
@@ -69,7 +69,7 @@ def apply_dark_style():
         'xtick.direction': 'in',        'ytick.direction': 'in',
         'axes.grid': True,              'axes.grid.which': 'major',
         'grid.color': FG_GRID,          'grid.linestyle': '-',
-        'grid.linewidth': 0.4,          'grid.alpha': 0.50,
+        'grid.linewidth': 0.6,          'grid.alpha': 0.70,
         'font.size': 10,                'lines.linewidth': 1.8,
         'legend.framealpha': 0.92,      'legend.facecolor': 'white',
         'legend.edgecolor': '#999999',  'legend.labelcolor': FG_TEXT,
@@ -87,8 +87,8 @@ def style_ax(ax):
     ax.xaxis.label.set_color(FG_TEXT)
     ax.yaxis.label.set_color(FG_TEXT)
     ax.title.set_color(FG_TEXT)
-    ax.grid(color=FG_GRID, linestyle='-', linewidth=0.4, alpha=0.50)
-    ax.grid(which='minor', color=FG_GRID, linestyle=':', linewidth=0.3, alpha=0.30)
+    ax.grid(color=FG_GRID, linestyle='-', linewidth=0.6, alpha=0.70)
+    ax.grid(which='minor', color=FG_GRID, linestyle=':', linewidth=0.5, alpha=0.50)
 
 def log_axes(ax, which='both'):
     '''Escala log + minor ticks corretos em log.'''
@@ -98,8 +98,8 @@ def log_axes(ax, which='both'):
     if which in ('y','both'):
         ax.set_yscale('log')
         ax.yaxis.set_minor_locator(LogLocator(subs=np.arange(2,10)))
-    ax.grid(color=FG_GRID, linestyle='-', linewidth=0.4, alpha=0.50)
-    ax.grid(which='minor', color=FG_GRID, linestyle=':', linewidth=0.3, alpha=0.30)
+    ax.grid(color=FG_GRID, linestyle='-', linewidth=0.6, alpha=0.70)
+    ax.grid(which='minor', color=FG_GRID, linestyle=':', linewidth=0.5, alpha=0.50)
 
 def make_fig(figsize=(9,6), dpi=110):
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)

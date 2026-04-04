@@ -134,17 +134,24 @@ class RelatorioWindow(ctk.CTkToplevel):
         t1 = self.graph_tabs.add("Curva de Fluxo")
         t2 = self.graph_tabs.add("Viscosidade")
         t3 = self.graph_tabs.add("Modelos (Tensão)")
-        t4 = self.graph_tabs.add("Modelos (Viscosidade)")
+        t4 = self.graph_tabs.add("Modelos (Visc.)")
+        t5 = self.graph_tabs.add("Escoamento (Linear)")
+
+        t6 = self.graph_tabs.add("Visc. (Linear)")
 
         desc_fluxo = "Explicação: Relaciona a Tensão Verdadeira (τ_w) vs Taxa Verdadeira (γ̇_w). O formato da curva define se o fluido é Newtoniano, Pseudoplástico ou Viscoplástico."
         desc_visc = "Explicação: Mostra a Viscosidade Real (η_w) vs Taxa Verdadeira. A inclinação negativa indica comportamento 'Shear Thinning' (pseudoplástico)."
         desc_modelos = f"Explicação: Comparação dos dados reais (após correção W-R) com os modelos matemáticos. O melhor ajuste foi {self.analysis_data.get('best_model')}."
         desc_mod_visc = "Explicação: Comparação das curvas de viscosidade dos modelos ajustados em relação aos dados experimentais."
+        desc_linear = "Explicação: Curvas de fluxo em Escala Linear partindo de de γ̇=0. Focado na verificação visual da Tensão de Escoamento (intercepto no eixo Y)."
+        desc_visc_linear = "Explicação: Comparação das curvas de viscosidade em Escala Linear."
 
         self._plot_figure(t1, self._create_flow_curve(), desc_fluxo)
         self._plot_figure(t2, self._create_viscosity_curve(), desc_visc)
         self._plot_figure(t3, self._create_model_curve(), desc_modelos)
         self._plot_figure(t4, self._create_model_visc_curve(), desc_mod_visc)
+        self._plot_figure(t5, self._create_escoamento_linear(), desc_linear)
+        self._plot_figure(t6, self._create_visc_linear_curve(), desc_visc_linear)
 
     def _plot_figure(self, parent, fig, description=None):
         if description:
@@ -167,8 +174,10 @@ class RelatorioWindow(ctk.CTkToplevel):
         bm = d.get('best_model')
         fit = d.get('model_fits', {}).get(bm, {}) if bm else {}
 
-        if len(gd_med) > 0:
-            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
+        if len(gd_brutos) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_brutos)*0.5)), np.log10(max(gd_brutos)*1.5), 100)
+        elif len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med)*0.5)), np.log10(max(gd_med)*1.5), 100)
         else:
             gd_fit = np.array([1, 10, 100])
 
@@ -216,7 +225,7 @@ class RelatorioWindow(ctk.CTkToplevel):
                 p_n = v.get('param_names', [])
                 p_v = v['params']
                 p_str = " | ".join([f"{n}={val:.3g}" for n, val in zip(p_n, p_v)])
-                mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str})
+                mods.append({'nome': k, 'tau_fit': t_fit, 'r2': v.get('r2', 0), 'params': p_str, 'parametros_dict': dict(zip(p_n, p_v))})
             except Exception as e:
                 print(f"Erro no modelo {k}: {e}")
         return mods
@@ -232,8 +241,10 @@ class RelatorioWindow(ctk.CTkToplevel):
         tau_med = np.array(d['tau_w'])
         tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
 
-        if len(gd_med) > 0:
-            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
+        if len(gd_brutos) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_brutos)*0.5)), np.log10(max(gd_brutos)*1.5), 100)
+        elif len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med)*0.5)), np.log10(max(gd_med)*1.5), 100)
         else:
             gd_fit = np.array([1, 10, 100])
 
@@ -253,14 +264,67 @@ class RelatorioWindow(ctk.CTkToplevel):
         eta_med = np.array(d['eta'])
         eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
 
-        if len(gd_med) > 0:
-            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med))), np.log10(max(gd_med)), 100)
+        if len(gd_brutos) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_brutos)*0.5)), np.log10(max(gd_brutos)*1.5), 100)
+        elif len(gd_med) > 0:
+            gd_fit = np.logspace(np.log10(max(1e-3, min(gd_med)*0.5)), np.log10(max(gd_med)*1.5), 100)
         else:
             gd_fit = np.array([1, 10, 100])
 
         mods = self._get_models_list(d, gd_fit)
         ref_data = d.get('dados_referencia', None)
         fig, ax = rp.plotar_ajuste_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, gd_fit, mods, dados_referencia=ref_data)
+        return fig
+
+    def _create_visc_linear_curve(self):
+        import reologia_plot as rp
+        d = self.analysis_data
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        eta_brutos = np.array(d.get('raw_eta', []))
+        
+        gd_med = np.array(d['gamma_dot'])
+        eta_med = np.array(d['eta'])
+        eta_err = np.array(d.get('eta_std', np.zeros_like(eta_med)))
+
+        if len(gd_brutos) > 0:
+            gd_max = np.max(gd_brutos)
+        elif len(gd_med) > 0:
+            gd_max = np.max(gd_med)
+        else:
+            gd_max = 100
+        gd_fit = np.linspace(1e-3, gd_max * 1.05, 300)
+
+        mods = self._get_models_list(d, gd_fit)
+        ref_data = d.get('dados_referencia', None)
+        fig, ax = rp.plotar_ajuste_viscosidade(gd_brutos, eta_brutos, gd_med, eta_med, eta_err, gd_fit, mods, titulo="Viscosidade (Escala Linear)", dados_referencia=ref_data, escala_linear=True)
+        return fig
+
+    def _create_escoamento_linear(self):
+        import reologia_plot as rp
+        d = self.analysis_data
+        gd_brutos = np.array(d.get('raw_gamma', []))
+        tau_brutos = np.array(d.get('raw_tau', []))
+        
+        gd_med = np.array(d['gamma_dot'])
+        tau_med = np.array(d['tau_w'])
+        tau_err = np.array(d.get('tau_w_std', np.zeros_like(tau_med)))
+
+        # Start grid at exactly 0 for linear plotting
+        if len(gd_med) > 0:
+            gd_fit_linear = np.linspace(0, max(gd_med), 200)
+        else:
+            gd_fit_linear = np.linspace(0, 100, 200)
+
+        mods = self._get_models_list(d, gd_fit_linear)
+        ref_data = d.get('dados_referencia', None)
+        tau_ye = d.get('tau_yield_empirico', None)
+        
+        # We use plotar_ajuste_modelos but with the escala_linear=True flag
+        fig, ax = rp.plotar_ajuste_modelos(gd_brutos, tau_brutos, gd_med, tau_med, tau_err, gd_fit_linear, mods, 
+                              titulo="Análise de Escoamento (Escala Linear)",
+                              dados_referencia=ref_data,
+                              tau_yield_empirico=tau_ye,
+                              escala_linear=True)
         return fig
 
     def _init_dados(self):
