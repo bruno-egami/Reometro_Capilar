@@ -344,16 +344,18 @@ class DatabaseManager:
         """Adds a new calibration with quality metrics."""
         self.connect()
         cursor = self.conn.cursor()
-        
-        cursor.execute('''
-            INSERT INTO calibracoes (slope_linha, intercept_linha, slope_pasta, intercept_pasta, r2, pontos, p_min, p_max, data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (slope_l, intercept_l, slope_p, intercept_p, r2, pontos, p_min, p_max, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        
-        calib_id = cursor.lastrowid
-        self.conn.commit()
-        self.close()
-        return calib_id
+        try:
+            cursor.execute('''
+                INSERT INTO calibracoes (slope_linha, intercept_linha, slope_pasta, intercept_pasta, r2, pontos, p_min, p_max, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (slope_l, intercept_l, slope_p, intercept_p, r2, pontos, p_min, p_max, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            self.conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            print(f"Erro ao salvar calibração: {e}")
+            return None
+        finally:
+            self.close()
 
     def get_latest_calibracao(self) -> Optional[Dict[str, Any]]:
         """Returns the most recent calibration."""

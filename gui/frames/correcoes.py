@@ -236,10 +236,16 @@ class CorrecoesFrame(ctk.CTkFrame):
             d_mm = sample['d_mm']
             l_mm = sample['l_mm']
             
-            # Extract data
-            pressoes_Pa = df['pressao_pasta_bar'].values * 1e5
-            massas_kg = df['massa_g'].values / 1000.0
-            duracoes_s = df['duracao_s'].values
+            # Extract data — prefer regime (steady-state) data when available
+            def _prefer_regime(df, regime_col, fallback_col):
+                """Use regime column if it exists and has values, otherwise fallback."""
+                if regime_col in df.columns and df[regime_col].notna().any():
+                    return df[regime_col].fillna(df[fallback_col]).values
+                return df[fallback_col].values
+
+            pressoes_Pa = _prefer_regime(df, 'pressao_pasta_regime_bar', 'pressao_pasta_bar') * 1e5
+            massas_kg = _prefer_regime(df, 'massa_regime_g', 'massa_g') / 1000.0
+            duracoes_s = _prefer_regime(df, 'duracao_regime_s', 'duracao_s')
             
             cap_id = f"{d_mm:.3f}_{l_mm:.2f}"
             t_ext_s_array_map[cap_id] = duracoes_s

@@ -111,6 +111,7 @@ class ColetaFrame(ctk.CTkFrame):
         self.regime_detected = False
         self.idx_regime_start = None
         self.steady_state_start = None
+        self.pasta_peaked = False
         self._K_calibration = None  # Mass cross-validation constant
 
         # Setup callbacks

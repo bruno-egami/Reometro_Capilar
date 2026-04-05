@@ -34,6 +34,7 @@ class App(ctk.CTk):
 
         self.title("Reômetro Capilar Control System")
         self.geometry("1100x700")
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         # Initialize Logic Components
         self.db = DatabaseManager()
