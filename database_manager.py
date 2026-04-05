@@ -337,8 +337,6 @@ class DatabaseManager:
 
     # --- Calibracoes ---
 
-    # --- Calibracoes ---
-
     def add_calibracao(self, slope_l: float, intercept_l: float, slope_p: float, intercept_p: float,
                        r2: float = None, pontos: int = None, p_min: float = None, p_max: float = None) -> int:
         """Adds a new calibration with quality metrics."""

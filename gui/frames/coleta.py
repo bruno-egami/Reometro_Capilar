@@ -627,7 +627,10 @@ class ColetaFrame(ctk.CTkFrame):
                     self._K_calibration = 0.7 * self._K_calibration + 0.3 * K_current
             
             if ratio is not None:
-                status_text += f" (regime: {ratio*100:.0f}% da massa)"
+                if ratio < 0.30:
+                    status_text += f"\n⚠️ Regime curto ({ratio*100:.0f}% da massa) — aguarde mais tempo na próxima vez"
+                else:
+                    status_text += f" (✓ regime: {ratio*100:.0f}% da massa)"
             
             self.lbl_status.configure(text=status_text)
             

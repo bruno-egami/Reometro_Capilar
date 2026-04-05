@@ -18,7 +18,7 @@ Sistema completo para controle de reômetro capilar com **dois sensores de press
 ## 🔧 **Requisitos**
 
 ### **Hardware**
-- Arduino com Firmware v3.0+ (dual sensor)
+- Arduino com Firmware v3.1 (dual sensor)
 - 2x Sensores de pressão (Transdutor 1: Linha, Transdutor 2: Pasta)
 - Balança de precisão
 - Reômetro capilar com capilares intercambiáveis
@@ -53,7 +53,7 @@ pip install -r requirements.txt
 ```
 
 ### **3. Configure o Arduino**
-- Carregue o firmware v3.0+ no Arduino
+- Carregue o firmware v3.1 no Arduino
 - Conecte os sensores de pressão
 - Conecte o Arduino via USB
 
@@ -142,5 +142,5 @@ O Arduino Pro Micro usa a tensão USB (AVCC) como referência do ADC. A especifi
 ## 📝 **Licença e Contato**
 
 **Desenvolvido por:** Bruno Egami  
-**Versão:** 4.1 (Refatorada)  
-**Última Atualização:** Fevereiro 2026
+**Versão:** 4.1.1 (Refatorada)  
+**Última Atualização:** Abril 2026

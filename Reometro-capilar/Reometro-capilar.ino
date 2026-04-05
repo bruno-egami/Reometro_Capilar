@@ -56,7 +56,7 @@ void setup() {
  * @brief Lê a tensão de um pino e aplica o filtro EMA específico.
  */
 void updateReadings() {
-  // Oversampling 4x para +1 bit de resolução efetiva (~1ms adicional)
+  // Média simples 4x para estabilidade de baixo nível (~1ms adicional)
   long sum1 = 0, sum2 = 0;
   for (int i = 0; i < 4; i++) {
     sum1 += analogRead(SENSOR_PIN_1);
