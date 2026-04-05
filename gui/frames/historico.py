@@ -110,11 +110,13 @@ class HistoricoFrame(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
             
-        # Fetch
+        # Fetch data in two efficient queries
         amostras = self.db.list_amostras()
+        counts = self.db.get_ensaio_counts()
+        
         for a in amostras:
-            testes = self.db.get_ensaios_by_amostra(a['id'])
-            self.tree.insert("", "end", iid=str(a['id']), values=(a['id'], a['nome'], a['descricao'], a['data_criacao'], len(testes)))
+            count = counts.get(a['id'], 0)
+            self.tree.insert("", "end", iid=str(a['id']), values=(a['id'], a['nome'], a['descricao'], a['data_criacao'], count))
         
         # Auto-adjust column widths
         adjust_column_widths(self.tree)

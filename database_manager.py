@@ -428,6 +428,15 @@ class DatabaseManager:
         self.close()
         return df
 
+    def get_ensaio_counts(self) -> Dict[int, int]:
+        """Returns a mapping of amostra_id to the number of associated tests (ensaios)."""
+        self.connect()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT amostra_id, COUNT(1) FROM ensaios GROUP BY amostra_id")
+        rows = cursor.fetchall()
+        self.close()
+        return {row[0]: row[1] for row in rows}
+
     # --- Import Legacy JSON ---
     
     def import_json_legado(self, json_path: str) -> Tuple[bool, str, Optional[int]]:

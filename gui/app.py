@@ -140,7 +140,13 @@ class App(ctk.CTk):
             self.btn_conexao.configure(text="Conectar Arduino", fg_color="#1f6aa5")
             
         # 2. Check Calibration Status (C11 Alert)
-        cal = self.db.get_latest_calibracao()
+        import time
+        now = time.time()
+        if not hasattr(self, '_last_cal_check') or now - getattr(self, '_last_cal_check', 0) > 60:
+            self._last_cal_check = now
+            self._cached_cal = self.db.get_latest_calibracao()
+        
+        cal = getattr(self, '_cached_cal', None)
         needs_cal = False
         msg = "⚠️ Sensor Não Calibrado"
         
