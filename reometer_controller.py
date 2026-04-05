@@ -43,6 +43,11 @@ class ReometerController:
         self.on_error: Optional[Callable[[str], None]] = None
         self._callback_lock = threading.Lock()
         
+        # Anti-spike filter variables
+        self.last_v1 = None
+        self.last_v2 = None
+        self.spike_fails = 0
+        
         # Calibration Parameters
         # Linha: user-calibrated
         self.calib_slope_linha: float = 1.0
@@ -246,7 +251,24 @@ class ReometerController:
                         if not (-0.5 <= v1 <= 5.5) or not (-0.5 <= v2 <= 5.5):
                             self.log_message(f"Spike filter caught corrupt data: v1={v1:.2f}, v2={v2:.2f}", level=logging.WARNING)
                             continue
+                            
+                        # Descarte de picos instantâneos bizarros (ex: string malhada que resultou em salto absurdo de tensão)
+                        if self.last_v1 is not None and self.last_v2 is not None:
+                            # Se a leitura pulou mais que 0.3V (~0.75 bar) em 0.1s, pode ser um ruído de comunicação
+                            if abs(v1 - self.last_v1) > 0.3 or abs(v2 - self.last_v2) > 0.3:
+                                self.spike_fails += 1
+                                if self.spike_fails <= 3:
+                                    v1 = self.last_v1  # Repete o último valor ok
+                                    v2 = self.last_v2
+                                else:
+                                    # Se a pressão está realmente nesse nível (salto e continuou), aceitamos
+                                    self.spike_fails = 0
+                            else:
+                                self.spike_fails = 0
                         
+                        self.last_v1 = v1
+                        self.last_v2 = v2
+
                         # Apply calibration
                         p_linha = self._convert_voltage_to_pressure(v1, 'linha')
                         p_pasta = self._convert_voltage_to_pressure(v2, 'pasta')

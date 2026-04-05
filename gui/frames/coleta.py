@@ -215,6 +215,7 @@ class ColetaFrame(ctk.CTkFrame):
             # Start Session: Enter waiting state
             self.trigger_state = 'waiting'
             self.collecting = True
+            self._K_calibration = None  # Reset cross-calibration memory for new session
             self.lbl_status.configure(text="Sessão iniciada. Pontos serão gravados sequencialmente.")
             
             # Show End Session button
@@ -232,8 +233,6 @@ class ColetaFrame(ctk.CTkFrame):
             text=f"AGUARDANDO (> {PRESSURE_THRESHOLD_START:.2f} bar)",
             fg_color="#e6a817"  # yellow/amber
         )
-        # Reset variables for the next trial, but do not clear self.times/data immediately
-        # so that the oscilloscope smoothly starts fresh from t=0.
         self.start_time = None
         self.times = []
         self.p1_data = []
@@ -241,10 +240,16 @@ class ColetaFrame(ctk.CTkFrame):
         self.v1_data = []
         self.v2_data = []
         
+        # Ocultar o gráfico antes do início (conforme pedido)
+        self.line_l.set_data([], [])
+        self.line_p.set_data([], [])
+        self.canvas.draw_idle()
+        
         # Reset regime detection
         self.regime_detected = False
         self.idx_regime_start = None
         self.steady_state_start = None
+        self.pasta_peaked = False
         
         self.controller.stop_reading()
         self.controller.reset_ema()
@@ -343,60 +348,44 @@ class ColetaFrame(ctk.CTkFrame):
         self.lbl_p_pasta.configure(text=f"P. Pasta: {p2:.2f} bar")
         
         if self.trigger_state in ['idle', 'waiting']:
-            # Modo Osciloscópio Constante: manter gráfico rolando antes de disparar
-            if self.start_time is None:
-                self.start_time = ts
-                
-            t = ts - self.start_time
-            self.times.append(t)
-            self.p1_data.append(p1)
+            # Manter apenas histórico mínimo para o pre-trigger (economiza CPU e trava a interface)
             self.p2_data.append(p2)
-            self.v1_data.append(v1)
-            self.v2_data.append(v2)
-            
-            # Manter buffer contínuo (ex: últimos 10 segundos)
-            LIMIT_SEC = 10.0
-            while len(self.times) > 0 and (self.times[-1] - self.times[0]) > LIMIT_SEC:
-                self.times.pop(0)
-                self.p1_data.pop(0)
+            self.p1_data.append(p1)
+            if len(self.p2_data) > 10:
                 self.p2_data.pop(0)
-                self.v1_data.pop(0)
-                self.v2_data.pop(0)
-                
-            if len(self.times) % 2 == 0:
-                self.line_l.set_data(self.times, self.p1_data)
-                self.line_p.set_data(self.times, self.p2_data)
-                self.ax.relim()
-                self.ax.autoscale_view()
-                # Travar eixo X para criar efeito de rolagem de tela se estourou os 10s
-                curr_t = self.times[-1]
-                x_min = curr_t - LIMIT_SEC if curr_t > LIMIT_SEC else 0
-                x_max = curr_t if curr_t > LIMIT_SEC else LIMIT_SEC
-                self.ax.set_xlim(x_min, x_max)
-                self.canvas.draw_idle()
-            
+                self.p1_data.pop(0)
+
             if self.trigger_state == 'waiting':
-                # Trigger real na P_Pasta
-                if p2 > PRESSURE_THRESHOLD_START:
+                # Trigger Clássico: P_Pasta venciando a tensão de escoamento real
+                recent_p2 = self.p2_data[-3:] if len(self.p2_data) >= 3 else [p2]
+                pasta_trigger = (sum(recent_p2) / len(recent_p2)) > PRESSURE_THRESHOLD_START
+                
+                # Trigger Antecipado: Queda brusca associada à abertura da Válvula Pneumática
+                linha_trigger = False
+                if len(self.p1_data) >= 5:
+                    p1_old = self.p1_data[0] # Leitura ~1s atrás
+                    p1_recent = sum(self.p1_data[-3:]) / len(self.p1_data[-3:])
+                    # Se a linha estava pressurizada (>0.2 bar) e caiu de repente pela metade (válvula abriu expandindo pro capilar vazio)
+                    if p1_old > 0.2 and p1_recent < (p1_old * 0.5):
+                        linha_trigger = True
+
+                if pasta_trigger or linha_trigger:
                     self.trigger_state = 'recording'
                     self.regime_detected = False
                     self.idx_regime_start = None
-                    # Shift dos tempos: O trigger atuou em 0.15 bar, mas a válvula mecanicamente abriu um instante antes.
-                    # Vamos olhar para trás no buffer para achar o "joelho" exato da curva (cruzamento do ruído ~0.02 bar)
-                    # para que o T=0 fique perfeitamente alinhado visualmente com a queda de pressão.
-                    if self.times:
-                        idx_true_start = len(self.p2_data) - 1
-                        for i in range(len(self.p2_data) - 1, -1, -1):
-                            if self.p2_data[i] < 0.02:
-                                idx_true_start = i
-                                break
-                                
-                        true_start_t = self.times[idx_true_start]
-                        self.times = [tx - true_start_t for tx in self.times]
-                        self.start_time += true_start_t
+                    
+                    # Zera o tempo e arrays definitivos
+                    self.start_time = ts
+                    self.times = [0.0]
+                    self.p1_data = [p1]
+                    self.p2_data = [p2]
+                    self.v1_data = [v1]
+                    self.v2_data = [v2]
                         
-                    # Libera o limite X para a gravação poder crescer
+                    # Libera o limite X para a gravação
                     self.ax.set_xlim(auto=True)
+                    self.line_l.set_data(self.times, self.p1_data)
+                    self.line_p.set_data(self.times, self.p2_data)
                     self.btn_start.configure(text="GRAVANDO... (Clique para parar)", fg_color="red")
         
         elif self.trigger_state == 'recording':
@@ -411,8 +400,8 @@ class ColetaFrame(ctk.CTkFrame):
             self.v1_data.append(v1)
             self.v2_data.append(v2)
             
-            # Update graph (every 2nd point for efficiency)
-            if len(self.times) % 2 == 0:
+            # Update graph (every 5th point for UI performance / anti-stutter)
+            if len(self.times) % 5 == 0:
                 self.line_l.set_data(self.times, self.p1_data)
                 self.line_p.set_data(self.times, self.p2_data)
                 self.ax.relim()
@@ -481,8 +470,13 @@ class ColetaFrame(ctk.CTkFrame):
                     text=f"🔄 Rampa... P_Pasta={p2:.2f} / P_Linha={p1:.2f} bar",
                     text_color="#89b4fa")
             
+            # Register if sample ever reached the working pressure threshold
+            if p2 > PRESSURE_THRESHOLD_START:
+                self.pasta_peaked = True
+            
             # --- Auto-stop with minimum steady-state time (Melhoria 4) ---
-            if p2 < PRESSURE_THRESHOLD_STOP and t > MIN_RECORDING_TIME:
+            # Exige que a pressão tenha ultrapassado o threshold ao menos uma vez para não abortar rampas lentas precocemente
+            if self.pasta_peaked and p2 < PRESSURE_THRESHOLD_STOP and t > MIN_RECORDING_TIME:
                 if self.regime_detected and self.steady_state_start is not None:
                     t_regime = t - self.steady_state_start
                     if t_regime >= MIN_STEADY_STATE_TIME:
