@@ -1,6 +1,6 @@
 # 🔬 Sistema de Controle e Análise - Reômetro Capilar
 
-Sistema completo para controle de reômetro capilar com **dois sensores de pressão** (Linha & Pasta), análise reológica, correções de Bagley e Mooney, e comparação de dados.
+Sistema para controle de reômetro capilar com **dois sensores de pressão** (Linha & Pasta), análise reológica, correções de Bagley e Mooney, e comparação de dados.
 
 ---
 
@@ -61,7 +61,7 @@ pip install -r requirements.txt
 
 ## 🖥️ **Como Executar**
 
-O sistema possui uma **interface gráfica moderna** construída com `customtkinter`. Para iniciar a aplicação:
+O sistema possui uma **interface gráfica** construída com `customtkinter`. Para iniciar a aplicação:
 
 ```bash
 python gui_main.py
@@ -84,7 +84,7 @@ A aplicação é dividida em módulos acessíveis pela barra lateral:
 | **Correções** | Ferramentas avançadas para aplicação das correções de **Bagley** (efeitos de entrada) e **Mooney** (deslizamento na parede). |
 
 ### **Recursos Adicionais:**
-- **Relatórios PDF Profissionais**: Geração automática de relatórios detalhados com gráficos e estatísticas.
+- **Relatórios PDF**: Geração automática de relatórios detalhados com gráficos e estatísticas.
 - **Análise Comparativa**: Compare múltiplas amostras (inclusive dados externos de reômetros rotacionais) em um único gráfico.
 - **Limpeza de Dados**: Ferramenta visual para detecção e remoção de outliers.
 
@@ -130,14 +130,10 @@ O sistema usa `matplotlib` integrado ao `tkinter`. Se houver problemas de render
 
 ### **⚠️ Calibração e Referência de Tensão (A-01)**
 
-O Arduino Pro Micro usa a tensão USB (AVCC) como referência do ADC. A especificação USB 2.0 permite variação de **4,75 V a 5,25 V** dependendo da fonte (computador, hub, cabo). Isso pode introduzir erro de até **±6,7%** na pressão calculada se a calibração e a medição forem feitas em condições USB diferentes.
+O Arduino Pro Micro usa a tensão USB (AVCC) como referência do ADC. A especificação USB 2.0 permite variação de **4,75 V a 5,25 V** dependendo da fonte (computador, hub, cabo), desta forma, foi utilizada uma referência de tensão externa de precisão (LM4040-5.0) no pino AREF do Arduino.
 
-**Recomendações:**
-- **Sempre calibre os sensores na mesma sessão de medição** (mesmo computador, mesma porta USB, mesmo cabo).
-- Não mude de porta USB ou computador entre a calibração e os ensaios.
-- Para máxima precisão (ex.: publicação científica), considere instalar uma referência de tensão externa de precisão (LM4040-5.0, ~R$5) no pino AREF do Pro Micro.
 
----
+--
 
 ## 📝 **Licença e Contato**
 
