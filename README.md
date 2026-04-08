@@ -1,6 +1,6 @@
 # 🔬 Sistema de Controle e Análise - Reômetro Capilar
 
-Sistema para controle de reômetro capilar com **dois sensores de pressão** (Linha & Pasta), análise reológica, correções de Bagley e Mooney, e comparação de dados.
+Sistema para controle de reômetro capilar com **dois sensores de pressão** (Linha & Pasta), análise reológica, correções matemáticas e comparação de dados.
 
 ---
 
@@ -53,9 +53,12 @@ pip install -r requirements.txt
 ```
 
 ### **3. Configure o Arduino**
-- Carregue o firmware v3.1 no Arduino
-- Conecte os sensores de pressão
+- Conecte o módulo LM4040 ao pino Aref do Arduino
+- Conecte os sensores de pressão:
+    Sensor 1 (Pasta): Sinal -> A0, VCC -> 5V, GND -> GND
+    Sensor 2 (Linha): Sinal -> A1, VCC -> 5V, GND -> GND
 - Conecte o Arduino via USB
+- Carregue o firmware v3.1 no Arduino
 
 ---
 
@@ -77,15 +80,15 @@ A aplicação é dividida em módulos acessíveis pela barra lateral:
 
 | Módulo | Funcionalidades |
 |--------|-----------------|
-| **Coleta** | Conexão com Arduino, gráfico em tempo real, coleta de pontos (Pressão/Tempo) e input de massa. |
+| **Coleta** | Conexão com Arduino, gráfico de pressão em tempo real, coleta de pontos (Pressão/Tempo) e input de massa. |
 | **Histórico** | Visualização de todas as amostras salvas no banco de dados SQLite (`reometria.db`). Permite importar dados legados (JSON). |
 | **Calibração** | Assistente passo-a-passo para calibrar os sensores de pressão (Linha e Pasta). |
-| **Análise** | Processamento reológico completo. Cálculo de tensão/taxa real e aparente. Ajuste de 5 modelos reológicos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson). Exportação de relatórios PDF. |
-| **Correções** | Ferramentas avançadas para aplicação das correções de **Bagley** (efeitos de entrada) e **Mooney** (deslizamento na parede). |
+| **Análise** | Processamento reológico. Cálculo de tensão/taxa de cisalhamento real e aparente. Ajuste de 5 modelos reológicos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson). Exportação de relatórios PDF. |
+| **Correções** | Ferramentas para aplicação das correções de **Bagley** (efeitos de entrada) e **Mooney** (deslizamento na parede). |
 
 ### **Recursos Adicionais:**
-- **Relatórios PDF**: Geração automática de relatórios detalhados com gráficos e estatísticas.
-- **Análise Comparativa**: Compare múltiplas amostras (inclusive dados externos de reômetros rotacionais) em um único gráfico.
+- **Relatórios PDF**: Geração automática de relatórios com gráficos e estatísticas.
+- **Análise Comparativa**: Compare múltiplas amostras em um único gráfico.
 - **Limpeza de Dados**: Ferramenta visual para detecção e remoção de outliers.
 
 ---
@@ -106,7 +109,6 @@ Reometro_Capilar/
 │   │   ├── analise.py
 │   │   └── correcoes.py
 │   └── windows/                     # Janelas secundárias (Relatórios, Comparativos)
-├── legacy/                          # Scripts antigos (versões CLI anteriores)
 ├── modelos_reologicos.py            # Definição matemática dos modelos
 ├── reologia_fitting.py              # Algoritmos de ajuste de curvas
 ├── reometer_controller.py           # Comunicação Serial com Arduino
