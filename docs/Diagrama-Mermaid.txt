@@ -1,7 +1,7 @@
 graph TD
     subgraph HW [A. Camada de Hardware: Firmware v3.1]
         raw([Pressão Analógica]) --> adc[ADC 10-bit + Oversampling 4x]
-        aref[LM4040 5.0V AREF] --> adc
+        aref[LM4040 4.096V AREF] --> adc
         adc --> ema["Filtro EMA: S_t = 0.1Y_t + 0.9S_{t-1}"]
     end
 

@@ -82,7 +82,7 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
   
   \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de \SI{0}{psi} a \SI{150}{psi}) para leitura direta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
   
-  \item \textbf{V3 (Atual - Duplo Transdutor e Referência AREF):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Para mitigar a instabilidade da tensão USB (que flutua entre \SI{4,75}{V} e \SI{5,25}{V}), foi integrada uma referência de tensão externa de precisão \textbf{LM4040-5.0} conectada ao pino AREF do Arduino, garantindo que o ADC de 10 bits opere com uma base estável de \SI{5,00}{V} independentemente da fonte de alimentação. Esta configuração elimina erros sistemáticos de leitura e possibilita a aplicação rigorosa das correções de Bagley e Mooney.
+  \item \textbf{V3 (Atual - Duplo Transdutor e Referência AREF):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Para mitigar a instabilidade da tensão USB (que flutua entre \SI{4,75}{V} e \SI{5,25}{V}), foi integrada uma referência de tensão externa de precisão \textbf{LM4040-4.096} conectada ao pino AREF do Arduino, garantindo que o ADC de 10 bits opere com uma base estável de \SI{4,096}{V} independentemente da fonte de alimentação. Esta configuração elimina erros sistemáticos de leitura e possibilita a aplicação rigorosa das correções de Bagley e Mooney.
 \end{itemize}
 
 \begin{figure}[htbp]
