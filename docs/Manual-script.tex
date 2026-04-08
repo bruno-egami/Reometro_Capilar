@@ -34,10 +34,10 @@
     pdfencoding=auto, 
     unicode=true,
     % Metadados do arquivo PDF
-    pdftitle={Desenvolvimento de um Reômetro Capilar DIY para Análise Reológica de Pastas Cerâmicas},
+    pdftitle={Desenvolvimento e Metodologia do Reômetro Capilar v4.1.1},
     pdfauthor={Bruno Kenji Nishitani Egami},
     pdfsubject={Reologia Capilar e Processamento de Dados},
-    pdfkeywords={Reologia, Cerâmica, Python, Instrumentação, DIY},
+    pdfkeywords={Reologia, Cerâmica, Python, Instrumentação, DIY, LM4040},
     % Configuração visual dos links
     colorlinks=true,
     linkcolor=black,
@@ -47,14 +47,14 @@
 }
 
 % --- Cabeçalho e Dados de Contato ---
-\title{Desenvolvimento de um Reômetro Capilar DIY para Análise Reológica de Pastas Cerâmicas}
+\title{Desenvolvimento e Metodologia do Reômetro Capilar v4.1.1}
 \author{
     \textbf{Bruno Kenji Nishitani Egami} \\
     \small \href{mailto:bruno.egami@farroupilha.ifrs.edu.br}{bruno.egami@farroupilha.ifrs.edu.br} \\
     \small \href{https://github.com/bruno-egami}{GitHub: @bruno-egami} $\cdot$ 
     \href{https://www.instagram.com/bruno.egami/}{Instagram: @bruno.egami}
 }
-\date{\today}
+\date{Abril de 2026}
 
 % ---------------------------------------------------------------------
 \begin{document}
@@ -82,50 +82,50 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
   
   \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de \SI{0}{psi} a \SI{150}{psi}) para leitura direta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
   
-  \item \textbf{V3 (Atual - Duplo Transdutor):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Esta configuração permite eliminar erros sistemáticos causados pelo atrito do pistão e possibilita a aplicação mais precisa das correções de Bagley e Mooney, fundamentais para fluidos não-Newtonianos.
+  \item \textbf{V3 (Atual - Duplo Transdutor e Referência AREF):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Para mitigar a instabilidade da tensão USB (que flutua entre \SI{4,75}{V} e \SI{5,25}{V}), foi integrada uma referência de tensão externa de precisão \textbf{LM4040-5.0} conectada ao pino AREF do Arduino, garantindo que o ADC de 10 bits opere com uma base estável de \SI{5,00}{V} independentemente da fonte de alimentação. Esta configuração elimina erros sistemáticos de leitura e possibilita a aplicação rigorosa das correções de Bagley e Mooney.
 \end{itemize}
 
 \begin{figure}[htbp]
 \centering
-\resizebox{0.95\textwidth}{!}{%
-\begin{tikzpicture}[node distance=2cm, auto]
-    \tikzstyle{block} = [rectangle, draw, fill=blue!20, text width=8em, text centered, rounded corners, minimum height=3em]
-    \tikzstyle{instrument} = [circle, draw, fill=orange!30, text centered, minimum size=5em, align=center]
-    \tikzstyle{data_block} = [rectangle, draw, fill=purple!20, text width=8em, text centered, rounded corners, minimum height=3em]
-    \tikzstyle{line} = [draw, thick, -{Stealth[length=3mm]}]
-    \tikzstyle{data_line} = [draw, thick, dashed, color=green!60!black, -{Stealth[length=3mm]}]
-    \tikzstyle{manual_line} = [draw, thick, dotted, color=red!80!black, -{Stealth[length=3mm]}]
-    
-    \node [block] (compressor) {Compressor};
-    \node [block, right=1.5cm of compressor] (regulator) {Registro Regulador de Pressão};
-    \node [instrument, right=1.5cm of regulator] (manometer) {Manômetro};
-    \node [block, right=1.5cm of manometer] (valve) {Válvula de Bloqueio};
-    \node [block, right=1.5cm of valve] (rheometer) {Corpo do Reômetro};
-    \coordinate (tap_point) at ($(valve.east)!0.5!(rheometer.west)$);
-    
-    \node [instrument, below=2cm of tap_point] (transducer) {Transdutor \\ de Pressão};
-    \node [data_block, left=2cm of transducer] (arduino) {Arduino};
-    \node [data_block, left=2cm of arduino] (computer) {Computador (Python)};
-    \node [data_block, below=3.5cm of rheometer] (balance) {Balança};
-    
-    \path [line] (compressor) -- (regulator);
-    \path [line] (regulator) -- (manometer);
-    \path [line] (manometer) -- (valve);
-    \path [line] (valve) -- (rheometer);
-    \path [line] (tap_point) -- (transducer);
-    \path [data_line] (transducer) -- (arduino);
-    \path [data_line] (arduino) -- (computer);
-    \path [manual_line] (rheometer) -- (balance);
-    \path [manual_line] (balance) -| (computer.south);
-\end{tikzpicture}
-}
-\caption{Esquema de funcionamento do reômetro capilar, mostrando a linha pneumática (sólida), a linha de aquisição de dados automática (tracejada) e as linhas de coleta e entrada de dados manual (pontilhada).}
+\includegraphics[width=0.85\textwidth]{esquema_reometro_v4.png}
+\caption{Esquema de funcionamento do reômetro capilar, mostrando a linha pneumática, os sensores de pressão (Linha e Pasta) e o sistema de aquisição digital.}
 \label{fig:esquema_reometro}
 \end{figure}
 
 O controle do ensaio e o processamento de dados são realizados por um conjunto de scripts em Python.
 
-\subsection*{1.2.1 Cálculos Reológicos do Reômetro Capilar}
+\subsection*{1.2.1 Processamento de Sinais e Filtragem Digital}
+Os dados analógicos provenientes dos transdutores são digitalizados pelo ADC do Arduino a uma frequência de aproximadamente \SI{10}{Hz}. Para reduzir ruídos elétricos e oscilações pneumáticas de baixa magnitude, é aplicado um filtro de Média Móvel Exponencial (EMA) diretamente no firmware:
+
+\begin{equation}
+    S_t = \alpha \cdot Y_t + (1 - \alpha) \cdot S_{t-1}
+\end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $S_t$ -- Valor filtrado no tempo $t$
+  \item $Y_t$ -- Leitura bruta instantânea do sensor
+  \item $\alpha$ -- Fator de suavização ($\alpha = 0,1$ no sistema padrão)
+\end{itemize}
+
+O filtro é reinicializado automaticamente em cada novo ponto de ensaio para evitar o arraste de estados de pressão residuais de coletas anteriores.
+
+\subsection*{1.2.2 Partição de Massa por Integral de Pressão Efetiva}
+Em ensaios de pastas viscoplásticas, a massa total recolhida na balança ($M_{total}$) contém tanto o material extrudado durante o regime estacionário quanto o material expelido durante a fase transiente de pressurização. Para isolar a massa do regime estacionário ($m$), o software v4.1.1 utiliza o método da Integral de Pressão Efetiva ($I_{eff}$), baseando-se no fato de que a vazão é proporcional à pressão que excede a tensão de escoamento ($P_{yield}$):
+
+\begin{equation}
+    I_{eff} = \int_{0}^{t_{final}} \max(0, P(t) - P_{yield}) \, dt
+\end{equation}
+
+A fração da massa pertencente ao regime estacionário ($\text{Ratio}_{reg}$) é então calculada pela razão das integrais:
+
+\begin{equation}
+    \text{Ratio}_{reg} = \frac{\int_{t_{start}}^{t_{final}} \max(0, P(t) - P_{yield}) \, dt}{I_{eff}}
+\end{equation}
+
+A massa corrigida para o cálculo da taxa de cisalhamento é dada por $m = M_{total} \cdot \text{Ratio}_{reg}$. O sistema exibe um alerta visual caso $\text{Ratio}_{reg} < \SI{30}{\percent}$, indicando que o tempo em regime estacionário foi insuficiente frente à rampa de pressurização.
+
+\subsection*{1.2.3 Cálculos Reológicos do Reômetro Capilar}
 A análise reológica busca descrever a relação entre a tensão aplicada a um material e a taxa de deformação resultante. Os parâmetros fundamentais que descrevem essa relação são: a \textbf{tensão de cisalhamento} ($\tau$), que representa a força por unidade de área necessária para induzir o escoamento; a \textbf{taxa de cisalhamento} ($\dot{\gamma}$), que mede a taxa com que o material se deforma ou a velocidade relativa entre camadas adjacentes do fluido; e a \textbf{viscosidade} ($\eta$), definida como a razão entre a tensão e a taxa de cisalhamento ($\eta = \tau / \dot{\gamma}$), representando a resistência interna do material ao fluxo.
 
 Para pastas e suspensões concentradas, a \textbf{tensão de escoamento} ($\tau_0$) é outro parâmetro importante, indicando a tensão mínima que deve ser superada para que o material comece a fluir.
@@ -202,14 +202,43 @@ Para uma análise rigorosa de fluidos não-Newtonianos, o uso de valores aparent
     \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right) = \dot{\gamma}_{aw} \left( \frac{3n' + 1}{4n'} \right)
 \end{equation}
 
-Na versão 4.1, o software substituiu a aproximação de um índice pseudoplástico global ($n'$) pelo cálculo do perfil de derivadas locais ($\approx \Delta \ln \tau_w / \Delta \ln \dot{\gamma}_{aw}$) ponto a ponto, aplicando o fator adequado a cada faixa de cisalhamento para modelar com rigor fluidos que transitam entre comportamentos Newtonianos e viscoplásticos em diferentes gradientes.
+Na versão 4.1.1, o software substituiu a aproximação de um índice pseudoplástico global ($n'$) pelo cálculo do perfil de derivadas locais ($\approx \Delta \ln \tau_w / \Delta \ln \dot{\gamma}_{aw}$) ponto a ponto, aplicando o fator adequado a cada faixa de cisalhamento para modelar com rigor fluidos que transitam entre comportamentos Newtonianos e viscoplásticos em diferentes gradientes.
 
-\vspace{1em}
-\textbf{Propagação de Incertezas:} Para dar suporte metrológico ao tratamento de dados, o algoritmo agora utiliza a equação de propagação de incertezas padrão, fundindo as variações instrumentais de dimensões de equipamento ($\pm \SI{0.05}{mm}$ para capilares imprensos em matriz FDM ou de precisão submétrica em paquímetros), massa e tempo combinados a um desvio estatístico. O peso das incertezas se propaga quadrativamente nos vetores de $\tau_w$ e $\dot{\gamma}_{aw}$, sendo expresso no novo painel gráfico.
+\subsubsection*{Modelos de Ajuste Reológico}
+O sistema avalia e ajusta automaticamente os principais modelos matemáticos utilizados na reologia de pastas cerâmicas:
 
-\vspace{1em}
-\textbf{Seleção de Modelo Numérico por Mínimos Quadrados Ponderados (WLS) e AIC:} 
-Historicamente utilizando a regressão de Mínimos Quadrados Ordinários (OLS) e escolhendo modelos com maior $R^2$, o sistema agora adota Mínimos Quadrados Ponderados (WLS, do inglês \textit{Weighted Least Squares}), utilizando como inverso do peso a matriz de variância agrupada, o que confere às faixas com menor dispersão estatística maior influência na convergência final da curva de ajuste. A seleção do modelo ideal (Newtoniano, Lei da Potência, Bingham, Herschel-Bulkley ou Casson) migrou da métrica de $R^2$ para o Critério de Informação de Akaike (AIC), cujo objetivo foca unicamente em ranquear a qualidade predativa de cada ajuste, simultaneamente punindo acréscimos arbitrários de dependências (prevenindo o \textit{overfitting} crônico associado a equações com três parâmetros, como Herschel-Bulkley). O erro padrão gerado na covariância converge para formar Intervalos de Confiança explícitos para $\tau_0$, $\eta$ e o coeficiente $K$.
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{Lei da Potência (Ostwald-de Waele):} Descreve fluidos pseudoplásticos sem tensão de escoamento.
+  \begin{equation} \tau = K \cdot \dot{\gamma}^n \end{equation}
+  \item \textbf{Bingham:} Para fluidos com comportamento linear após superar $\tau_0$.
+  \begin{equation} \tau = \tau_0 + \eta_p \cdot \dot{\gamma} \end{equation}
+  \item \textbf{Herschel-Bulkley:} Combina o modelo de Lei da Potência com tensão de escoamento.
+  \begin{equation} \tau = \tau_0 + K \cdot \dot{\gamma}^n \end{equation}
+  \item \textbf{Casson:} Comumente utilizado para pastas com escoamento plástico.
+  \begin{equation} \sqrt{\tau} = \sqrt{\tau_0} + \sqrt{\eta_c \cdot \dot{\gamma}} \end{equation}
+\end{enumerate}
+
+\subsubsection*{Otimização e Criteração de Seleção (WLS e AIC)}
+Historicamente utilizando a regressão de Mínimos Quadrados Ordinários (OLS) e escolhendo modelos com maior $R^2$, o sistema agora adota Mínimos Quadrados Ponderados (WLS, do inglês \textit{Weighted Least Squares}), minimizando a soma ponderada dos resíduos:
+
+\begin{equation}
+    S = \sum_{i=1}^n w_i (\tau_{i, med} - \tau_{i, pred})^2, \quad \text{com } w_i = \frac{1}{\sigma_i^2}
+\end{equation}
+
+Utilizando como base do peso ($w_i$) o desvio padrão instrumental propagado, confere-se às faixas com menor dispersão estatística maior influência na convergência final da curva de ajuste. A seleção do modelo ideal migrou da métrica de $R^2$ para o Critério de Informação de Akaike (AIC):
+
+\begin{equation}
+    AIC = 2k + n \ln\left(\frac{RSS}{n}\right)
+\end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $k$ -- Número de parâmetros do modelo (ex: 3 para Herschel-Bulkley)
+  \item $n$ -- Número de pontos experimentais
+  \item $RSS$ -- Soma dos quadrados dos resíduos (\textit{Residual Sum of Squares})
+\end{itemize}
+
+Este critério é fundamental para prevenir o \textit{overfitting} (superajuste), pois penaliza a adição de parâmetros extras que não reduzem significativamente o erro residual. O modelo vencedor é aquele que apresenta o menor valor de AIC.
 
 \vspace{1em}
 \textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \cite{barnes1989}. A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$):
@@ -257,25 +286,30 @@ $n'$ & Índice de pseudoplasticidade estimado (adimensional) \\
 $K'$ & Coeficiente de consistência estimado (\si{Pa.s^n}) \\
 $\tau_0$ & Tensão de escoamento (\si{Pa}) \\
 $\eta_p$ & Viscosidade plástica (\si{Pa.s}) \\
+$I_{eff}$ & Integral de pressão efetiva (\si{Pa.s}) \\
+$\text{Ratio}_{reg}$ & Fração de massa em regime estacionário (adimensional) \\
+$\alpha$ & Fator de suavização do filtro EMA (adimensional) \\
+$AIC$ & Critério de Informação de Akaike (adimensional) \\
+$RSS$ & Soma dos quadrados dos resíduos (\si{Pa^2}) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \section*{3. Fluxo de Trabalho e Arquitetura do Sistema}
 
-O sistema de análise reológica foi reestruturado na versão 4.1 para uma arquitetura modular baseada em pacotes, garantindo maior robustez e manutenibilidade. A operação principal agora é centrada na Interface Gráfica (GUI), enquanto os scripts de linha de comando originais foram preservados como opções de legado ou para uso "headless".
+O sistema de análise reológica foi reestruturado na versão 4.1.1 para uma arquitetura modular baseada em pacotes, garantindo maior robustez e manutenibilidade. A operação principal agora é centrada na Interface Gráfica (GUI), enquanto os scripts de linha de comando originais foram preservados como opções de legado ou para uso "headless".
 
 \noindent
 \href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo}}
 
-\subsection*{3.0 Interface Gráfica (gui\_main.py) -- V4.1}
+\subsection*{3.0 Interface Gráfica (gui\_main.py) -- V4.1.1}
 A versão atual do sistema opera através de uma interface moderna desenvolvida com \textit{CustomTkinter}, organizada no pacote \texttt{gui/}. Este é o ponto de entrada padrão:
 
 \begin{itemize}
-  \item \textbf{Módulo Central:} O arquivo \texttt{gui\_main.py} atua como lançador, inicializando a aplicação definida em \texttt{gui/app.py}.
-  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções), facilitando a expansão do sistema. A versão 4.1+ inclui um gerenciador avançado de \textbf{Limpeza de Dados/Outliers} interativo, \textbf{Geração de Relatório de PDF Automático} e a capacidade de conduzir \textbf{Processamento em Lote} sobre múltiplas amostras. O sistema também suporta a importação externa de CSV originais de ensaios rotacionais (como dados provenientes do \textit{Anton Paar MCR102}) de forma a sobrepô-los nas análises visuais do reômetro. 
-  \item \textbf{Abstração de Hardware:} A comunicação com o Arduino é gerenciada pela classe \texttt{ReometerController} (\texttt{reometer\_controller.py}), desacoplada da interface.
-  \item \textbf{Persistência:} Todos os dados são armazenados localmente em um banco de dados SQLite (\texttt{reometria.db}), gerenciado por \texttt{database\_manager.py}, eliminando a dependência estrita de arquivos JSON para operação diária.
+  \item \textbf{Módulo Central:} O arquivo \texttt{gui\_main.py} atua como lançador, inicializando a aplicação definida em \texttt{gui/app.py}. A versão 4.1.1 inclui protocolos de segurança industrial (\texttt{WM\_DELETE\_WINDOW}) para garantir que a desconexão do hardware seja síncrona ao fechamento da janela.
+  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções). A versão atual inclui um gerenciador avançado de \textbf{Limpeza de Dados/Outliers} interativo e um sistema de alertas de qualidade que monitora a integridade da partição de massa via integral.
+  \item \textbf{Abstração de Hardware:} A comunicação com o Arduino é gerenciada pela classe \texttt{ReometerController} (\texttt{reometer\_controller.py}). O sistema agora utiliza um ADC de 10 bits com \textit{oversampling} de 4 níveis para estabilidade de ruído branco.
+  \item \textbf{Otimização de Banco de Dados:} A persistência utiliza SQLite (\texttt{reometria.db}). Na versão 4.1.1, foram implementadas otimizações de \textit{caching} de consultas (verificação de calibração a cada 60s) e resolução do problema de múltiplas requisições sequenciais (\textit{N+1 queries}) na tela de histórico, garantindo fluidez mesmo em bancos de dados com centenas de ensaios acumulados.
 \end{itemize}
 
 \textbf{Execução:} \texttt{python gui\_main.py}

@@ -1,0 +1,53 @@
+graph TD
+    subgraph HW [A. Camada de Hardware: Firmware v3.1]
+        raw([Pressão Analógica]) --> adc[ADC 10-bit + Oversampling 4x]
+        aref[LM4040 5.0V AREF] --> adc
+        adc --> ema["Filtro EMA: S_t = 0.1Y_t + 0.9S_{t-1}"]
+    end
+
+    ema --> |Serial 115200 bps| GUI[GUI: Painel de Coleta]
+
+    subgraph SESSION [B. Máquina de Estados da Coleta]
+        GUI --> st_idle[Estado: IDLE]
+        st_idle --> |Início de Sessão| st_wait[Estado: AGUARDANDO GATILHO]
+        st_wait --> |P_pasta > 0.15 bar| st_rec[Estado: GRAVANDO]
+        
+        st_rec --> math_int["Partição: m_reg = M_tot * Ratio<br/>Ratio = ∫_reg / ∫_tot (P-Pyield)"]
+        st_rec --> math_steady["Estabilidade: σ < 1% por > 5s"]
+        
+        math_steady --> |Auto-Stop| st_stop[Estado: FINALIZADO]
+        st_wait --> |Tempo > 2s + P < 0.10 bar| st_stop
+    end
+
+    st_stop --> db[(SQLite: reometria.db)]
+
+    subgraph ENGINE [C. Motor Reológico: v4.1.1]
+        db --> list[Módulo: Histórico / Gestão]
+        list --> clean[Limpeza Visual de Outliers / Inativação]
+        
+        clean --> si["SI: τ_w = PR / 2L<br/>γ_aw = 4Q / πR³"]
+        
+        si --> corr_b{Correção Bagley?}
+        corr_b --> |Sim| math_b["P_corr = P - P_entrada"]
+        math_b --> corr_m{Correção Mooney?}
+        corr_b --> |Não| corr_m
+        
+        corr_m --> |Sim| math_m["γ_corr = γ_aw - (u_s / R)"]
+        math_m --> corr_wr[Weissenberg-Rabinowitsch]
+        corr_m --> |Não| corr_wr
+        
+        corr_wr --> math_wr["γ_true = γ_aw * (3n+1) / 4n"]
+        
+        math_wr --> fitting["Fitting Ponderado (WLS)"]
+        fitting --> aic{"Seleção via AIC<br/>min(2k + n*ln(RSS/n))"}
+        
+        aic --> results["Parâmetros: τ0, K, n, η<br/>(Intervalos de Confiança 95%)"]
+    end
+
+    results --> reports[/Relatórios: PDF | CSV | Plots/]
+
+    %% Notas Técnicas
+    style HW fill:#f9f,stroke:#333,stroke-width:2px
+    style SESSION fill:#ccf,stroke:#333,stroke-width:2px
+    style ENGINE fill:#cfc,stroke:#333,stroke-width:2px
+    style db fill:#f96,stroke:#333,stroke-width:4px

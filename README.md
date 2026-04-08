@@ -130,7 +130,7 @@ O sistema usa `matplotlib` integrado ao `tkinter`. Se houver problemas de render
 
 ### **⚠️ Calibração e Referência de Tensão (A-01)**
 
-O Arduino Pro Micro usa a tensão USB (AVCC) como referência do ADC. A especificação USB 2.0 permite variação de **4,75 V a 5,25 V** dependendo da fonte (computador, hub, cabo), desta forma, foi utilizada uma referência de tensão externa de precisão (LM4040-5.0) no pino AREF do Arduino.
+O Arduino Pro Micro usa a tensão USB (AVCC) como referência do ADC. A especificação USB 2.0 permite variação de **4,75 V a 5,25 V** dependendo da fonte (computador, hub, cabo), desta forma, foi utilizada uma referência de tensão externa de precisão (LM4040-4.1v) no pino AREF do Arduino.
 
 
 --
