@@ -62,7 +62,7 @@
 \maketitle
 
 \noindent
-\href{https://github.com/bruno-egami/Reometro_Capilar/tree/Reometro-capilar-Transdutor_Pasta}{\textbf{Acesse aqui o repositório específico do Projeto}}
+\href{https://github.com/bruno-egami/Reometro_Capilar/tree/Reometro-capilar-Transdutor_Pasta}{\textbf{Acesse aqui o repositório do Projeto}}
 
 \section*{1. Introdução}
 A caracterização reológica de pastas cerâmicas é essencial para entender seu comportamento durante processos de conformação, como a extrusão. O presente relatório descreve as equações utilizadas em um conjunto de scripts Python desenvolvidos para processar os dados experimentais obtidos com um reômetro capilar (\textit{DIY}) de baixo custo.
@@ -78,11 +78,11 @@ A caracterização sistemática do comportamento reológico da matéria-prima ba
 O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo de três gerações:
 
 \begin{itemize}
-  \item \textbf{V1 (Protótipo Inicial):} A primeira versão utilizava medição indireta de pressão através de uma célula de carga (extensômetros e módulo HX711). Esta configuração permitia estimar a força aplicada durante a extrusão. O sistema foi validado experimentalmente demonstrando boa concordância com reômetros comerciais.
+  \item \textbf{V1 (Protótipo Inicial):} A primeira versão utilizava medição indireta de pressão através de uma célula de carga caseira (extensômetros colados em uma lata de refrigerante e módulo HX711). Esta configuração permitia estimar a força aplicada durante a extrusão. O sistema foi validado experimentalmente demonstrando boa concordância com reômetros comerciais.
   
-  \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de \SI{0}{psi} a \SI{150}{psi}) para leitura direta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
+  \item \textbf{V2 (Transdutor Único):} Na segunda geração, a célula de carga foi substituída por um transdutor de pressão de linha (faixa de \SI{0}{psi} a \SI{150}{psi}) para leitura indireta da pressão do ar comprimido. Esta modificação simplificou o sistema e melhorou a precisão das medições.
   
-  \item \textbf{V3 (Atual - Duplo Transdutor e Referência AREF):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Para mitigar a instabilidade da tensão USB (que flutua entre \SI{4,75}{V} e \SI{5,25}{V}), foi integrada uma referência de tensão externa de precisão \textbf{LM4040-4.096} conectada ao pino AREF do Arduino, garantindo que o ADC de 10 bits opere com uma base estável de \SI{4,096}{V} independentemente da fonte de alimentação. Esta configuração elimina erros sistemáticos de leitura e possibilita a aplicação rigorosa das correções de Bagley e Mooney.
+  \item \textbf{V3 (Atual - Duplo Transdutor e Referência AREF):} A versão atual incorpora um segundo transdutor posicionado diretamente na câmara da pasta (sensor "Pasta"), além do transdutor de linha (sensor "Linha"). Para mitigar a instabilidade da tensão USB (que flutua entre \SI{4,75}{V} e \SI{5,25}{V}), foi integrada uma referência de tensão externa de precisão \textbf{LM4040-4.096} conectada ao pino AREF do Arduino, garantindo que o ADC de 10 bits opere com uma base estável de \SI{4,096}{V} independentemente da fonte de alimentação. Esta configuração elimina erros sistemáticos de leitura.
 \end{itemize}
 
 \begin{figure}[htbp]
@@ -94,7 +94,49 @@ O reômetro capilar utilizado neste estudo é resultado de um processo evolutivo
 
 O controle do ensaio e o processamento de dados são realizados por um conjunto de scripts em Python.
 
-\subsection*{1.2.1 Processamento de Sinais e Filtragem Digital}
+\section*{2. Variáveis e Nomenclatura Utilizada}
+\begin{center}
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{Símbolo} & \textbf{Descrição e Unidade} \\
+\midrule
+$R$ & Raio interno do capilar (\si{m}) \\
+$D$ & Diâmetro interno do capilar (\si{m}) \\
+$L$ & Comprimento do capilar (\si{m}) \\
+$Q$ & Vazão volumétrica (\si{m^{3}/s}) \\
+$\rho$ & Densidade da pasta (\si{kg/m^{3}}) \\
+$m$ & Massa extrudada (\si{kg}) \\
+$t$ & Tempo de extrusão (\si{s}) \\
+$P$ & Pressão aplicada (\si{Pa}) \\
+$\tau_w$ & Tensão de cisalhamento aparente (\si{Pa}) \\
+$\dot{\gamma}_{aw}$ & Taxa de cisalhamento aparente (\si{s^{-1}}) \\
+$\dot{\gamma}_w$ & Taxa de cisalhamento real (corrigida) (\si{s^{-1}}) \\
+$\eta_a$ & Viscosidade aparente (\si{Pa.s}) \\
+$\eta$ & Viscosidade de parede corrigida (\si{Pa.s}) \\
+$n'$ & Índice de pseudoplasticidade local (adimensional) \\
+$K'$ & Coeficiente de consistência ($\si{Pa.s^n}$) \\
+$\tau_0$ & Tensão de escoamento (\si{Pa}) \\
+$\eta_p$ & Viscosidade plástica (\si{Pa.s}) \\
+$I_{eff}$ & Integral de pressão efetiva (\si{Pa.s}) \\
+$\text{Ratio}_{reg}$ & Fração de massa em regime estacionário (adimensional) \\
+$\alpha$ & Fator de suavização do filtro EMA (adimensional) \\
+$AIC$ & Critério de Informação de Akaike (adimensional) \\
+$RSS$ & Soma dos quadrados dos resíduos (\si{Pa^2}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{3. Metodologia e Processamento de Dados}
+
+\subsection*{3.1 Premissas Físicas Assumidas}
+Para garantir aderência aos modelos matemáticos subsequentes, a metodologia deste sistema assume as seguintes simplificações físicas clássicas do escoamento capilar:
+\begin{itemize}
+  \item \textbf{Regime Laminar e Quase-estacionário:} O fluxo ocorre de forma organizada e as medições são capturadas em um intervalo onde as condições variam minimamente, permitindo a análise estatística estável.
+  \item \textbf{Fluido Incompressível e Isotérmico:} A densidade permanece constante sob pressão e não há aquecimento viscoso significativo induzido por fricção.
+  \item \textbf{Ausência de Efeitos Elásticos Dominantes:} O material dissipa a tensão integralmente sem apresentar recuperação elástica após o alívio.
+\end{itemize}
+
+\subsection*{3.2 Processamento de Sinais e Filtragem Digital}
 Os dados analógicos provenientes dos transdutores são digitalizados pelo ADC do Arduino a uma frequência de aproximadamente \SI{10}{Hz}. Para reduzir ruídos elétricos e oscilações pneumáticas de baixa magnitude, é aplicado um filtro de Média Móvel Exponencial (EMA) diretamente no firmware:
 
 \begin{equation}
@@ -108,14 +150,23 @@ Os dados analógicos provenientes dos transdutores são digitalizados pelo ADC d
   \item $\alpha$ -- Fator de suavização ($\alpha = 0,1$ no sistema padrão)
 \end{itemize}
 
-O filtro é reinicializado automaticamente em cada novo ponto de ensaio para evitar o arraste de estados de pressão residuais de coletas anteriores.
+O filtro é reinicializado automaticamente em cada novo ponto de ensaio para evitar o arraste de estados de pressão residuais de coletas anteriores. Ressalta-se que o filtro EMA introduz um pequeno atraso de fase no sinal, o qual é desprezível para as análises realizadas no regime quase-estacionário.
 
-\subsection*{1.2.2 Partição de Massa por Integral de Pressão Efetiva}
-Em ensaios de pastas viscoplásticas, a massa total recolhida na balança ($M_{total}$) contém tanto o material extrudado durante o regime estacionário quanto o material expelido durante a fase transiente de pressurização. Para isolar a massa do regime estacionário ($m$), o software v4.1.1 utiliza o método da Integral de Pressão Efetiva ($I_{eff}$), baseando-se no fato de que a vazão é proporcional à pressão que excede a tensão de escoamento ($P_{yield}$):
+\subsection*{3.3 Partição de Massa por Integral de Pressão Efetiva}
+Em ensaios de pastas viscoplásticas, a massa total recolhida na balança ($M_{total}$) contém tanto o material extrudado durante o regime estacionário quanto o material expelido durante a fase transiente de pressurização. Para isolar a massa do regime estacionário ($m$), o software v4.1.1 utiliza o método da Integral de Pressão Efetiva ($I_{eff}$).
+
+\textbf{Nota Metodológica:} Este método assume uma aproximação operacional do modelo de Bingham ideal (\textit{vazão proporcional unicamente à pressão que excede a resistência inicial}). O valor de $P_{yield}$ utilizado na integração é um limiar heurístico definido preliminarmente pelo usuário experimental na interface de coleta (baseando-se na conversão da tensão de escoamento estimada pela geometria do capilar), e não o $\tau_0$ rigoroso extraído da modelagem algorítmica posterior. A regra de integração numérica do software utiliza a soma \textit{Trapezoidal}.
 
 \begin{equation}
     I_{eff} = \int_{0}^{t_{final}} \max(0, P(t) - P_{yield}) \, dt
 \end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $I_{eff}$ -- Integral de pressão efetiva aplicada (\si{Pa.s})
+  \item $P(t)$ -- Pressão instantânea no tempo $t$ (\si{Pa})
+  \item $P_{yield}$ -- Pressão de início de escoamento (\si{Pa})
+\end{itemize}
 
 A fração da massa pertencente ao regime estacionário ($\text{Ratio}_{reg}$) é então calculada pela razão das integrais:
 
@@ -123,16 +174,23 @@ A fração da massa pertencente ao regime estacionário ($\text{Ratio}_{reg}$) �
     \text{Ratio}_{reg} = \frac{\int_{t_{start}}^{t_{final}} \max(0, P(t) - P_{yield}) \, dt}{I_{eff}}
 \end{equation}
 
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\text{Ratio}_{reg}$ -- Fração de massa pertencente ao regime estacionário
+  \item $t_{start}$ -- Tempo de início do regime estacionário (\si{s})
+  \item $t_{final}$ -- Tempo de término da coleta (\si{s})
+\end{itemize}
+
 A massa corrigida para o cálculo da taxa de cisalhamento é dada por $m = M_{total} \cdot \text{Ratio}_{reg}$. O sistema exibe um alerta visual caso $\text{Ratio}_{reg} < \SI{30}{\percent}$, indicando que o tempo em regime estacionário foi insuficiente frente à rampa de pressurização.
 
-\subsection*{1.2.3 Cálculos Reológicos do Reômetro Capilar}
+\subsection*{3.4 Cálculos Reológicos do Reômetro Capilar}
 A análise reológica busca descrever a relação entre a tensão aplicada a um material e a taxa de deformação resultante. Os parâmetros fundamentais que descrevem essa relação são: a \textbf{tensão de cisalhamento} ($\tau$), que representa a força por unidade de área necessária para induzir o escoamento; a \textbf{taxa de cisalhamento} ($\dot{\gamma}$), que mede a taxa com que o material se deforma ou a velocidade relativa entre camadas adjacentes do fluido; e a \textbf{viscosidade} ($\eta$), definida como a razão entre a tensão e a taxa de cisalhamento ($\eta = \tau / \dot{\gamma}$), representando a resistência interna do material ao fluxo.
 
 Para pastas e suspensões concentradas, a \textbf{tensão de escoamento} ($\tau_0$) é outro parâmetro importante, indicando a tensão mínima que deve ser superada para que o material comece a fluir.
 
 No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de gran\-de\-zas experimentais. A metodologia, aqui detalhada, baseia-se na medição da pressão de extrusão, da massa de material extrudado em um determinado tempo e nas dimensões conhecidas do capilar.
 
-\textbf{Tensão de Cisalhamento na Parede:} O primeiro parâmetro calculado é a tensão de cisalhamento na parede ($\tau_w$). Sua equação é derivada de um balanço de forças em um elemento de volume cilíndrico de fluido em regime de escoamento permanente. A força motriz, gerada pela queda de pressão ao longo do capilar, é equilibrada pela força de atrito viscoso na parede. Isolando a tensão de cisalhamento, obtém-se a equação dada por \cite{barnes1989}:
+\textbf{Tensão de Cisalhamento Aparente na Parede:} O primeiro parâmetro calculado é a tensão de cisalhamento aparente na parede ($\tau_w$). Sua equação é derivada de um balanço de forças em um elemento de volume cilíndrico de fluido em regime de escoamento permanente. A força motriz, gerada pela queda de pressão ao longo do capilar, é equilibrada pela força de atrito viscoso na parede. Isolando a tensão de cisalhamento, obtém-se a equação dada por \cite{barnes1989}:
 
 \begin{equation}
     \tau_w = \frac{P \cdot R}{2 \cdot L}
@@ -140,7 +198,7 @@ No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de g
 
 \textbf{Onde:}
 \begin{itemize}[leftmargin=1.5em]
-  \item $\tau_w$ -- Tensão de cisalhamento na parede do capilar (\si{Pa})
+  \item $\tau_w$ -- Tensão de cisalhamento aparente na parede do capilar (\si{Pa})
   \item $P$ -- Pressão de extrusão aplicada, medida pelo transdutor (\si{Pa})
   \item $R$ -- Raio interno do capilar (\si{m})
   \item $L$ -- Comprimento do capilar (\si{m})
@@ -149,7 +207,7 @@ No reômetro capilar, esses parâmetros são obtidos indiretamente a partir de g
 Esta equação mostra que a tensão de cisalhamento é diretamente proporcional à pressão aplicada e ao raio do capilar, e inversamente proporcional ao seu comprimento.
 
 \vspace{1em}
-\textbf{Taxa de Cisalhamento Aparente:} O segundo parâmetro é a taxa de cisalhamento aparente na parede ($\dot{\gamma}_{aw}$). Ela é calculada a partir da vazão volumétrica ($Q$), que por sua vez é determinada pela massa extrudada, o tempo e a densidade da pasta. A equação para a taxa de cisalhamento aparente é dada por \cite{reed1995}:
+\textbf{Taxa de Cisalhamento Aparente:} O segundo parâmetro é a taxa de cisalhamento aparente na parede ($\dot{\gamma}_{aw}$). Ela é derivada da solução de Hagen-Poiseuille e calculada a partir da vazão volumétrica ($Q$), que por sua vez é determinada pela massa extrudada, o tempo e a densidade da pasta. A equação para a taxa de cisalhamento aparente é dada por \cite{reed1995}:
 
 \begin{equation}
     \dot{\gamma}_{aw} = \frac{4 \cdot Q}{\pi \cdot R^3}
@@ -194,29 +252,43 @@ A vazão volumétrica $Q$ é calculada a partir das medidas experimentais direta
 Esta viscosidade também é chamada de \textit{aparente} porque é calculada usando valores não corrigidos da taxa de cisalhamento. Para fluidos não-Newtonianos como pastas cerâmicas, são necessárias correções adicionais para obter a viscosidade verdadeira.
 
 \subsubsection*{Correções para Fluidos Não-Newtonianos}
-Para uma análise rigorosa de fluidos não-Newtonianos, o uso de valores aparentes exige a aplicação de correções.
+Para uma análise de fluidos não-Newtonianos, o uso de valores aparentes exige a aplicação de correções.
 
 \textbf{Weissenberg-Rabinowitsch:} A mais importante delas para este estudo é a correção de Weissenberg-Rabinowitsch, que converte a taxa de cisalhamento aparente ($\dot{\gamma}_{aw}$) na taxa de cisalhamento verdadeira na parede ($\dot{\gamma}_w$). Esta correção é necessária porque, em fluidos pseudoplásticos, o perfil de velocidade do escoamento é mais achatado do que o perfil parabólico Newtoniano. A equação é dada por \cite{barnes1989}:
 
 \begin{equation}
-    \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right) = \dot{\gamma}_{aw} \left( \frac{3n' + 1}{4n'} \right)
+    \dot{\gamma}_w = \frac{\dot{\gamma}_{aw}}{4} \left( 3 + \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)} \right) = \dot{\gamma}_{aw} \left( \frac{3n' + 1}{4n'} \right), \quad \text{sendo } \frac{1}{n'} = \frac{d(\ln \dot{\gamma}_{aw})}{d(\ln \tau_w)}
 \end{equation}
 
-Na versão 4.1.1, o software substituiu a aproximação de um índice pseudoplástico global ($n'$) pelo cálculo do perfil de derivadas locais ($\approx \Delta \ln \tau_w / \Delta \ln \dot{\gamma}_{aw}$) ponto a ponto, aplicando o fator adequado a cada faixa de cisalhamento para modelar com rigor fluidos que transitam entre comportamentos Newtonianos e viscoplásticos em diferentes gradientes.
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\dot{\gamma}_w$ -- Taxa de cisalhamento verdadeira na parede (\si{s^{-1}})
+  \item $n'$ -- Índice de comportamento de fluxo local definido computacionalmente como $d(\ln \tau_w) / d(\ln \dot{\gamma}_{aw})$
+\end{itemize}
+
+Para não retroagirmos a uma aproximação antiquada através de um índice pseudoplástico global estático da curva, nossa rotina atual estipula $n'$ por agrupamento estatístico das médias logarítmicas de diferentes escoamentos ponto-a-ponto, seguido pela avaliação discreta da diferença finita restrita por um limite inferior contra instabilidades bruscas ou variações puramente estáticas ($\approx \Delta \ln \tau_w / \Delta \ln \dot{\gamma}_{aw}$). Isso modela fluidos que flutuam gradativamente entre Newtonianos e viscoplásticos eliminando falhas provenientes de explosão de ruído na derivada numérica que afetaria dados experimentais diretos da leitura sem pré-suavização. Vale ressaltar que W-R corrige unicamente o valor associado à parede cilíndrica.
 
 \subsubsection*{Modelos de Ajuste Reológico}
 O sistema avalia e ajusta automaticamente os principais modelos matemáticos utilizados na reologia de pastas cerâmicas:
 
 \begin{enumerate}[label=(\alph*)]
-  \item \textbf{Lei da Potência (Ostwald-de Waele):} Descreve fluidos pseudoplásticos sem tensão de escoamento.
+  \item \textbf{Lei da Potência (Ostwald-de Waele):}
   \begin{equation} \tau = K \cdot \dot{\gamma}^n \end{equation}
-  \item \textbf{Bingham:} Para fluidos com comportamento linear após superar $\tau_0$.
+  \item \textbf{Bingham:}
   \begin{equation} \tau = \tau_0 + \eta_p \cdot \dot{\gamma} \end{equation}
-  \item \textbf{Herschel-Bulkley:} Combina o modelo de Lei da Potência com tensão de escoamento.
+  \item \textbf{Herschel-Bulkley:}
   \begin{equation} \tau = \tau_0 + K \cdot \dot{\gamma}^n \end{equation}
-  \item \textbf{Casson:} Comumente utilizado para pastas com escoamento plástico.
+  \item \textbf{Casson:}
   \begin{equation} \sqrt{\tau} = \sqrt{\tau_0} + \sqrt{\eta_c \cdot \dot{\gamma}} \end{equation}
 \end{enumerate}
+
+\textbf{Variáveis dos modelos:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\tau_0$ -- Tensão de escoamento (\si{Pa})
+  \item $K$ -- Índice de consistência (\si{Pa.s^n})
+  \item $n$ -- Índice de comportamento de fluxo (adimensional)
+  \item $\eta_p, \eta_c$ -- Viscosidades plástica e de Casson (\si{Pa.s})
+\end{itemize}
 
 \subsubsection*{Otimização e Criteração de Seleção (WLS e AIC)}
 Historicamente utilizando a regressão de Mínimos Quadrados Ordinários (OLS) e escolhendo modelos com maior $R^2$, o sistema agora adota Mínimos Quadrados Ponderados (WLS, do inglês \textit{Weighted Least Squares}), minimizando a soma ponderada dos resíduos:
@@ -224,6 +296,14 @@ Historicamente utilizando a regressão de Mínimos Quadrados Ordinários (OLS) e
 \begin{equation}
     S = \sum_{i=1}^n w_i (\tau_{i, med} - \tau_{i, pred})^2, \quad \text{com } w_i = \frac{1}{\sigma_i^2}
 \end{equation}
+
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $S$ -- Soma dos quadrados ponderada a ser minimizada
+  \item $\tau_{i, med}$ -- Tensão medida no ponto $i$ (\si{Pa})
+  \item $\tau_{i, pred}$ -- Tensão predita pelo modelo no ponto $i$ (\si{Pa})
+  \item $w_i, \sigma_i$ -- Peso e desvio padrão estatístico do ponto $i$, derivados da propagação de incerteza instrumental calculada pelo software.
+\end{itemize}
 
 Utilizando como base do peso ($w_i$) o desvio padrão instrumental propagado, confere-se às faixas com menor dispersão estatística maior influência na convergência final da curva de ajuste. A seleção do modelo ideal migrou da métrica de $R^2$ para o Critério de Informação de Akaike (AIC):
 
@@ -241,20 +321,34 @@ Utilizando como base do peso ($w_i$) o desvio padrão instrumental propagado, co
 Este critério é fundamental para prevenir o \textit{overfitting} (superajuste), pois penaliza a adição de parâmetros extras que não reduzem significativamente o erro residual. O modelo vencedor é aquele que apresenta o menor valor de AIC.
 
 \vspace{1em}
-\textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \cite{barnes1989}. A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$):
+\textbf{Bagley:} Leva em conta as perdas de pressão na entrada e saída do capilar \cite{barnes1989}. O ensaio experimental de Bagley pressupõe o uso de múltiplos capilares confeccionados com o exato mesmo raio ($R$) mas com comprimentos diferentes ($L$). A pressão total durante a extrusão capilar ($P$) inclui não apenas o esforço necessário para o escoamento dentro do capilar, mas também perdas associadas às extremidades ($P_e$). 
+
+Através do agrupamento paramétrico, o software plota a Pressão ($P$) aferida no transdutor pelo correspondente índice geométrico ($L/R$) do conjunto de bicos. A tensão real na parede ($\tau_w$) é obtida pela inclinação da reta de regressão linear deste ajuste, garantindo que o valor final seja livre da interferência de entrada ($P_e$ interceptado na ordenada). 
+
 \begin{equation}
 P = 2 \tau_w \left( \frac{L}{R} \right) + P_e
 \end{equation}
 
-\textbf{Mooney:} Em suspensões concentradas, pode ocorrer deslizamento na parede (\textit{wall slip}) \cite{barnes1989}. A taxa de cisalhamento aparente é relacionada com a taxa de cisalhamento verdadeira do fluido ($\dot{\gamma}_{s,f}$) e a velocidade de deslizamento ($C$) pela equação:
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $P_e$ -- Perda calculada na entrada/saída (\si{Pa}) extratificada na ordenada.
+\end{itemize}
+
+\textbf{Mooney:} Em suspensões concentradas, pode ocorrer deslizamento na parede (\textit{wall slip}) agravado pela geometria de extrusão \cite{barnes1989}. O software quantifica a parcela da taxa de cisalhamento associada ao escorregamento do material ao longo da parede do bico e converte a taxa aparente ($\dot{\gamma}_{aw}$) na taxa verdadeira interna ($\dot{\gamma}_{s,f}$) descontando a velocidade absoluta de deslizamento ($U_s$) através de:
 \begin{equation}
-\dot{\gamma}_{aw} = \dot{\gamma}_{s,f} + \frac{C}{R}
+\dot{\gamma}_{aw} = \dot{\gamma}_{s,f} + \frac{4 U_s}{R}
 \end{equation}
 
-\subsection*{1.3 Validação Experimental}
-As versões anteriores do reômetro capilar foram validadas experimentalmente por meio de comparação direta com um reômetro comercial de referência (\textbf{Anton Paar MCR 102}), equipado com geometria de placas paralelas. Os ensaios comparativos, realizados com suspensões de caulim a \SI{60}{\percent} de sólidos, demonstraram boa concordância entre os equipamentos, especialmente para taxas de cisalhamento elevadas (acima de \SI{100}{s^{-1}}), confirmando a confiabilidade do dispositivo de baixo custo para análises reológicas.
+\textbf{Onde:}
+\begin{itemize}[leftmargin=1.5em]
+  \item $\dot{\gamma}_{s,f}$ -- Taxa de cisalhamento real do fluido excluindo fricção na malha restritiva (\si{s^{-1}})
+  \item $U_s$ -- Velocidade absoluta de deslizamento computada em torno da parede do bico (\si{m/s})
+\end{itemize}
 
-\subsection*{1.4 Dicas Práticas de Preparação de Amostras}
+\subsection*{3.5 Validação Experimental}
+As versões anteriores do reômetro capilar foram validadas experimentalmente por meio de comparação direta com um reômetro comercial de referência (\textbf{Anton Paar MCR 102}), equipado com geometria de placas paralelas. Os ensaios comparativos, realizados com suspensões de caulim a \SI{60}{\percent} de sólidos, demonstraram erro médio inferior a \SI{10}{\percent} entre os equipamentos, especialmente para taxas de cisalhamento elevadas (acima de \SI{100}{s^{-1}}), confirmando a confiabilidade do dispositivo de baixo custo para análises reológicas quantitativas.
+
+\subsection*{3.6 Dicas Práticas de Preparação de Amostras}
 Com base na experiência acumulada durante o desenvolvimento do equipamento, recomenda-se:
 
 \begin{itemize}
@@ -263,70 +357,63 @@ Com base na experiência acumulada durante o desenvolvimento do equipamento, rec
   \item \textbf{Limites de Concentração:} Para suspensões puras de caulim-água (sem aditivos), o limite prático de concentração é de aproximadamente \SI{65}{\percent} de sólidos. Acima deste valor, a pasta torna-se excessivamente rígida e quebradiça ("aspecto de farofa"), inviabilizando a extrusão sem o uso de modificadores reológicos (plastificantes ou defloculantes).
 \end{itemize}
 
-\section*{2. Variáveis e Nomenclatura Utilizada}
-\begin{center}
-\begin{tabular}{@{}l l@{}}
-\toprule
-\textbf{Símbolo} & \textbf{Descrição e Unidade} \\
-\midrule
-$R$ & Raio interno do capilar (\si{m}) \\
-$D$ & Diâmetro interno do capilar (\si{mm}) \\
-$L$ & Comprimento do capilar (\si{m}) \\
-$Q$ & Vazão volumétrica (\si{m^{3}/s}) \\
-$\rho$ & Densidade da pasta (\si{kg/m^{3}}) \\
-$m$ & Massa extrudada (\si{kg}) \\
-$t$ & Tempo de extrusão (\si{s}) \\
-$P$ & Pressão aplicada (\si{Pa}) \\
-$\tau_w$ & Tensão de cisalhamento na parede (\si{Pa}) \\
-$\dot{\gamma}_{aw}$ & Taxa de cisalhamento aparente (\si{s^{-1}}) \\
-$\dot{\gamma}_w$ & Taxa de cisalhamento real (corrigida) (\si{s^{-1}}) \\
-$\eta_a$ & Viscosidade aparente (\si{Pa.s}) \\
-$\eta$ & Viscosidade verdadeira (\si{Pa.s}) \\
-$n'$ & Índice de pseudoplasticidade estimado (adimensional) \\
-$K'$ & Coeficiente de consistência estimado (\si{Pa.s^n}) \\
-$\tau_0$ & Tensão de escoamento (\si{Pa}) \\
-$\eta_p$ & Viscosidade plástica (\si{Pa.s}) \\
-$I_{eff}$ & Integral de pressão efetiva (\si{Pa.s}) \\
-$\text{Ratio}_{reg}$ & Fração de massa em regime estacionário (adimensional) \\
-$\alpha$ & Fator de suavização do filtro EMA (adimensional) \\
-$AIC$ & Critério de Informação de Akaike (adimensional) \\
-$RSS$ & Soma dos quadrados dos resíduos (\si{Pa^2}) \\
-\bottomrule
-\end{tabular}
-\end{center}
+\section*{4. Fluxo de Trabalho e Arquitetura do Sistema}
 
-\section*{3. Fluxo de Trabalho e Arquitetura do Sistema}
-
-O sistema de análise reológica foi reestruturado na versão 4.1.1 para uma arquitetura modular baseada em pacotes, garantindo maior robustez e manutenibilidade. A operação principal agora é centrada na Interface Gráfica (GUI), enquanto os scripts de linha de comando originais foram preservados como opções de legado ou para uso "headless".
+O sistema de análise reológica foi reestruturado na versão 4.1.1 para uma arquitetura modular baseada em pacotes, garantindo maior robustez e manutenibilidade. A operação principal agora é centrada na Interface Gráfica (GUI).
 
 \noindent
 \href{https://www.mermaidchart.com/d/6f9e496c-626c-429a-ba93-17c761bf78d0}{\textbf{Clique aqui para visualizar o Fluxograma do Processo}}
 
-\subsection*{3.0 Interface Gráfica (gui\_main.py) -- V4.1.1}
+\subsection*{4.1 Pipeline de Processamento de Dados}
+Visando máxima transparência e rastreabilidade metrológica, o processo analítico opera sob um fluxo progressivo de refinamento do sinal empírico. Em suma, as tensões mecânicas são convertidas, sanitizadas e ajustadas computacionalmente de forma autônoma pela suíte algorítmica:
+
+\begin{figure}[!ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.3cm,
+    block/.style={rectangle, draw=black, fill=white, text width=6cm, text centered, rounded corners, minimum height=0.6cm},
+    line/.style={draw, -Latex, thick}
+]
+
+    \node [block] (n1) {\textbf{Dados Brutos (Sensores)}};
+    \node [block, below=of n1] (n2) {\textbf{Filtragem Digital (EMA)}};
+    \node [block, below=of n2] (n3) {\textbf{Integral de Pressão Efetiva}};
+    \node [block, below=of n3] (n4) {\textbf{Correção da Massa Extrudada ($m$)}};
+    \node [block, below=of n4] (n5) {\textbf{Cálculo da Vazão Volumétrica ($Q$)}};
+    \node [block, below=of n5] (n6) {\textbf{Tensão na Parede ($\tau_w$)}};
+    \node [block, below=of n6] (n7) {\textbf{Taxa de Cisalhamento Aparente ($\dot{\gamma}_{aw}$)}};
+    \node [block, below=of n7] (n8) {\textbf{Correção Weissenberg-Rabinowitsch ($\dot{\gamma}_{w}$)}};
+    \node [block, below=of n8] (n9) {\textbf{Regressão Ponderada (WLS)}};
+    \node [block, below=of n9] (n10) {\textbf{Seleção de Modelo (Critério AIC)}};
+
+    \path [line] (n1) -- (n2);
+    \path [line] (n2) -- (n3);
+    \path [line] (n3) -- (n4);
+    \path [line] (n4) -- (n5);
+    \path [line] (n5) -- (n6);
+    \path [line] (n6) -- (n7);
+    \path [line] (n7) -- (n8);
+    \path [line] (n8) -- (n9);
+    \path [line] (n9) -- (n10);
+
+\end{tikzpicture}
+\caption{Cascata de processamento de dados detalhada (10 etapas).}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection*{4.2 Interface Gráfica (gui\_main.py) -- V4.1.1}
 A versão atual do sistema opera através de uma interface moderna desenvolvida com \textit{CustomTkinter}, organizada no pacote \texttt{gui/}. Este é o ponto de entrada padrão:
 
 \begin{itemize}
-  \item \textbf{Módulo Central:} O arquivo \texttt{gui\_main.py} atua como lançador, inicializando a aplicação definida em \texttt{gui/app.py}. A versão 4.1.1 inclui protocolos de segurança industrial (\texttt{WM\_DELETE\_WINDOW}) para garantir que a desconexão do hardware seja síncrona ao fechamento da janela.
-  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções). A versão atual inclui um gerenciador avançado de \textbf{Limpeza de Dados/Outliers} interativo e um sistema de alertas de qualidade que monitora a integridade da partição de massa via integral.
-  \item \textbf{Abstração de Hardware:} A comunicação com o Arduino é gerenciada pela classe \texttt{ReometerController} (\texttt{reometer\_controller.py}). O sistema agora utiliza um ADC de 10 bits com \textit{oversampling} de 4 níveis para estabilidade de ruído branco.
+  \item \textbf{Módulo Central:} O arquivo \texttt{gui\_main.py} atua como lançador, inicializando a aplicação definida em \texttt{gui/app.py}. A versão 4.1.1 inclui protocolos de segurança (\texttt{WM\_DELETE\_WINDOW}) para garantir que a desconexão do hardware seja síncrona ao fechamento da janela.
+  \item \textbf{Estrutura Modular:} As funcionalidades foram segregadas em módulos específicos em \texttt{gui/frames/} (Coleta, Histórico, Calibração, Análise, Correções). A versão atual inclui um gerenciador de \textbf{Limpeza de Dados/Outliers} interativo e um sistema de alertas de qualidade que monitora a integridade da partição de massa via integral.
+  \item \textbf{Abstração de Hardware:} A comunicação com o Arduino é gerenciada pela classe \texttt{ReometerController} (\texttt{reometer\_controller.py}). Para estabilizar o conversor ADC de 10 bits contra ruídos elétricos de alta frequência, o firmware emprega uma técnica de \textit{oversampling} (realizando uma média aritmética de 4 leituras espaçadas por \SI{250}{\micro s}). Este sinal estabilizado em nível de hardware é o que alimenta o filtro EMA para mitigar oscilações mecânicas da linha.
   \item \textbf{Otimização de Banco de Dados:} A persistência utiliza SQLite (\texttt{reometria.db}). Na versão 4.1.1, foram implementadas otimizações de \textit{caching} de consultas (verificação de calibração a cada 60s) e resolução do problema de múltiplas requisições sequenciais (\textit{N+1 queries}) na tela de histórico, garantindo fluidez mesmo em bancos de dados com centenas de ensaios acumulados.
 \end{itemize}
 
 \textbf{Execução:} \texttt{python gui\_main.py}
 
-\subsection*{3.1 Scripts Legados (CLI)}
-Os scripts originais de linha de comando, numerados de 1 a 5, foram movidos para o diretório \texttt{legacy/}. Eles mantêm a lógica funcional original e servem como referência ou \textit{backend} para operações específicas.
-
-\subsubsection*{3.1.1 Coleta e Controle (Script 1)}
-Responsável pela interface direta com transdutores em modo texto. Gera arquivos JSON compatíveis com o novo sistema.
-
-\subsubsection*{3.1.2 Análise Reológica (Script 2)}
-Realiza o processamento matemático "bruto" dos arquivos JSON. As equações e modelos (Newton, Power Law, Bingham, Herschel-Bulkley, Casson) permanecem os mesmos utilizados pela GUI (agora encapsulados em \texttt{modelos\_reologicos.py} e \texttt{reologia\_fitting.py}).
-
-\subsubsection*{3.1.3 Comparativo e Outros}
-Os scripts de tratamento estatístico e comparativo analítico também foram preservados em \texttt{legacy/} para garantir reprodutibilidade de análises antigas.
-
-\subsection*{3.2 Testes Automatizados}
+\subsection*{4.3 Testes Automatizados}
 A robustez matemática é garantida por uma suíte de testes unitários (\texttt{test\_calculos.py}) que valida as equações de correções e ajustes de modelos contra resultados conhecidos.
 
 % --- Referências Bibliográficas (Manual) ---
