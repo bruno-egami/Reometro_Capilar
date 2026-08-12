@@ -96,6 +96,7 @@ class App(ctk.CTk):
             self.frames[frame_name] = frame
             frame.grid(row=0, column=0, sticky="nsew")
 
+        self.current_frame = None
         self.show_coleta()
         
         # Start connection status check loop
@@ -108,6 +109,8 @@ class App(ctk.CTk):
         success, msg = self.controller.find_and_connect()
         if success:
             self.controller.start_reading()
+            if getattr(self, 'current_frame', None):
+                self.current_frame.tkraise()
             
     def toggle_connection(self):
         if self.controller.is_connected:
@@ -116,11 +119,14 @@ class App(ctk.CTk):
             success, msg = self.controller.find_and_connect()
             if success:
                 self.controller.start_reading()
+                if getattr(self, 'current_frame', None):
+                    self.current_frame.tkraise()
             else:
                 tk.messagebox.showerror("Erro de Conexão", f"Não foi possível conectar: {msg}")
 
     def show_frame(self, name):
         frame = self.frames[name]
+        self.current_frame = frame
         frame.tkraise()
         
     def show_coleta(self): self.show_frame("ColetaFrame")

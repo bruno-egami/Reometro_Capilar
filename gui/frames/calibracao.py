@@ -297,7 +297,11 @@ class CalibracaoFrame(ctk.CTkFrame):
         if ts is None:
             ts = time.time()
             
-        self.lbl_v1.configure(text=f"V_Linha: {v1:.4f} V")
+        if getattr(self.controller, 'linha_calibrada', False):
+            self.lbl_v1.configure(text=f"V_Linha: {v1:.4f} V ({p_linha:.2f} bar)")
+        else:
+            self.lbl_v1.configure(text=f"V_Linha: {v1:.4f} V")
+            
         self.lbl_p_pasta.configure(text=f"P_Pasta (ref): {p_pasta:.2f} bar")
         
         # Update Real-time Graph
@@ -338,9 +342,12 @@ class CalibracaoFrame(ctk.CTkFrame):
                 success, msg = self.controller.find_and_connect()
                 if success:
                     self.controller.start_reading()
+                    self.start_monitoring()
                 else:
                     tk.messagebox.showerror("Erro", f"Arduino não conectado. Falha: {msg}")
                     return
+            else:
+                self.start_monitoring()
             
             # Start fresh lists
             self.calib_v_linha = []

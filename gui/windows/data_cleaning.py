@@ -142,9 +142,13 @@ class DataCleaningWindow(ctk.CTkToplevel):
                 self.tree.item(sid, tags=())
 
     def auto_detect_outliers(self):
-        """Implement IQR method to suggest outliers, grouped by Shear Rate (similar to script 2b)."""
-        if len(self.points_data) < 4:
-            messagebox.showwarning("Aviso", "Número insuficiente de pontos para detecção estatística (mín. 4).")
+        """
+        Detecta automaticamente outliers combinando dois critérios físicos/estatísticos:
+        1. Divergência de vazão/taxa (>35%) entre réplicas no mesmo nível de pressão.
+        2. Desvio relativo grave (>30%) em relação à curva de tendência global (Lei da Potência).
+        """
+        if len(self.points_data) < 3:
+            messagebox.showwarning("Aviso", "Número insuficiente de pontos para detecção estatística (mín. 3).")
             return
             
         try:
@@ -159,11 +163,9 @@ class DataCleaningWindow(ctk.CTkToplevel):
             R = (D_mm / 2.0) / 1000.0
             L = L_mm / 1000.0
             
-            # Prepare data for processing
             processed_data = []
             
             for i, p in enumerate(self.points_data):
-                # Use regime values for consistency with analysis
                 ratio = p.get('ratio_integral')
                 has_regime = ratio is not None and not (isinstance(ratio, float) and ratio != ratio)
                 
@@ -176,67 +178,93 @@ class DataCleaningWindow(ctk.CTkToplevel):
                     tempo = p['duracao_s']
                     p_bar = p['pressao_pasta_bar']
                 
-                # Skip invalid physics
                 if tempo <= 0 or massa <= 0 or p_bar <= 0: 
                     continue
                 
-                # Calculate fundamental rheological properties
                 Q_m3s = (massa / (Rho * tempo)) * 1e-6
                 gd_app = (4 * Q_m3s) / (np.pi * R**3)
                 p_pa = p_bar * 1e5
                 tau_w = (p_pa * R) / (2 * L)
                 
-                # Log grouping key (round to 1 decimal place)
-                log_gd = round(np.log10(gd_app), 1)
+                # Round pressure to 1 decimal place to group replicates
+                p_group = round(p_bar, 1)
                 
                 processed_data.append({
                     'original_index': i,
-                    'log_gd': log_gd,
+                    'ponto_n': p.get('ponto_n', i + 1),
+                    'p_group': p_group,
+                    'gd_app': gd_app,
                     'tau_w': tau_w
                 })
             
             df = pd.DataFrame(processed_data)
             
-            if df.empty:
-                messagebox.showwarning("Aviso", "Não foi possível calcular propriedades reológicas (dados inválidos).")
+            if df.empty or len(df) < 3:
+                messagebox.showwarning("Aviso", "Dados válidos insuficientes para cálculo de outliers.")
                 return
 
+            outliers_set = set()
+            
+            # --- Critério 1: Discrepância entre réplicas no mesmo nível de pressão ---
+            grouped_p = df.groupby('p_group')
+            for p_val, group in grouped_p:
+                if len(group) >= 2:
+                    mean_gd = group['gd_app'].mean()
+                    if mean_gd > 0:
+                        for _, row in group.iterrows():
+                            dev = abs(row['gd_app'] - mean_gd) / mean_gd
+                            if dev > 0.35:  # Desvio > 35% da média de vazão do grupo
+                                outliers_set.add(row['original_index'])
+            
+            # --- Critério 2: Ajuste inicial de tendência para achar pontos fora da curva geral ---
+            try:
+                # Regressão linear em log-log para aproximar Lei da Potência
+                log_g = np.log(df['gd_app'].values)
+                log_t = np.log(df['tau_w'].values)
+                slope, intercept = np.polyfit(log_g, log_t, 1)
+                
+                # Predição de tau e resíduos relativos
+                log_t_pred = intercept + slope * log_g
+                residuos_rel = np.abs(np.exp(log_t) - np.exp(log_t_pred)) / np.exp(log_t_pred)
+                
+                for idx, res in zip(df['original_index'], residuos_rel):
+                    if res > 0.30:  # Desvio > 30% em relação à tendência geral
+                        outliers_set.add(idx)
+            except Exception:
+                pass
+            
+            # --- Critério 3: Violação de Monotonicidade Física (Efeito de Fim de Barril) ---
+            # Em fluidos pseudoplásticos/Newtonianos, maior pressão DEVE gerar maior vazão.
+            # Se a pressão aumentou, mas a vazão caiu drasticamente em relação à máxima atingida,
+            # indica entupimento, secagem ou fim de material no barril.
+            df_sorted = df.sort_values('p_group')
+            max_gd_so_far = 0.0
+            
+            for idx, row in df_sorted.iterrows():
+                gd = row['gd_app']
+                if gd > max_gd_so_far:
+                    max_gd_so_far = gd
+                else:
+                    # Se a vazão for menor que 70% da máxima já atingida em pressões menores,
+                    # é uma queda física muito brusca e injustificada.
+                    if gd < max_gd_so_far * 0.70:
+                        outliers_set.add(row['original_index'])
+                        
             outliers_found = 0
-            
-            # Group by Shear Rate (log_gd) and apply IQR per group
-            grouped = df.groupby('log_gd')
-            
-            for log_val, group in grouped:
-                # Need at least 3 points to calculate meaningful statistics
-                if len(group) < 3:
-                    continue
-                    
-                vals = group['tau_w'].values
-                Q1 = np.percentile(vals, 25)
-                Q3 = np.percentile(vals, 75)
-                IQR = Q3 - Q1
-                
-                # Script 2b uses 1.5 * IQR
-                lower = Q1 - 1.5 * IQR
-                upper = Q3 + 1.5 * IQR
-                
-                # Identify outliers in this group
-                outliers_mask = (vals < lower) | (vals > upper)
-                outliers_indices = group.loc[outliers_mask, 'original_index'].tolist()
-                
-                # Deactivate found outliers
-                for idx in outliers_indices:
-                    # Only count if it was currently active
-                    if self.points_data[idx].get('ativo', 1) == 1:
-                        self.points_data[idx]['ativo'] = 0
-                        outliers_found += 1
+            for idx in outliers_set:
+                if self.points_data[idx].get('ativo', 1) == 1:
+                    self.points_data[idx]['ativo'] = 0
+                    outliers_found += 1
             
             self.update_tree_visuals()
             
             if outliers_found > 0:
-                messagebox.showinfo("Auto-Detecção", f"Foram detectados e desativados {outliers_found} potenciais outliers.")
+                messagebox.showinfo("Auto-Detecção", f"Foram detectados e desativados {outliers_found} ponto(s) atípico(s)/outlier(s).")
             else:
-                messagebox.showinfo("Auto-Detecção", "Nenhum outlier estatístico detectado com os critérios atuais (IQR 1.5x por grupo de taxa).")
+                messagebox.showinfo("Auto-Detecção", "Nenhum outlier estatístico detectado com os critérios atuais (desvio > 30% da curva ou > 35% em réplicas).")
+            
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha na detecção de outliers: {e}")
             
         except Exception as e:
             import traceback

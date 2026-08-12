@@ -521,9 +521,9 @@ class AnaliseFrame(ctk.CTkFrame):
                     'tempo_s': np.array(tempos),
                     'pressao': np.array(pressoes)
                 })
-                # Group by log of APPARENT shear rate (rounded to 1 decimal)
-                df_calc['log_gd'] = np.round(np.log10(df_calc['gamma_dot_app']), 1)
-                grouped = df_calc.groupby('log_gd')
+                # Group replicates by pressure level (rounded to 1 decimal place, e.g. ~0.9 bar, ~1.1 bar, ~1.3 bar)
+                df_calc['p_group'] = np.round(df_calc['pressao'], 1)
+                grouped = df_calc.groupby('p_group')
                 
                 # Extract Means (Apparent)
                 gd_app_mean = grouped['gamma_dot_app'].mean().values
@@ -538,31 +538,17 @@ class AnaliseFrame(ctk.CTkFrame):
                 
                 if aplicar_weissenberg and origem != 'rotacional' and len(gd_app_mean) >= 3:
                     try:
-                        # Ordena para garantir que a derivada não oscile em loops (embora o groupby já costume ordenar a chave log_gd)
-                        idx_sort = np.argsort(gd_app_mean)
-                        gd_app_sorted = gd_app_mean[idx_sort]
-                        tau_sorted = tau_mean[idx_sort]
+                        log_gd_mean = np.log(gd_app_mean)
+                        log_tau_mean = np.log(tau_mean)
                         
-                        log_gd_mean = np.log(gd_app_sorted)
-                        log_tau_mean = np.log(tau_sorted)
+                        # Extrai n_prime global via regressão linear (muito mais robusto a ruídos experimentais que o gradiente local)
+                        slope, _ = np.polyfit(log_gd_mean, log_tau_mean, 1)
+                        n_prime_global = np.clip(slope, 0.05, 3.0)
                         
-                        local_n_primes = np.gradient(log_tau_mean, log_gd_mean)
-                        local_n_primes = np.clip(local_n_primes, 0.05, 3.0)
-                        n_prime_global = np.mean(local_n_primes)
-                        
-                        gd_true_sorted = gd_app_sorted * ((3 * local_n_primes + 1) / (4 * local_n_primes))
-                        
-                        # Retorna gd_true para a ordem original das médias (caso as chaves do dict não tivessem saído ordenadas)
-                        gd_mean_true = np.zeros_like(gd_app_mean)
-                        for orig_i, sort_i in enumerate(idx_sort):
-                            gd_mean_true[sort_i] = gd_true_sorted[orig_i]
-                        gd_mean = gd_mean_true
-                        
-                        # E aplique uma correção aproximada usando n_prime_global aos dados brutos
-                        # (A GUI / PDF depende do vetor bruto estar corrigido também)
-                        # ATENÇÃO: gd_true_arr usa n'_global (aproximação para exibição).
-                        # O ajuste dos modelos usa gd_mean (corrigido com n' local, mais preciso).
-                        gd_true_arr = gd_app_arr * ((3 * n_prime_global + 1) / (4 * n_prime_global))
+                        # E aplique a correção a gd_mean e gd_true_arr
+                        fator_wr = (3 * n_prime_global + 1) / (4 * n_prime_global)
+                        gd_mean = gd_app_mean * fator_wr
+                        gd_true_arr = gd_app_arr * fator_wr
                     except Exception as e:
                         print(f"Erro no Weissenberg-Rabinowitsch das médias: {e}")
                         pass
@@ -671,28 +657,9 @@ class AnaliseFrame(ctk.CTkFrame):
             from scipy.stats import t
             
             # --- M15: Mínimos Quadrados Ponderados (WLS) ---
-            # Prepare Sigma for WLS
+            # O WLS com N=2 nas réplicas gera desvios padrão muito instáveis, forçando 
+            # as curvas a ignorarem pontos de alta tensão. Em reologia, OLS é o padrão ouro.
             sigma_wls = None
-            if len(tau_std) > 0:
-                # Determina N de cada grupo para verificar se não há réplicas
-                num_pontos_por_grupo = np.array([len(grouped.get_group(k)) for k in sorted(grouped.groups.keys())])
-                
-                # M16: Aviso se a grande maioria tem N=1 (sem réplicas)
-                if np.sum(num_pontos_por_grupo == 1) > len(num_pontos_por_grupo) * 0.7:
-                     if 'parecer' in stats_details:
-                         stats_details['parecer'] += "\n\n⚠️ ATENÇÃO: A grande maioria dos pontos não tem réplicas (medidos apenas 1 vez). A reprodutibilidade (CV = 0) não pode ser avaliada estatisticamente. As barras horizontais de erro refletem incerteza teórica (instrumental)."
-                
-                # Corrige pesos:
-                # Se N > 1 (tau_std > 0), usa o desvio padrão do grupo.
-                # Se N = 1 (tau_std == 0), a incerteza estatística é desconhecida,
-                # logo usa a incerteza metrológica (pior caso instrumental) propagada M5: ~5.4% de tau
-                unc_teorica = fit_tau * 0.054 # aprox 5.4% propagada instrumental
-                
-                raw_sigma = np.where(tau_std > 0, tau_std, unc_teorica)
-                # Safeguard double-zero
-                raw_sigma = np.maximum(raw_sigma, 1e-6)
-                # Normaliza para manter o R² coerente com a função de custo
-                sigma_wls = raw_sigma / np.mean(raw_sigma)
             
             for m_name, (m_func, p_names, g_func, bnds) in models.MODELS.items():
                 try:

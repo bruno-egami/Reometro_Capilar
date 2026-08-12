@@ -41,10 +41,11 @@ def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
         std_fit = tau_std[valid_fit]
         valid_std = std_fit[std_fit > 0]
         if len(valid_std) > 0:
-            min_std = np.min(valid_std)
-            raw_sigma = np.where(std_fit == 0, min_std * 0.1, std_fit)
+            mean_std = np.mean(valid_std)
+            # Pontos com 1 réplica (std=0) têm erro desconhecido, não erro zero (peso infinito). 
+            # Recebem a incerteza média do ensaio.
+            raw_sigma = np.where(std_fit == 0, mean_std, std_fit)
             # Normalizar sigma para atuarem apenas como pesos relativos (WLS)
-            # Evita que absolute_sigma=False falhe no scale ou distorça R²
             sigma_wls = raw_sigma / np.mean(raw_sigma)
     
     n_pts = len(gd_fit)
@@ -57,6 +58,8 @@ def ajustar_modelos(gamma_dot, tau_w, tau_std=None):
     for nome_modelo, (func_modelo, param_names, initial_guess_func, bounds) in MODELS.items():
         try:
             p0 = initial_guess_func(gd_fit, tau_fit)
+            print(f"DEBUG {nome_modelo} -> gd_fit: {gd_fit}, tau_fit: {tau_fit}, sigma_wls: {sigma_wls}")
+            
             # Ajuste com limites (bounds) para garantir parâmetros físicos (WLS if sigma_wls passed)
             if sigma_wls is not None:
                 popt, pcov = curve_fit(func_modelo, gd_fit, tau_fit, p0=p0, bounds=bounds, sigma=sigma_wls, absolute_sigma=False, maxfev=10000)
