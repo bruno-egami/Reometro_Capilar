@@ -194,6 +194,11 @@ class ReometerController:
             self.log_message("Reading already in progress.")
             return True
 
+        try:
+            self.ser.reset_input_buffer() # Descarta lixo/leituras velhas do buffer do SO
+        except Exception as e:
+            self.log_message(f"Error resetting input buffer: {e}", level=logging.WARNING)
+
         self.is_reading = True
         self.read_thread = threading.Thread(target=self._read_loop, daemon=True)
         self.read_thread.start()
