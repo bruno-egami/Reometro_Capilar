@@ -14,6 +14,8 @@ class RelatorioWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.analysis_data = analysis_data.copy()  # Use copy to avoid side effects
         self.export_callback = export_callback
+        self._figures = [] # To keep track and close figures when window closes
+
         
         # Sort data by gamma_dot to avoid zigzagging in plots
         idx = np.argsort(self.analysis_data['gamma_dot'])
@@ -49,6 +51,16 @@ class RelatorioWindow(ctk.CTkToplevel):
         
         self.lift()
         self.focus_force()
+
+        # Bind closing event to cleanup figures
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def destroy(self):
+        import matplotlib.pyplot as plt
+        for fig in self._figures:
+            plt.close(fig)
+        super().destroy()
+
 
     def _init_resumo(self):
         self.txt_resumo = ctk.CTkTextbox(self.tab_resumo, font=("Consolas", 14), wrap="word")
@@ -157,6 +169,8 @@ class RelatorioWindow(ctk.CTkToplevel):
         if description:
             lbl = ctk.CTkLabel(parent, text=description, font=ctk.CTkFont(slant="italic", size=11), wraplength=800)
             lbl.pack(side="bottom", fill="x", padx=10, pady=5)
+
+        self._figures.append(fig) # Track figure for cleanup
 
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()

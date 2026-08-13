@@ -376,16 +376,17 @@ def plotar_comparativo_multiplo(dados_analises, coluna_x, coluna_y, titulo, xlab
                             x_model = np.geomspace(min_x, max_x, 100)
                             
                             # Calcula Y do modelo
-                            # Se o eixo Y for Tensão (Pa)
-                            if 'Pa' in ylabel and 'Viscosidade' not in ylabel:
-                                y_model = func_modelo(x_model, *params)
-                            # Se o eixo Y for Viscosidade (Pa.s)
-                            elif 'Viscosidade' in ylabel:
+                            # Verifica se o eixo Y representa Viscosidade (procura por 'Viscosidade' ou '\eta')
+                            is_viscosity = 'Viscosidade' in ylabel or r'\eta' in ylabel
+
+                            if is_viscosity:
                                 tau_model = func_modelo(x_model, *params)
                                 y_model = tau_model / x_model
+                            elif 'Pa' in ylabel:
+                                y_model = func_modelo(x_model, *params)
                             else:
                                 y_model = None
-                                
+
                             if y_model is not None:
                                 ax.plot(x_model, y_model, color=cor, linestyle='--', linewidth=2, 
                                         alpha=0.9, label=f"Modelo {nome_modelo} ({nome})")

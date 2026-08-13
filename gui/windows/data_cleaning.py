@@ -229,7 +229,7 @@ class DataCleaningWindow(ctk.CTkToplevel):
                 
                 for idx, res in zip(df['original_index'], residuos_rel):
                     if res > 0.30:  # Desvio > 30% em relação à tendência geral
-                        outliers_set.add(idx)
+                        outliers_set.add(int(idx))
             except Exception:
                 pass
             
@@ -248,7 +248,7 @@ class DataCleaningWindow(ctk.CTkToplevel):
                     # Se a vazão for menor que 70% da máxima já atingida em pressões menores,
                     # é uma queda física muito brusca e injustificada.
                     if gd < max_gd_so_far * 0.70:
-                        outliers_set.add(row['original_index'])
+                        outliers_set.add(int(row['original_index']))
                         
             outliers_found = 0
             for idx in outliers_set:
